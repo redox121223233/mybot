@@ -105,40 +105,52 @@ def send_as_sticker(chat_id, text):
     pack_name = f"pack_{chat_id}_by_{BOT_USERNAME}"
     pack_title = f"Sticker Pack {chat_id}"
 
-    resp = requests.get(API + f"getStickerSet?name={pack_name}").json()
-    if not resp.get("ok"):
-        with open(sticker_path, "rb") as f:
-            files = {"png_sticker": f}
-            data = {
-                "user_id": chat_id,
-                "name": pack_name,
-                "title": pack_title,
-                "emojis": "🔥"
-            }
-            res = requests.post(API + "createNewStickerSet", data=data, files=files).json()
-            send_message(chat_id, f"📤 createNewStickerSet پاسخ: {res}")
-            if not res.get("ok"):
-                return
-    else:
-        with open(sticker_path, "rb") as f:
-            files = {"png_sticker": f}
-            data = {
-                "user_id": chat_id,
-                "name": pack_name,
-                "emojis": "🔥"
-            }
-            res = requests.post(API + "addStickerToSet", data=data, files=files).json()
-            send_message(chat_id, f"📤 addStickerToSet پاسخ: {res}")
-            if not res.get("ok"):
-                return
+    try:
+        resp = requests.get(API + f"getStickerSet?name={pack_name}", timeout=15).json()
+    except Exception as e:
+        send_message(chat_id, f"❌ خطا در getStickerSet: {e}")
+        return
 
-    final = requests.get(API + f"getStickerSet?name={pack_name}").json()
-    send_message(chat_id, f"📤 getStickerSet پاسخ: {final}")
-    if final.get("ok"):
-        stickers = final["result"]["stickers"]
-        if stickers:
-            file_id = stickers[-1]["file_id"]
-            requests.post(API + "sendSticker", data={"chat_id": chat_id, "sticker": file_id})
+    if not resp.get("ok"):
+        try:
+            with open(sticker_path, "rb") as f:
+                files = {"png_sticker": f}
+                data = {
+                    "user_id": chat_id,
+                    "name": pack_name,
+                    "title": pack_title,
+                    "emojis": "🔥"
+                }
+                res = requests.post(API + "createNewStickerSet", data=data, files=files, timeout=20)
+                send_message(chat_id, f"📤 createNewStickerSet پاسخ: {res.text}")
+        except Exception as e:
+            send_message(chat_id, f"❌ خطای شبکه createNewStickerSet: {e}")
+            return
+    else:
+        try:
+            with open(sticker_path, "rb") as f:
+                files = {"png_sticker": f}
+                data = {
+                    "user_id": chat_id,
+                    "name": pack_name,
+                    "emojis": "🔥"
+                }
+                res = requests.post(API + "addStickerToSet", data=data, files=files, timeout=20)
+                send_message(chat_id, f"📤 addStickerToSet پاسخ: {res.text}")
+        except Exception as e:
+            send_message(chat_id, f"❌ خطای شبکه addStickerToSet: {e}")
+            return
+
+    try:
+        final = requests.get(API + f"getStickerSet?name={pack_name}", timeout=15).json()
+        send_message(chat_id, f"📤 getStickerSet پاسخ: {final}")
+        if final.get("ok"):
+            stickers = final["result"]["stickers"]
+            if stickers:
+                file_id = stickers[-1]["file_id"]
+                requests.post(API + "sendSticker", data={"chat_id": chat_id, "sticker": file_id})
+    except Exception as e:
+        send_message(chat_id, f"❌ خطا در getStickerSet نهایی: {e}")
 
 
 def make_text_sticker(text, path):
@@ -174,7 +186,10 @@ def show_menu(chat_id):
 
 
 def send_message(chat_id, text):
-    requests.post(API + "sendMessage", json={"chat_id": chat_id, "text": text})
+    try:
+        requests.post(API + "sendMessage", json={"chat_id": chat_id, "text": text}, timeout=10)
+    except Exception as e:
+        print("❌ خطا در send_message:", e)
 
 
 if __name__ == "__main__":
