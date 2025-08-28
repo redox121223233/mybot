@@ -41,7 +41,6 @@ def webhook():
             send_message(chat_id, "🎁 تست رایگان فعال شد.\nلطفاً متن استیکر رو بفرست.")
 
         elif data == "premium":
-            # ارسال لینک پرداخت به جای فعال کردن مستقیم
             send_message(chat_id, f"💳 برای خرید اشتراک روی لینک زیر بزن:\n{PAYMENT_URL}?chat_id={chat_id}")
 
         elif data == "support":
@@ -63,8 +62,9 @@ def webhook():
         chat_id = msg["chat"]["id"]
         text = msg["text"]
 
+        send_message(chat_id, f"📩 متن دریافت شد: {text}")
+
         if chat_id not in user_data:
-            # اولین بار: منو نشون بده
             show_menu(chat_id)
             return "ok"
 
@@ -80,15 +80,15 @@ def webhook():
             show_menu(chat_id)
             return "ok"
 
-        # ارسال استیکر واقعی تلگرام
+        send_message(chat_id, "⚙️ در حال ساخت استیکر...")
         send_as_sticker(chat_id, text)
 
         user_data[chat_id]["count"] = count + 1
+        send_message(chat_id, f"✅ استیکر شماره {user_data[chat_id]['count']} ساخته شد.")
 
     return "ok"
 
 
-# کال‌بک موفق پرداخت
 @app.route("/payment/success")
 def payment_success():
     chat_id = request.args.get("chat_id")
@@ -98,8 +98,6 @@ def payment_success():
     return "پرداخت شما با موفقیت انجام شد."
 
 
-# ساخت استیکر PNG موقت و ارسال به عنوان استیکر واقعی
-
 def send_as_sticker(chat_id, text):
     sticker_path = "sticker.png"
     make_text_sticker(text, sticker_path)
@@ -107,10 +105,8 @@ def send_as_sticker(chat_id, text):
     pack_name = f"pack_{chat_id}_by_{BOT_USERNAME}"
     pack_title = f"Sticker Pack {chat_id}"
 
-    # بررسی وجود پک
     resp = requests.get(API + f"getStickerSet?name={pack_name}").json()
     if not resp.get("ok"):
-        # ساخت پک جدید
         with open(sticker_path, "rb") as f:
             files = {"png_sticker": f}
             data = {
@@ -120,12 +116,10 @@ def send_as_sticker(chat_id, text):
                 "emojis": "🔥"
             }
             res = requests.post(API + "createNewStickerSet", data=data, files=files).json()
-            print("DEBUG create:", res)
             if not res.get("ok"):
                 send_message(chat_id, f"❌ خطا در ساخت پک: {res.get('description')}")
                 return
     else:
-        # افزودن استیکر به پک
         with open(sticker_path, "rb") as f:
             files = {"png_sticker": f}
             data = {
@@ -134,12 +128,10 @@ def send_as_sticker(chat_id, text):
                 "emojis": "🔥"
             }
             res = requests.post(API + "addStickerToSet", data=data, files=files).json()
-            print("DEBUG add:", res)
             if not res.get("ok"):
                 send_message(chat_id, f"❌ خطا در افزودن استیکر: {res.get('description')}")
                 return
 
-    # گرفتن استیکر ساخته شده و ارسال آخرین استیکر
     final = requests.get(API + f"getStickerSet?name={pack_name}").json()
     if final.get("ok"):
         stickers = final["result"]["stickers"]
@@ -150,7 +142,6 @@ def send_as_sticker(chat_id, text):
         send_message(chat_id, f"❌ خطا در دریافت پک: {final.get('description')}")
 
 
-# ساخت تصویر متنی (۵۱۲x۵۱۲ PNG)
 def make_text_sticker(text, path):
     img = Image.new("RGBA", (512, 512), (255, 255, 255, 0))
     draw = ImageDraw.Draw(img)
@@ -166,7 +157,6 @@ def make_text_sticker(text, path):
     img.save(path, "PNG")
 
 
-# منو اصلی
 def show_menu(chat_id):
     keyboard = {
         "inline_keyboard": [
@@ -184,7 +174,6 @@ def show_menu(chat_id):
     })
 
 
-# ارسال پیام
 def send_message(chat_id, text):
     requests.post(API + "sendMessage", json={"chat_id": chat_id, "text": text})
 
