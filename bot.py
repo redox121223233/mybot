@@ -157,8 +157,11 @@ def make_text_sticker(text, path):
     img = Image.new("RGBA", (512, 512), (255, 255, 255, 0))
     draw = ImageDraw.Draw(img)
 
-    font_path = os.environ.get("FONT_PATH", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
-    font = ImageFont.truetype(font_path, 70)
+    try:
+        font_path = os.environ.get("FONT_PATH", "Vazir.ttf")
+        font = ImageFont.truetype(font_path, 70)
+    except Exception:
+        font = ImageFont.load_default()
 
     bbox = draw.textbbox((0, 0), text, font=font)
     w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
