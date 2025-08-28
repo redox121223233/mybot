@@ -4,13 +4,13 @@ import requests
 from PIL import Image, ImageDraw, ImageFont
 from waitress import serve
 
-# گرفتن توکن از متغیر محیطی
+# گرفتن توکن از متغیر محیطی (Railway → Variables)
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN is not set! Please add it in Railway → Variables")
 
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "secret")
-APP_URL = os.environ.get("APP_URL")  # اینو باید توی Railway بذاری
+APP_URL = os.environ.get("APP_URL")  # Railway → Variables → APP_URL = https://xxx.up.railway.app
 API = f"https://api.telegram.org/bot{BOT_TOKEN}/"
 
 app = Flask(__name__)
@@ -33,7 +33,7 @@ def webhook():
         sticker_path = "sticker.png"
         make_text_sticker(text, sticker_path)
 
-        # آپلود عکس به تلگرام به صورت استیکر
+        # ارسال به تلگرام
         with open(sticker_path, "rb") as f:
             requests.post(
                 API + "sendSticker",
@@ -50,14 +50,18 @@ def make_text_sticker(text, path):
     draw = ImageDraw.Draw(img)
 
     font = ImageFont.load_default()
-    w, h = draw.textsize(text, font=font)
+
+    # به جای textsize از textbbox استفاده می‌کنیم (Pillow جدید)
+    bbox = draw.textbbox((0, 0), text, font=font)
+    w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+
     draw.text(((512 - w) / 2, (512 - h) / 2), text, fill="black", font=font)
 
     img.save(path, "PNG")
 
 
 if __name__ == "__main__":
-    # اول Webhook رو ست کنه
+    # ست کردن وبهوک اتوماتیک
     if APP_URL:
         webhook_url = f"{APP_URL}/webhook/{WEBHOOK_SECRET}"
         resp = requests.get(API + f"setWebhook?url={webhook_url}")
@@ -65,6 +69,5 @@ if __name__ == "__main__":
     else:
         print("⚠️ APP_URL is not set in Railway → Variables")
 
-    # اجرا روی Railway
     port = int(os.environ.get("PORT", 8000))
     serve(app, host="0.0.0.0", port=port)
