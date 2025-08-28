@@ -64,11 +64,16 @@ def webhook():
         text = msg["text"]
 
         if chat_id not in user_data:
+            # اولین بار: منو نشون بده
             show_menu(chat_id)
             return "ok"
 
-        mode = user_data[chat_id]["mode"]
-        count = user_data[chat_id]["count"]
+        mode = user_data[chat_id].get("mode")
+        count = user_data[chat_id].get("count", 0)
+
+        if not mode:
+            show_menu(chat_id)
+            return "ok"
 
         if mode == "free" and count >= 5:
             send_message(chat_id, "❌ سهمیه رایگان تمام شد. برای ادامه باید اشتراک بخری.")
@@ -78,7 +83,7 @@ def webhook():
         # ارسال استیکر واقعی تلگرام
         send_as_sticker(chat_id, text)
 
-        user_data[chat_id]["count"] += 1
+        user_data[chat_id]["count"] = count + 1
 
     return "ok"
 
