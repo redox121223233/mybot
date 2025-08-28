@@ -121,6 +121,9 @@ def send_as_sticker(chat_id, text):
             }
             res = requests.post(API + "createNewStickerSet", data=data, files=files).json()
             print("DEBUG create:", res)
+            if not res.get("ok"):
+                send_message(chat_id, f"❌ خطا در ساخت پک: {res.get('description')}")
+                return
     else:
         # افزودن استیکر به پک
         with open(sticker_path, "rb") as f:
@@ -132,6 +135,9 @@ def send_as_sticker(chat_id, text):
             }
             res = requests.post(API + "addStickerToSet", data=data, files=files).json()
             print("DEBUG add:", res)
+            if not res.get("ok"):
+                send_message(chat_id, f"❌ خطا در افزودن استیکر: {res.get('description')}")
+                return
 
     # گرفتن استیکر ساخته شده و ارسال آخرین استیکر
     final = requests.get(API + f"getStickerSet?name={pack_name}").json()
@@ -140,6 +146,8 @@ def send_as_sticker(chat_id, text):
         if stickers:
             file_id = stickers[-1]["file_id"]
             requests.post(API + "sendSticker", data={"chat_id": chat_id, "sticker": file_id})
+    else:
+        send_message(chat_id, f"❌ خطا در دریافت پک: {final.get('description')}")
 
 
 # ساخت تصویر متنی (۵۱۲x۵۱۲ PNG)
