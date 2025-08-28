@@ -4,14 +4,16 @@ import requests
 from PIL import Image, ImageDraw, ImageFont
 from waitress import serve
 
-# گرفتن توکن از متغیر محیطی (Railway → Variables)
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 if not BOT_TOKEN:
-    raise ValueError("❌ BOT_TOKEN is not set! Please add it in Railway → Variables")
+    raise ValueError("❌ BOT_TOKEN is not set!")
 
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "secret")
-APP_URL = os.environ.get("APP_URL")  # Railway → Variables → APP_URL = https://xxx.up.railway.app
+APP_URL = os.environ.get("APP_URL")
 API = f"https://api.telegram.org/bot{BOT_TOKEN}/"
+
+# دیتابیس ساده (داخل حافظه – می‌تونی بعداً Redis یا DB بذاری)
+user_data = {}
 
 app = Flask(__name__)
 
@@ -25,15 +27,50 @@ def home():
 def webhook():
     update = request.get_json(force=True, silent=True) or {}
     msg = update.get("message")
+    callback = update.get("callback_query")
+
+    # دکمه‌ها (Callback)
+    if callback:
+        chat_id = callback["message"]["chat"]["id"]
+        data = callback["data"]
+
+        if data == "free_test":
+            user_data[chat_id] = {"mode": "free", "count": 0}
+            send_message(chat_id, "🎁 حالت تست رایگان فعال شد.\nلطفاً متن استیکر رو بفرست.")
+        elif data == "premium":
+            user_data[chat_id] = {"mode": "premium", "count": 0}
+            send_message(chat_id, "⭐ بخش اشتراکی فعال شد. می‌تونی نامحدود استیکر بسازی.")
+        elif data == "support":
+            support_id = os.environ.get("SUPPORT_ID", "@YourSupportID")
+            send_message(chat_id, f"📞 برای پشتیبانی با {@ONEDAYTOALIVE} در تماس باش.")
+        elif data == "about":
+            send_message(chat_id, "ℹ️ این ربات برای ساخت استیکر متنی است.\n- رایگان: ۵ بار\n- اشتراکی: نامحدود")
+
+        return "ok"
+
+    # پیام کاربر
     if msg and "text" in msg:
         chat_id = msg["chat"]["id"]
         text = msg["text"]
 
-        # ساخت استیکر (تصویر با متن)
+        # اگر کاربر هنوز حالت انتخاب نکرده → منو نشون بده
+        if chat_id not in user_data:
+            show_menu(chat_id)
+            return "ok"
+
+        mode = user_data[chat_id]["mode"]
+        count = user_data[chat_id]["count"]
+
+        # حالت رایگان → محدودیت ۵ بار
+        if mode == "free" and count >= 5:
+            send_message(chat_id, "❌ سهمیه رایگان شما تمام شد. برای ادامه باید اشتراک بگیرید.")
+            show_menu(chat_id)
+            return "ok"
+
+        # ساخت استیکر
         sticker_path = "sticker.png"
         make_text_sticker(text, sticker_path)
 
-        # ارسال به تلگرام
         with open(sticker_path, "rb") as f:
             requests.post(
                 API + "sendSticker",
@@ -41,17 +78,19 @@ def webhook():
                 files={"sticker": f},
             )
 
+        user_data[chat_id]["count"] += 1
+
     return "ok"
 
 
+# ساخت استیکر
 def make_text_sticker(text, path):
-    """ساخت تصویر ساده با متن"""
     img = Image.new("RGBA", (512, 512), (255, 255, 255, 0))
     draw = ImageDraw.Draw(img)
 
+    # فونت بزرگ‌تر
     font = ImageFont.load_default()
 
-    # به جای textsize از textbbox استفاده می‌کنیم (Pillow جدید)
     bbox = draw.textbbox((0, 0), text, font=font)
     w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
 
@@ -60,14 +99,33 @@ def make_text_sticker(text, path):
     img.save(path, "PNG")
 
 
+# منو اصلی
+def show_menu(chat_id):
+    keyboard = {
+        "inline_keyboard": [
+            [{"text": "🎁 تست رایگان", "callback_data": "free_test"}],
+            [{"text": "⭐ بخش اشتراکی", "callback_data": "premium"}],
+            [{"text": "📞 پشتیبانی", "callback_data": "support"}],
+            [{"text": "ℹ️ درباره ربات", "callback_data": "about"}],
+        ]
+    }
+    requests.post(API + "sendMessage", json={
+        "chat_id": chat_id,
+        "text": "👋 خوش اومدی! یکی از گزینه‌ها رو انتخاب کن:",
+        "reply_markup": keyboard
+    })
+
+
+# ارسال پیام
+def send_message(chat_id, text):
+    requests.post(API + "sendMessage", json={"chat_id": chat_id, "text": text})
+
+
 if __name__ == "__main__":
-    # ست کردن وبهوک اتوماتیک
     if APP_URL:
         webhook_url = f"{APP_URL}/webhook/{WEBHOOK_SECRET}"
         resp = requests.get(API + f"setWebhook?url={webhook_url}")
         print("DEBUG setWebhook:", resp.json())
-    else:
-        print("⚠️ APP_URL is not set in Railway → Variables")
 
     port = int(os.environ.get("PORT", 8000))
     serve(app, host="0.0.0.0", port=port)
