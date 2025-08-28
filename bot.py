@@ -11,6 +11,7 @@ if not BOT_TOKEN:
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "secret")
 APP_URL = os.environ.get("APP_URL")
 PAYMENT_URL = os.environ.get("PAYMENT_URL", "https://example.com/pay")  # لینک درگاه
+BOT_USERNAME = os.environ.get("BOT_USERNAME", "MyBot")  # یوزرنیم ربات (بدون @)
 API = f"https://api.telegram.org/bot{BOT_TOKEN}/"
 
 # دیتابیس ساده
@@ -50,6 +51,11 @@ def webhook():
         elif data == "about":
             send_message(chat_id, "ℹ️ این ربات برای ساخت استیکر متنی است.\n- رایگان: ۵ بار\n- اشتراکی: نامحدود")
 
+        elif data == "mypack":
+            pack_name = f"pack_{chat_id}_by_{BOT_USERNAME}"
+            pack_url = f"https://t.me/addstickers/{pack_name}"
+            send_message(chat_id, f"🗂 پک استیکرت اینجاست:\n{pack_url}")
+
         return "ok"
 
     # پیام کاربر
@@ -69,7 +75,7 @@ def webhook():
             show_menu(chat_id)
             return "ok"
 
-        # ارسال به صورت استیکر واقعی تلگرام
+        # ارسال استیکر واقعی تلگرام
         send_as_sticker(chat_id, text)
 
         user_data[chat_id]["count"] += 1
@@ -93,12 +99,12 @@ def send_as_sticker(chat_id, text):
     sticker_path = "sticker.png"
     make_text_sticker(text, sticker_path)
 
-    pack_name = f"pack_{chat_id}_by_{BOT_TOKEN.split(':')[0]}"
+    pack_name = f"pack_{chat_id}_by_{BOT_USERNAME}"
     pack_title = f"Sticker Pack {chat_id}"
 
-    # بررسی اینکه آیا پک ساخته شده یا نه
-    resp = requests.get(API + f"getStickerSet?name={pack_name}")
-    if not resp.json().get("ok"):
+    # بررسی وجود پک
+    resp = requests.get(API + f"getStickerSet?name={pack_name}").json()
+    if not resp.get("ok"):
         # ساخت پک جدید
         with open(sticker_path, "rb") as f:
             files = {"png_sticker": f}
@@ -108,10 +114,10 @@ def send_as_sticker(chat_id, text):
                 "title": pack_title,
                 "emojis": "🔥"
             }
-            res = requests.post(API + "createNewStickerSet", data=data, files=files)
-            print("DEBUG create:", res.json())
+            res = requests.post(API + "createNewStickerSet", data=data, files=files).json()
+            print("DEBUG create:", res)
     else:
-        # افزودن استیکر جدید به پک
+        # افزودن استیکر به پک
         with open(sticker_path, "rb") as f:
             files = {"png_sticker": f}
             data = {
@@ -119,17 +125,21 @@ def send_as_sticker(chat_id, text):
                 "name": pack_name,
                 "emojis": "🔥"
             }
-            res = requests.post(API + "addStickerToSet", data=data, files=files)
-            print("DEBUG add:", res.json())
+            res = requests.post(API + "addStickerToSet", data=data, files=files).json()
+            print("DEBUG add:", res)
 
-    # در نهایت ارسال استیکر
-    with open(sticker_path, "rb") as f:
-        requests.post(API + "sendSticker", data={"chat_id": chat_id}, files={"sticker": f})
+    # گرفتن استیکر ساخته شده و ارسال آخرین استیکر
+    final = requests.get(API + f"getStickerSet?name={pack_name}").json()
+    if final.get("ok"):
+        stickers = final["result"]["stickers"]
+        if stickers:
+            file_id = stickers[-1]["file_id"]
+            requests.post(API + "sendSticker", data={"chat_id": chat_id, "sticker": file_id})
 
 
 # ساخت تصویر متنی (۵۱۲x۵۱۲ PNG)
 def make_text_sticker(text, path):
-    img = Image.new("RGBA", (512, 512), (255, 255, 255, 0))  # بکگراند شفاف
+    img = Image.new("RGBA", (512, 512), (255, 255, 255, 0))
     draw = ImageDraw.Draw(img)
 
     font_path = os.environ.get("FONT_PATH", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
@@ -149,6 +159,7 @@ def show_menu(chat_id):
         "inline_keyboard": [
             [{"text": "🎁 تست رایگان", "callback_data": "free_test"}],
             [{"text": "⭐ بخش اشتراکی", "callback_data": "premium"}],
+            [{"text": "📂 پک من", "callback_data": "mypack"}],
             [{"text": "📞 پشتیبانی", "callback_data": "support"}],
             [{"text": "ℹ️ درباره ربات", "callback_data": "about"}],
         ]
