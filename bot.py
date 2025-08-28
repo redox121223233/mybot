@@ -42,7 +42,7 @@ def webhook():
             send_message(chat_id, "⭐ بخش اشتراکی فعال شد. می‌تونی نامحدود استیکر بسازی.")
         elif data == "support":
             support_id = os.environ.get("SUPPORT_ID", "@YourSupportID")
-            send_message(chat_id, f"📞 برای پشتیبانی با {@ONEDAYTOALIVE} در تماس باش.")
+            send_message(chat_id, f"📞 برای پشتیبانی با {support_id} در تماس باش.")
         elif data == "about":
             send_message(chat_id, "ℹ️ این ربات برای ساخت استیکر متنی است.\n- رایگان: ۵ بار\n- اشتراکی: نامحدود")
 
