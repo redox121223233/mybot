@@ -4,10 +4,13 @@ import requests
 from PIL import Image, ImageDraw, ImageFont
 from waitress import serve
 
-# گرفتن توکن از متغیر محیطی
+# گرفتن توکن از متغیر محیطی (Railway → Variables)
 BOT_TOKEN = os.environ.get("8324626018:AAEiEd_zcpuw10s1nIWr5bryj1yyZDX0yl0")
+if not BOT_TOKEN:
+    raise ValueError("❌ BOT_TOKEN is not set! Please add it in Railway → Variables")
+
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "secret")
-API = f"https://api.telegram.org/bot{8324626018:AAEiEd_zcpuw10s1nIWr5bryj1yyZDX0yl0}/"
+API = f"https://api.telegram.org/bot{BOT_TOKEN}/"
 
 app = Flask(__name__)
 
