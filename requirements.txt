@@ -1,2 +1,5 @@
-python-telegram-bot==20.6
-Pillow
+flask
+requests
+pillow
+python-telegram-bot
+waitress
