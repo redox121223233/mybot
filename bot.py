@@ -69,17 +69,8 @@ def webhook():
             show_menu(chat_id)
             return "ok"
 
-        # ساخت استیکر ساده PNG (مرحله بعدی استیکر واقعی اضافه می‌کنیم)
-        sticker_path = "sticker.png"
-        make_text_sticker(text, sticker_path)
-
-        # ارسال فایل PNG
-        with open(sticker_path, "rb") as f:
-            requests.post(
-                API + "sendDocument",
-                data={"chat_id": chat_id},
-                files={"document": f},
-            )
+        # ارسال به صورت استیکر واقعی تلگرام
+        send_as_sticker(chat_id, text)
 
         user_data[chat_id]["count"] += 1
 
@@ -96,9 +87,49 @@ def payment_success():
     return "پرداخت شما با موفقیت انجام شد."
 
 
-# ساخت استیکر PNG (فعلا ساده)
+# ساخت استیکر PNG موقت و ارسال به عنوان استیکر واقعی
+
+def send_as_sticker(chat_id, text):
+    sticker_path = "sticker.png"
+    make_text_sticker(text, sticker_path)
+
+    pack_name = f"pack_{chat_id}_by_{BOT_TOKEN.split(':')[0]}"
+    pack_title = f"Sticker Pack {chat_id}"
+
+    # بررسی اینکه آیا پک ساخته شده یا نه
+    resp = requests.get(API + f"getStickerSet?name={pack_name}")
+    if not resp.json().get("ok"):
+        # ساخت پک جدید
+        with open(sticker_path, "rb") as f:
+            files = {"png_sticker": f}
+            data = {
+                "user_id": chat_id,
+                "name": pack_name,
+                "title": pack_title,
+                "emojis": "🔥"
+            }
+            res = requests.post(API + "createNewStickerSet", data=data, files=files)
+            print("DEBUG create:", res.json())
+    else:
+        # افزودن استیکر جدید به پک
+        with open(sticker_path, "rb") as f:
+            files = {"png_sticker": f}
+            data = {
+                "user_id": chat_id,
+                "name": pack_name,
+                "emojis": "🔥"
+            }
+            res = requests.post(API + "addStickerToSet", data=data, files=files)
+            print("DEBUG add:", res.json())
+
+    # در نهایت ارسال استیکر
+    with open(sticker_path, "rb") as f:
+        requests.post(API + "sendSticker", data={"chat_id": chat_id}, files={"sticker": f})
+
+
+# ساخت تصویر متنی (۵۱۲x۵۱۲ PNG)
 def make_text_sticker(text, path):
-    img = Image.new("RGBA", (512, 512), (255, 255, 255, 0))  # شفاف
+    img = Image.new("RGBA", (512, 512), (255, 255, 255, 0))  # بکگراند شفاف
     draw = ImageDraw.Draw(img)
 
     font_path = os.environ.get("FONT_PATH", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
