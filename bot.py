@@ -10,6 +10,7 @@ if not BOT_TOKEN:
 
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "secret")
 APP_URL = os.environ.get("APP_URL")
+PAYMENT_URL = os.environ.get("PAYMENT_URL", "https://example.com/pay")  # لینک درگاه
 API = f"https://api.telegram.org/bot{BOT_TOKEN}/"
 
 # دیتابیس ساده
@@ -37,12 +38,15 @@ def webhook():
         if data == "free_test":
             user_data[chat_id] = {"mode": "free", "count": 0}
             send_message(chat_id, "🎁 تست رایگان فعال شد.\nلطفاً متن استیکر رو بفرست.")
+
         elif data == "premium":
-            user_data[chat_id] = {"mode": "premium", "count": 0}
-            send_message(chat_id, "⭐ بخش اشتراکی فعال شد. می‌تونی نامحدود استیکر بسازی.")
+            # ارسال لینک پرداخت به جای فعال کردن مستقیم
+            send_message(chat_id, f"💳 برای خرید اشتراک روی لینک زیر بزن:\n{PAYMENT_URL}?chat_id={chat_id}")
+
         elif data == "support":
             support_id = os.environ.get("SUPPORT_ID", "@YourSupportID")
             send_message(chat_id, f"📞 برای پشتیبانی با {support_id} در تماس باش.")
+
         elif data == "about":
             send_message(chat_id, "ℹ️ این ربات برای ساخت استیکر متنی است.\n- رایگان: ۵ بار\n- اشتراکی: نامحدود")
 
@@ -65,11 +69,11 @@ def webhook():
             show_menu(chat_id)
             return "ok"
 
-        # ساخت استیکر
+        # ساخت استیکر ساده PNG (مرحله بعدی استیکر واقعی اضافه می‌کنیم)
         sticker_path = "sticker.png"
         make_text_sticker(text, sticker_path)
 
-        # ارسال فایل PNG (ذخیره‌پذیر در تلگرام)
+        # ارسال فایل PNG
         with open(sticker_path, "rb") as f:
             requests.post(
                 API + "sendDocument",
@@ -82,14 +86,23 @@ def webhook():
     return "ok"
 
 
-# ساخت استیکر
+# کال‌بک موفق پرداخت
+@app.route("/payment/success")
+def payment_success():
+    chat_id = request.args.get("chat_id")
+    if chat_id:
+        user_data[int(chat_id)] = {"mode": "premium", "count": 0}
+        send_message(chat_id, "✅ پرداخت موفق! اشتراک نامحدودت فعال شد 🎉")
+    return "پرداخت شما با موفقیت انجام شد."
+
+
+# ساخت استیکر PNG (فعلا ساده)
 def make_text_sticker(text, path):
     img = Image.new("RGBA", (512, 512), (255, 255, 255, 0))  # شفاف
     draw = ImageDraw.Draw(img)
 
-    # فونت بزرگ‌تر (می‌تونی fonts/arial.ttf آپلود کنی کنار پروژه)
     font_path = os.environ.get("FONT_PATH", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
-    font = ImageFont.truetype(font_path, 70)  # سایز بزرگ
+    font = ImageFont.truetype(font_path, 70)
 
     bbox = draw.textbbox((0, 0), text, font=font)
     w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
