@@ -12,7 +12,7 @@ WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "secret")
 APP_URL = os.environ.get("APP_URL")
 API = f"https://api.telegram.org/bot{BOT_TOKEN}/"
 
-# دیتابیس ساده (داخل حافظه – می‌تونی بعداً Redis یا DB بذاری)
+# دیتابیس ساده
 user_data = {}
 
 app = Flask(__name__)
@@ -29,14 +29,14 @@ def webhook():
     msg = update.get("message")
     callback = update.get("callback_query")
 
-    # دکمه‌ها (Callback)
+    # دکمه‌ها
     if callback:
         chat_id = callback["message"]["chat"]["id"]
         data = callback["data"]
 
         if data == "free_test":
             user_data[chat_id] = {"mode": "free", "count": 0}
-            send_message(chat_id, "🎁 حالت تست رایگان فعال شد.\nلطفاً متن استیکر رو بفرست.")
+            send_message(chat_id, "🎁 تست رایگان فعال شد.\nلطفاً متن استیکر رو بفرست.")
         elif data == "premium":
             user_data[chat_id] = {"mode": "premium", "count": 0}
             send_message(chat_id, "⭐ بخش اشتراکی فعال شد. می‌تونی نامحدود استیکر بسازی.")
@@ -53,7 +53,6 @@ def webhook():
         chat_id = msg["chat"]["id"]
         text = msg["text"]
 
-        # اگر کاربر هنوز حالت انتخاب نکرده → منو نشون بده
         if chat_id not in user_data:
             show_menu(chat_id)
             return "ok"
@@ -61,9 +60,8 @@ def webhook():
         mode = user_data[chat_id]["mode"]
         count = user_data[chat_id]["count"]
 
-        # حالت رایگان → محدودیت ۵ بار
         if mode == "free" and count >= 5:
-            send_message(chat_id, "❌ سهمیه رایگان شما تمام شد. برای ادامه باید اشتراک بگیرید.")
+            send_message(chat_id, "❌ سهمیه رایگان تمام شد. برای ادامه باید اشتراک بخری.")
             show_menu(chat_id)
             return "ok"
 
@@ -71,11 +69,12 @@ def webhook():
         sticker_path = "sticker.png"
         make_text_sticker(text, sticker_path)
 
+        # ارسال فایل PNG (ذخیره‌پذیر در تلگرام)
         with open(sticker_path, "rb") as f:
             requests.post(
-                API + "sendSticker",
+                API + "sendDocument",
                 data={"chat_id": chat_id},
-                files={"sticker": f},
+                files={"document": f},
             )
 
         user_data[chat_id]["count"] += 1
@@ -85,11 +84,12 @@ def webhook():
 
 # ساخت استیکر
 def make_text_sticker(text, path):
-    img = Image.new("RGBA", (512, 512), (255, 255, 255, 0))
+    img = Image.new("RGBA", (512, 512), (255, 255, 255, 0))  # شفاف
     draw = ImageDraw.Draw(img)
 
-    # فونت بزرگ‌تر
-    font = ImageFont.load_default()
+    # فونت بزرگ‌تر (می‌تونی fonts/arial.ttf آپلود کنی کنار پروژه)
+    font_path = os.environ.get("FONT_PATH", "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf")
+    font = ImageFont.truetype(font_path, 70)  # سایز بزرگ
 
     bbox = draw.textbbox((0, 0), text, font=font)
     w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
