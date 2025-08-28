@@ -5,7 +5,11 @@ from PIL import Image, ImageDraw, ImageFont
 from waitress import serve
 
 # گرفتن توکن از متغیر محیطی (Railway → Variables)
-BOT_TOKEN = os.environ.get("8324626018:AAEiEd_zcpuw10s1nIWr5bryj1yyZDX0yl0")
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+
+# دیباگ: چاپ توکن
+print("DEBUG BOT_TOKEN:", repr(BOT_TOKEN))  # مقدار واقعی رو توی لاگ Railway ببین
+
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN is not set! Please add it in Railway → Variables")
 
