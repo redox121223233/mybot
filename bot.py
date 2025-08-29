@@ -147,8 +147,8 @@ def make_text_sticker(text, path):
 
     font_path = os.environ.get("FONT_PATH", "Vazir.ttf")
 
-    # پیدا کردن سایز مناسب فونت داینامیک
-    size = 250
+    # پیدا کردن سایز مناسب فونت داینامیک (حتی بزرگ‌تر)
+    size = 400
     while size > 30:
         try:
             font = ImageFont.truetype(font_path, size)
@@ -156,12 +156,21 @@ def make_text_sticker(text, path):
             font = ImageFont.load_default()
         bbox = draw.textbbox((0, 0), text, font=font)
         w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        if w <= 480 and h <= 480:
+        if w <= 500 and h <= 500:
             break
-        size -= 10
+        size -= 5
 
-    # وسط‌چین کردن متن
-    draw.text(((512 - w) / 2, (512 - h) / 2), text, fill="black", font=font)
+    # کشیدن متن با حاشیه سفید برای خوانایی بیشتر
+    x = (512 - w) / 2
+    y = (512 - h) / 2
+    outline_range = 4
+    for dx in range(-outline_range, outline_range + 1):
+        for dy in range(-outline_range, outline_range + 1):
+            if dx != 0 or dy != 0:
+                draw.text((x + dx, y + dy), text, font=font, fill="white")
+
+    # متن اصلی (سیاه)
+    draw.text((x, y), text, fill="black", font=font)
 
     img.save(path, "PNG")
 
