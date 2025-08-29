@@ -29,55 +29,57 @@ def home():
 def webhook():
     update = request.get_json(force=True, silent=True) or {}
     msg = update.get("message")
-    callback = update.get("callback_query")
 
-    # دکمه‌ها
-    if callback:
-        chat_id = callback["message"]["chat"]["id"]
-        data = callback["data"]
-
-        if data == "free_test":
-            user_data[chat_id] = {"mode": "free", "count": 0}
-            send_message(chat_id, "🎁 تست رایگان فعال شد.\nلطفاً متن استیکر رو بفرست.")
-
-        elif data == "premium":
-            send_message(chat_id, f"💳 برای خرید اشتراک روی لینک زیر بزن:\n{PAYMENT_URL}?chat_id={chat_id}")
-
-        elif data == "support":
-            support_id = os.environ.get("SUPPORT_ID", "@YourSupportID")
-            send_message(chat_id, f"📞 برای پشتیبانی با {support_id} در تماس باش.")
-
-        elif data == "about":
-            send_message(chat_id, "ℹ️ این ربات برای ساخت استیکر متنی است.\n- رایگان: ۵ بار\n- اشتراکی: نامحدود")
-
-        elif data == "mypack":
-            pack_name = f"pack{abs(chat_id)}_by_{BOT_USERNAME}"
-            pack_url = f"https://t.me/addstickers/{pack_name}"
-            send_message(chat_id, f"🗂 پک استیکرت اینجاست:\n{pack_url}")
-
-        return "ok"
-
-    # پیام کاربر
     if msg and "text" in msg:
         chat_id = msg["chat"]["id"]
         text = msg["text"]
 
-        send_message(chat_id, f"📩 متن دریافت شد: {text}")
+        # اگر کاربر /start زد → ریست شود و منوی اصلی بیاید
+        if text == "/start":
+            user_data[chat_id] = {"mode": None, "count": 0}
+            show_main_menu(chat_id)
+            return "ok"
 
+        # هندل دکمه‌های منوی اصلی (Reply Keyboard)
+        if text == "🎁 تست رایگان":
+            user_data[chat_id] = {"mode": "free", "count": 0}
+            send_message(chat_id, "🎁 تست رایگان فعال شد.\nمتن استیکر رو بفرست.")
+            return "ok"
+
+        elif text == "⭐ اشتراک":
+            send_message(chat_id, f"💳 برای خرید اشتراک روی لینک زیر بزن:\n{PAYMENT_URL}?chat_id={chat_id}")
+            return "ok"
+
+        elif text == "📂 پک من":
+            pack_name = f"pack{abs(chat_id)}_by_{BOT_USERNAME}"
+            pack_url = f"https://t.me/addstickers/{pack_name}"
+            send_message(chat_id, f"🗂 پک استیکرت اینجاست:\n{pack_url}")
+            return "ok"
+
+        elif text == "ℹ️ درباره":
+            send_message(chat_id, "ℹ️ این ربات برای ساخت استیکر متنی است.\n- رایگان: ۵ بار\n- اشتراکی: نامحدود")
+            return "ok"
+
+        elif text == "📞 پشتیبانی":
+            support_id = os.environ.get("SUPPORT_ID", "@YourSupportID")
+            send_message(chat_id, f"📞 برای پشتیبانی با {support_id} در تماس باش.")
+            return "ok"
+
+        # حالا بخش استیکر
         if chat_id not in user_data:
-            show_menu(chat_id)
+            show_main_menu(chat_id)
             return "ok"
 
         mode = user_data[chat_id].get("mode")
         count = user_data[chat_id].get("count", 0)
 
         if not mode:
-            show_menu(chat_id)
+            show_main_menu(chat_id)
             return "ok"
 
         if mode == "free" and count >= 5:
             send_message(chat_id, "❌ سهمیه رایگان تمام شد. برای ادامه باید اشتراک بخری.")
-            show_menu(chat_id)
+            show_main_menu(chat_id)
             return "ok"
 
         send_message(chat_id, "⚙️ در حال ساخت استیکر...")
@@ -171,15 +173,14 @@ def make_text_sticker(text, path):
     img.save(path, "PNG")
 
 
-def show_menu(chat_id):
+def show_main_menu(chat_id):
     keyboard = {
-        "inline_keyboard": [
-            [{"text": "🎁 تست رایگان", "callback_data": "free_test"}],
-            [{"text": "⭐ بخش اشتراکی", "callback_data": "premium"}],
-            [{"text": "📂 پک من", "callback_data": "mypack"}],
-            [{"text": "📞 پشتیبانی", "callback_data": "support"}],
-            [{"text": "ℹ️ درباره ربات", "callback_data": "about"}],
-        ]
+        "keyboard": [
+            ["🎁 تست رایگان", "⭐ اشتراک"],
+            ["📂 پک من", "ℹ️ درباره"],
+            ["📞 پشتیبانی"]
+        ],
+        "resize_keyboard": True
     }
     requests.post(API + "sendMessage", json={
         "chat_id": chat_id,
