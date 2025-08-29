@@ -154,19 +154,25 @@ def make_text_sticker(text, path, background_file_id=None):
             print("❌ Error loading background:", e)
 
     draw = ImageDraw.Draw(img)
-    font_path = os.environ.get("FONT_PATH", "Vazir.ttf")
 
-    # پیدا کردن بزرگ‌ترین سایز ممکن برای متن (کل بوم پر بشه)
+    # فونت → اول Vazir.ttf، بعد DejaVuSans-Bold
+    try:
+        font_path = os.environ.get("FONT_PATH", "Vazir.ttf")
+        font_test = ImageFont.truetype(font_path, 100)
+    except Exception:
+        font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+
+    # پیدا کردن بزرگ‌ترین سایز ممکن برای متن
     best_font = None
     w = h = 0
-    for size in range(50, 1500, 5):  # تست سایز تا 1500
+    for size in range(50, 1500, 5):  # تا خیلی بزرگ
         try:
             font = ImageFont.truetype(font_path, size)
         except Exception:
-            font = ImageFont.load_default()
+            continue
         bbox = draw.textbbox((0, 0), text, font=font)
         w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        if w < 512 and h < 512:  # فقط مطمئن بشیم از بوم بیرون نزنه
+        if w < 512 and h < 512:
             best_font = font
         else:
             break
@@ -175,15 +181,20 @@ def make_text_sticker(text, path, background_file_id=None):
     bbox = draw.textbbox((0, 0), text, font=font)
     w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
 
+    # وسط‌چین
     x = (512 - w) / 2
     y = (512 - h) / 2
+
+    # حاشیه سفید
     outline_range = 6
     for dx in range(-outline_range, outline_range + 1):
         for dy in range(-outline_range, outline_range + 1):
             if dx != 0 or dy != 0:
                 draw.text((x + dx, y + dy), text, font=font, fill="white")
 
+    # متن اصلی
     draw.text((x, y), text, fill="black", font=font)
+
     img.save(path, "PNG")
 
 def show_main_menu(chat_id):
