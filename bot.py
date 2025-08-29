@@ -156,11 +156,10 @@ def make_text_sticker(text, path, background_file_id=None):
     draw = ImageDraw.Draw(img)
     font_path = os.environ.get("FONT_PATH", "Vazir.ttf")
 
-    # پیدا کردن بزرگ‌ترین سایز ممکن
-    max_size = 500
+    # پیدا کردن بزرگ‌ترین سایز ممکن برای متن
     best_font = None
     w = h = 0
-    for size in range(30, max_size, 5):
+    for size in range(50, 520, 5):  # از فونت متوسط تا خیلی بزرگ
         try:
             font = ImageFont.truetype(font_path, size)
         except Exception:
@@ -178,7 +177,7 @@ def make_text_sticker(text, path, background_file_id=None):
 
     x = (512 - w) / 2
     y = (512 - h) / 2
-    outline_range = 4
+    outline_range = 6
     for dx in range(-outline_range, outline_range + 1):
         for dy in range(-outline_range, outline_range + 1):
             if dx != 0 or dy != 0:
