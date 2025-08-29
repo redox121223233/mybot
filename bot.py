@@ -159,15 +159,27 @@ def make_text_sticker(text, path):
     img = Image.new("RGBA", (512, 512), (255, 255, 255, 0))
     draw = ImageDraw.Draw(img)
 
+    font_path = os.environ.get("FONT_PATH", "Vazir.ttf")
+
+    # انتخاب سایز داینامیک بر اساس طول متن
+    length = len(text)
+    if length <= 3:
+        size = 200
+    elif length <= 8:
+        size = 140
+    elif length <= 15:
+        size = 100
+    else:
+        size = 70
+
     try:
-        font_path = os.environ.get("FONT_PATH", "Vazir.ttf")
-        font = ImageFont.truetype(font_path, 70)
+        font = ImageFont.truetype(font_path, size)
     except Exception:
         font = ImageFont.load_default()
 
+    # وسط‌چین کردن متن
     bbox = draw.textbbox((0, 0), text, font=font)
     w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-
     draw.text(((512 - w) / 2, (512 - h) / 2), text, fill="black", font=font)
 
     img.save(path, "PNG")
