@@ -27,8 +27,13 @@ def webhook():
     update = request.get_json(force=True, silent=True) or {}
     msg = update.get("message")
 
-    if msg and "text" in msg:
-        chat_id = msg["chat"]["id"]
+    if not msg:
+        return "ok"
+
+    chat_id = msg["chat"]["id"]
+
+    # متن
+    if "text" in msg:
         text = msg["text"]
 
         # ریست و منو
@@ -54,14 +59,6 @@ def webhook():
                 user_data[chat_id]["pack_name"] = f"{pack_name}_by_{BOT_USERNAME}"
                 user_data[chat_id]["step"] = "background"
                 send_message(chat_id, "📷 حالا یک عکس برای بکگراند استیکرت بفرست:")
-                return "ok"
-
-            if step == "background" and "photo" in msg:
-                # دریافت عکس بکگراند
-                file_id = msg["photo"][-1]["file_id"]
-                user_data[chat_id]["background"] = file_id
-                user_data[chat_id]["step"] = "text"
-                send_message(chat_id, "✍️ حالا متن استیکرت رو بفرست:")
                 return "ok"
 
             if step == "text":
@@ -93,6 +90,17 @@ def webhook():
         elif text == "📞 پشتیبانی":
             support_id = os.environ.get("SUPPORT_ID", "@YourSupportID")
             send_message(chat_id, f"📞 برای پشتیبانی با {support_id} در تماس باش.")
+            return "ok"
+
+    # عکس
+    elif "photo" in msg:
+        state = user_data.get(chat_id, {})
+        if state.get("mode") == "free" and state.get("step") == "background":
+            # دریافت عکس بکگراند
+            file_id = msg["photo"][-1]["file_id"]
+            user_data[chat_id]["background"] = file_id
+            user_data[chat_id]["step"] = "text"
+            send_message(chat_id, "✍️ حالا متن استیکرت رو بفرست:")
             return "ok"
 
     return "ok"
@@ -139,14 +147,20 @@ def make_text_sticker(text, path):
 
     font_path = os.environ.get("FONT_PATH", "Vazir.ttf")
 
-    size = 200
-    try:
-        font = ImageFont.truetype(font_path, size)
-    except Exception:
-        font = ImageFont.load_default()
+    # پیدا کردن سایز مناسب فونت داینامیک
+    size = 250
+    while size > 30:
+        try:
+            font = ImageFont.truetype(font_path, size)
+        except Exception:
+            font = ImageFont.load_default()
+        bbox = draw.textbbox((0, 0), text, font=font)
+        w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        if w <= 480 and h <= 480:
+            break
+        size -= 10
 
-    bbox = draw.textbbox((0, 0), text, font=font)
-    w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    # وسط‌چین کردن متن
     draw.text(((512 - w) / 2, (512 - h) / 2), text, fill="black", font=font)
 
     img.save(path, "PNG")
