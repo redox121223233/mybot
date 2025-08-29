@@ -3,6 +3,7 @@ from flask import Flask, request
 import requests
 from PIL import Image, ImageDraw, ImageFont
 from waitress import serve
+from io import BytesIO
 
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 if not BOT_TOKEN:
@@ -148,15 +149,18 @@ def make_text_sticker(text, path, background_file_id=None):
 
     # اگر بکگراند فرستاده شده باشه
     if background_file_id:
-        file_info = requests.get(API + f"getFile?file_id={background_file_id}").json()
-        if file_info.get("ok"):
-            file_path = file_info["result"]["file_path"]
-            file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
-            resp = requests.get(file_url)
-            if resp.status_code == 200:
-                bg = Image.open(BytesIO(resp.content)).convert("RGBA")
-                bg = bg.resize((512, 512))
-                img.paste(bg, (0, 0))
+        try:
+            file_info = requests.get(API + f"getFile?file_id={background_file_id}").json()
+            if file_info.get("ok"):
+                file_path = file_info["result"]["file_path"]
+                file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
+                resp = requests.get(file_url)
+                if resp.status_code == 200:
+                    bg = Image.open(BytesIO(resp.content)).convert("RGBA")
+                    bg = bg.resize((512, 512))
+                    img.paste(bg, (0, 0))
+        except Exception as e:
+            print("❌ Error loading background:", e)
 
     draw = ImageDraw.Draw(img)
     font_path = os.environ.get("FONT_PATH", "Vazir.ttf")
