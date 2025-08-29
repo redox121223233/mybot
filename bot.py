@@ -10,7 +10,6 @@ if not BOT_TOKEN:
 
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "secret")
 APP_URL = os.environ.get("APP_URL")
-PAYMENT_URL = os.environ.get("PAYMENT_URL", "https://example.com/pay")  # لینک درگاه
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "MyBot")  # یوزرنیم ربات (بدون @)
 API = f"https://api.telegram.org/bot{BOT_TOKEN}/"
 
@@ -19,11 +18,9 @@ user_data = {}
 
 app = Flask(__name__)
 
-
 @app.route("/")
 def home():
     return "✅ Bot is running!"
-
 
 @app.post(f"/webhook/{WEBHOOK_SECRET}")
 def webhook():
@@ -34,28 +31,63 @@ def webhook():
         chat_id = msg["chat"]["id"]
         text = msg["text"]
 
+        # ریست و منو
         if text == "/start":
-            user_data[chat_id] = {"mode": None, "count": 0}
+            user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None}
             show_main_menu(chat_id)
             return "ok"
 
+        # گزینه تست رایگان
         if text == "🎁 تست رایگان":
-            user_data[chat_id] = {"mode": "free", "count": 0}
-            send_message(chat_id, "🎁 تست رایگان فعال شد.\nمتن استیکر رو بفرست.")
+            user_data[chat_id] = {"mode": "free", "count": 0, "step": "pack_name", "pack_name": None, "background": None}
+            send_message(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:")
             return "ok"
 
-        elif text == "⭐ اشتراک":
-            send_message(chat_id, f"💳 برای خرید اشتراک روی لینک زیر بزن:\n{PAYMENT_URL}?chat_id={chat_id}")
+        # دریافت مراحل ساخت پک رایگان
+        state = user_data.get(chat_id, {})
+        if state.get("mode") == "free":
+            step = state.get("step")
+
+            if step == "pack_name":
+                # ذخیره نام پک
+                pack_name = text.replace(" ", "_")
+                user_data[chat_id]["pack_name"] = f"{pack_name}_by_{BOT_USERNAME}"
+                user_data[chat_id]["step"] = "background"
+                send_message(chat_id, "📷 حالا یک عکس برای بکگراند استیکرت بفرست:")
+                return "ok"
+
+            if step == "background" and "photo" in msg:
+                # دریافت عکس بکگراند
+                file_id = msg["photo"][-1]["file_id"]
+                user_data[chat_id]["background"] = file_id
+                user_data[chat_id]["step"] = "text"
+                send_message(chat_id, "✍️ حالا متن استیکرت رو بفرست:")
+                return "ok"
+
+            if step == "text":
+                text_sticker = text
+                send_message(chat_id, "⚙️ در حال ساخت استیکر...")
+                send_as_sticker(chat_id, text_sticker)
+                user_data[chat_id]["count"] += 1
+                send_message(chat_id, f"✅ استیکر شماره {user_data[chat_id]['count']} ساخته شد.")
+                return "ok"
+
+        # سایر گزینه‌ها
+        if text == "⭐ اشتراک":
+            send_message(chat_id, "💳 بخش اشتراک بعداً فعال خواهد شد.")
             return "ok"
 
         elif text == "📂 پک من":
-            pack_name = f"pack{abs(chat_id)}_by_{BOT_USERNAME}"
-            pack_url = f"https://t.me/addstickers/{pack_name}"
-            send_message(chat_id, f"🗂 پک استیکرت اینجاست:\n{pack_url}")
+            pack_name = user_data.get(chat_id, {}).get("pack_name")
+            if pack_name:
+                pack_url = f"https://t.me/addstickers/{pack_name}"
+                send_message(chat_id, f"🗂 پک استیکرت اینجاست:\n{pack_url}")
+            else:
+                send_message(chat_id, "❌ هنوز پکی برایت ساخته نشده.")
             return "ok"
 
         elif text == "ℹ️ درباره":
-            send_message(chat_id, "ℹ️ این ربات برای ساخت استیکر متنی است.\n- رایگان: ۵ بار\n- اشتراکی: نامحدود")
+            send_message(chat_id, "ℹ️ این ربات برای ساخت استیکر متنی است. نسخه فعلی رایگان است.")
             return "ok"
 
         elif text == "📞 پشتیبانی":
@@ -63,45 +95,13 @@ def webhook():
             send_message(chat_id, f"📞 برای پشتیبانی با {support_id} در تماس باش.")
             return "ok"
 
-        if chat_id not in user_data:
-            show_main_menu(chat_id)
-            return "ok"
-
-        mode = user_data[chat_id].get("mode")
-        count = user_data[chat_id].get("count", 0)
-
-        if not mode:
-            show_main_menu(chat_id)
-            return "ok"
-
-        if mode == "free" and count >= 5:
-            send_message(chat_id, "❌ سهمیه رایگان تمام شد. برای ادامه باید اشتراک بخری.")
-            show_main_menu(chat_id)
-            return "ok"
-
-        send_message(chat_id, "⚙️ در حال ساخت استیکر...")
-        send_as_sticker(chat_id, text)
-
-        user_data[chat_id]["count"] = count + 1
-        send_message(chat_id, f"✅ استیکر شماره {user_data[chat_id]['count']} ساخته شد.")
-
     return "ok"
-
-
-@app.route("/payment/success")
-def payment_success():
-    chat_id = request.args.get("chat_id")
-    if chat_id:
-        user_data[int(chat_id)] = {"mode": "premium", "count": 0}
-        send_message(chat_id, "✅ پرداخت موفق! اشتراک نامحدودت فعال شد 🎉")
-    return "پرداخت شما با موفقیت انجام شد."
-
 
 def send_as_sticker(chat_id, text):
     sticker_path = "sticker.png"
     make_text_sticker(text, sticker_path)
 
-    pack_name = f"pack{abs(chat_id)}_by_{BOT_USERNAME}"
+    pack_name = user_data[chat_id].get("pack_name", f"pack{abs(chat_id)}_by_{BOT_USERNAME}")
     pack_title = f"Sticker Pack {chat_id}"
 
     resp = requests.get(API + f"getStickerSet?name={pack_name}").json()
@@ -133,37 +133,23 @@ def send_as_sticker(chat_id, text):
             file_id = stickers[-1]["file_id"]
             requests.post(API + "sendSticker", data={"chat_id": chat_id, "sticker": file_id})
 
-
 def make_text_sticker(text, path):
     img = Image.new("RGBA", (512, 512), (255, 255, 255, 0))
     draw = ImageDraw.Draw(img)
 
     font_path = os.environ.get("FONT_PATH", "Vazir.ttf")
 
-    # پیدا کردن بیشترین اندازه فونت که متن جا بشود
-    max_size = 300
-    min_size = 50
-    size = max_size
-    while size > min_size:
-        try:
-            font = ImageFont.truetype(font_path, size)
-        except Exception:
-            font = ImageFont.load_default()
-            break
+    size = 200
+    try:
+        font = ImageFont.truetype(font_path, size)
+    except Exception:
+        font = ImageFont.load_default()
 
-        bbox = draw.textbbox((0, 0), text, font=font)
-        w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        if w <= 480 and h <= 480:
-            break
-        size -= 10
-
-    # مرکزچین کردن متن
     bbox = draw.textbbox((0, 0), text, font=font)
     w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
     draw.text(((512 - w) / 2, (512 - h) / 2), text, fill="black", font=font)
 
     img.save(path, "PNG")
-
 
 def show_main_menu(chat_id):
     keyboard = {
@@ -180,10 +166,8 @@ def show_main_menu(chat_id):
         "reply_markup": keyboard
     })
 
-
 def send_message(chat_id, text):
     requests.post(API + "sendMessage", json={"chat_id": chat_id, "text": text})
-
 
 if __name__ == "__main__":
     if APP_URL:
