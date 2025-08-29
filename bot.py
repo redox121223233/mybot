@@ -34,13 +34,11 @@ def webhook():
         chat_id = msg["chat"]["id"]
         text = msg["text"]
 
-        # اگر کاربر /start زد → ریست شود و منوی اصلی بیاید
         if text == "/start":
             user_data[chat_id] = {"mode": None, "count": 0}
             show_main_menu(chat_id)
             return "ok"
 
-        # هندل دکمه‌های منوی اصلی (Reply Keyboard)
         if text == "🎁 تست رایگان":
             user_data[chat_id] = {"mode": "free", "count": 0}
             send_message(chat_id, "🎁 تست رایگان فعال شد.\nمتن استیکر رو بفرست.")
@@ -65,7 +63,6 @@ def webhook():
             send_message(chat_id, f"📞 برای پشتیبانی با {support_id} در تماس باش.")
             return "ok"
 
-        # حالا بخش استیکر
         if chat_id not in user_data:
             show_main_menu(chat_id)
             return "ok"
@@ -107,52 +104,34 @@ def send_as_sticker(chat_id, text):
     pack_name = f"pack{abs(chat_id)}_by_{BOT_USERNAME}"
     pack_title = f"Sticker Pack {chat_id}"
 
-    try:
-        resp = requests.get(API + f"getStickerSet?name={pack_name}", timeout=15).json()
-    except Exception as e:
-        send_message(chat_id, f"❌ خطا در getStickerSet: {e}")
-        return
+    resp = requests.get(API + f"getStickerSet?name={pack_name}").json()
 
     if not resp.get("ok"):
-        try:
-            with open(sticker_path, "rb") as f:
-                files = {"png_sticker": f}
-                data = {
-                    "user_id": chat_id,
-                    "name": pack_name,
-                    "title": pack_title,
-                    "emojis": "🔥"
-                }
-                res = requests.post(API + "createNewStickerSet", data=data, files=files, timeout=20)
-                send_message(chat_id, f"📤 createNewStickerSet پاسخ: {res.text}")
-        except Exception as e:
-            send_message(chat_id, f"❌ خطای شبکه createNewStickerSet: {e}")
-            return
+        with open(sticker_path, "rb") as f:
+            files = {"png_sticker": f}
+            data = {
+                "user_id": chat_id,
+                "name": pack_name,
+                "title": pack_title,
+                "emojis": "🔥"
+            }
+            requests.post(API + "createNewStickerSet", data=data, files=files)
     else:
-        try:
-            with open(sticker_path, "rb") as f:
-                files = {"png_sticker": f}
-                data = {
-                    "user_id": chat_id,
-                    "name": pack_name,
-                    "emojis": "🔥"
-                }
-                res = requests.post(API + "addStickerToSet", data=data, files=files, timeout=20)
-                send_message(chat_id, f"📤 addStickerToSet پاسخ: {res.text}")
-        except Exception as e:
-            send_message(chat_id, f"❌ خطای شبکه addStickerToSet: {e}")
-            return
+        with open(sticker_path, "rb") as f:
+            files = {"png_sticker": f}
+            data = {
+                "user_id": chat_id,
+                "name": pack_name,
+                "emojis": "🔥"
+            }
+            requests.post(API + "addStickerToSet", data=data, files=files)
 
-    try:
-        final = requests.get(API + f"getStickerSet?name={pack_name}", timeout=15).json()
-        send_message(chat_id, f"📤 getStickerSet پاسخ: {final}")
-        if final.get("ok"):
-            stickers = final["result"]["stickers"]
-            if stickers:
-                file_id = stickers[-1]["file_id"]
-                requests.post(API + "sendSticker", data={"chat_id": chat_id, "sticker": file_id})
-    except Exception as e:
-        send_message(chat_id, f"❌ خطا در getStickerSet نهایی: {e}")
+    final = requests.get(API + f"getStickerSet?name={pack_name}").json()
+    if final.get("ok"):
+        stickers = final["result"]["stickers"]
+        if stickers:
+            file_id = stickers[-1]["file_id"]
+            requests.post(API + "sendSticker", data={"chat_id": chat_id, "sticker": file_id})
 
 
 def make_text_sticker(text, path):
@@ -161,23 +140,24 @@ def make_text_sticker(text, path):
 
     font_path = os.environ.get("FONT_PATH", "Vazir.ttf")
 
-    # انتخاب سایز داینامیک بر اساس طول متن
-    length = len(text)
-    if length <= 3:
-        size = 200
-    elif length <= 8:
-        size = 140
-    elif length <= 15:
-        size = 100
-    else:
-        size = 70
+    # پیدا کردن بیشترین اندازه فونت که متن جا بشود
+    max_size = 300
+    min_size = 50
+    size = max_size
+    while size > min_size:
+        try:
+            font = ImageFont.truetype(font_path, size)
+        except Exception:
+            font = ImageFont.load_default()
+            break
 
-    try:
-        font = ImageFont.truetype(font_path, size)
-    except Exception:
-        font = ImageFont.load_default()
+        bbox = draw.textbbox((0, 0), text, font=font)
+        w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        if w <= 480 and h <= 480:
+            break
+        size -= 10
 
-    # وسط‌چین کردن متن
+    # مرکزچین کردن متن
     bbox = draw.textbbox((0, 0), text, font=font)
     w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
     draw.text(((512 - w) / 2, (512 - h) / 2), text, fill="black", font=font)
@@ -202,10 +182,7 @@ def show_main_menu(chat_id):
 
 
 def send_message(chat_id, text):
-    try:
-        requests.post(API + "sendMessage", json={"chat_id": chat_id, "text": text}, timeout=10)
-    except Exception as e:
-        print("❌ خطا در send_message:", e)
+    requests.post(API + "sendMessage", json={"chat_id": chat_id, "text": text})
 
 
 if __name__ == "__main__":
