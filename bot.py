@@ -156,17 +156,17 @@ def make_text_sticker(text, path, background_file_id=None):
     draw = ImageDraw.Draw(img)
     font_path = os.environ.get("FONT_PATH", "Vazir.ttf")
 
-    # پیدا کردن بزرگ‌ترین سایز ممکن برای متن
+    # پیدا کردن بزرگ‌ترین سایز ممکن برای متن (کل بوم پر بشه)
     best_font = None
     w = h = 0
-    for size in range(50, 520, 5):  # از فونت متوسط تا خیلی بزرگ
+    for size in range(50, 1500, 5):  # تست سایز تا 1500
         try:
             font = ImageFont.truetype(font_path, size)
         except Exception:
             font = ImageFont.load_default()
         bbox = draw.textbbox((0, 0), text, font=font)
         w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        if w < 500 and h < 500:
+        if w < 512 and h < 512:  # فقط مطمئن بشیم از بوم بیرون نزنه
             best_font = font
         else:
             break
@@ -184,7 +184,6 @@ def make_text_sticker(text, path, background_file_id=None):
                 draw.text((x + dx, y + dy), text, font=font, fill="white")
 
     draw.text((x, y), text, fill="black", font=font)
-
     img.save(path, "PNG")
 
 def show_main_menu(chat_id):
