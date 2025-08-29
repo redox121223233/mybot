@@ -37,25 +37,21 @@ def webhook():
     if "text" in msg:
         text = msg["text"]
 
-        # ریست و منو
         if text == "/start":
             user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None}
             show_main_menu(chat_id)
             return "ok"
 
-        # گزینه تست رایگان
         if text == "🎁 تست رایگان":
             user_data[chat_id] = {"mode": "free", "count": 0, "step": "pack_name", "pack_name": None, "background": None}
             send_message(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:")
             return "ok"
 
-        # دریافت مراحل ساخت پک رایگان
         state = user_data.get(chat_id, {})
         if state.get("mode") == "free":
             step = state.get("step")
 
             if step == "pack_name":
-                # ذخیره نام پک
                 pack_name = text.replace(" ", "_")
                 user_data[chat_id]["pack_name"] = f"{pack_name}_by_{BOT_USERNAME}"
                 user_data[chat_id]["step"] = "background"
@@ -71,7 +67,6 @@ def webhook():
                 send_message(chat_id, f"✅ استیکر شماره {user_data[chat_id]['count']} ساخته شد.")
                 return "ok"
 
-        # سایر گزینه‌ها
         if text == "⭐ اشتراک":
             send_message(chat_id, "💳 بخش اشتراک بعداً فعال خواهد شد.")
             return "ok"
@@ -94,11 +89,9 @@ def webhook():
             send_message(chat_id, f"📞 برای پشتیبانی با {support_id} در تماس باش.")
             return "ok"
 
-    # عکس
     elif "photo" in msg:
         state = user_data.get(chat_id, {})
         if state.get("mode") == "free" and state.get("step") == "background":
-            # دریافت عکس بکگراند
             file_id = msg["photo"][-1]["file_id"]
             user_data[chat_id]["background"] = file_id
             user_data[chat_id]["step"] = "text"
@@ -144,10 +137,8 @@ def send_as_sticker(chat_id, text, background_file_id=None):
             requests.post(API + "sendSticker", data={"chat_id": chat_id, "sticker": file_id})
 
 def make_text_sticker(text, path, background_file_id=None):
-    # ساخت بوم اولیه
     img = Image.new("RGBA", (512, 512), (255, 255, 255, 0))
 
-    # اگر بکگراند فرستاده شده باشه
     if background_file_id:
         try:
             file_info = requests.get(API + f"getFile?file_id={background_file_id}").json()
@@ -165,20 +156,26 @@ def make_text_sticker(text, path, background_file_id=None):
     draw = ImageDraw.Draw(img)
     font_path = os.environ.get("FONT_PATH", "Vazir.ttf")
 
-    # پیدا کردن سایز مناسب فونت داینامیک (حتی بزرگ‌تر)
-    size = 400
-    while size > 30:
+    # پیدا کردن بزرگ‌ترین سایز ممکن
+    max_size = 500
+    best_font = None
+    w = h = 0
+    for size in range(30, max_size, 5):
         try:
             font = ImageFont.truetype(font_path, size)
         except Exception:
             font = ImageFont.load_default()
         bbox = draw.textbbox((0, 0), text, font=font)
         w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        if w <= 500 and h <= 500:
+        if w < 500 and h < 500:
+            best_font = font
+        else:
             break
-        size -= 5
 
-    # کشیدن متن با حاشیه سفید برای خوانایی بیشتر
+    font = best_font
+    bbox = draw.textbbox((0, 0), text, font=font)
+    w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+
     x = (512 - w) / 2
     y = (512 - h) / 2
     outline_range = 4
@@ -187,7 +184,6 @@ def make_text_sticker(text, path, background_file_id=None):
             if dx != 0 or dy != 0:
                 draw.text((x + dx, y + dy), text, font=font, fill="white")
 
-    # متن اصلی (سیاه)
     draw.text((x, y), text, fill="black", font=font)
 
     img.save(path, "PNG")
