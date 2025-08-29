@@ -165,7 +165,7 @@ def make_text_sticker(text, path, background_file_id=None):
     # پیدا کردن بزرگ‌ترین سایز ممکن برای متن
     best_font = None
     w = h = 0
-    for size in range(50, 1500, 5):  # تا خیلی بزرگ
+    for size in range(500, 1500, 50):  # تا خیلی بزرگ
         try:
             font = ImageFont.truetype(font_path, size)
         except Exception:
