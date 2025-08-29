@@ -51,7 +51,7 @@ def webhook():
             send_message(chat_id, "ℹ️ این ربات برای ساخت استیکر متنی است.\n- رایگان: ۵ بار\n- اشتراکی: نامحدود")
 
         elif data == "mypack":
-            pack_name = f"pack_{chat_id}_by_{BOT_USERNAME}"
+            pack_name = f"pack{abs(chat_id)}_by_{BOT_USERNAME}"
             pack_url = f"https://t.me/addstickers/{pack_name}"
             send_message(chat_id, f"🗂 پک استیکرت اینجاست:\n{pack_url}")
 
@@ -102,7 +102,7 @@ def send_as_sticker(chat_id, text):
     sticker_path = "sticker.png"
     make_text_sticker(text, sticker_path)
 
-    pack_name = f"pack_{chat_id}_by_{BOT_USERNAME}"
+    pack_name = f"pack{abs(chat_id)}_by_{BOT_USERNAME}"
     pack_title = f"Sticker Pack {chat_id}"
 
     try:
