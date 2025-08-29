@@ -64,7 +64,8 @@ def webhook():
             if step == "text":
                 text_sticker = text
                 send_message(chat_id, "⚙️ در حال ساخت استیکر...")
-                send_as_sticker(chat_id, text_sticker)
+                background_file_id = user_data[chat_id].get("background")
+                send_as_sticker(chat_id, text_sticker, background_file_id)
                 user_data[chat_id]["count"] += 1
                 send_message(chat_id, f"✅ استیکر شماره {user_data[chat_id]['count']} ساخته شد.")
                 return "ok"
@@ -105,9 +106,9 @@ def webhook():
 
     return "ok"
 
-def send_as_sticker(chat_id, text):
+def send_as_sticker(chat_id, text, background_file_id=None):
     sticker_path = "sticker.png"
-    make_text_sticker(text, sticker_path)
+    make_text_sticker(text, sticker_path, background_file_id)
 
     pack_name = user_data[chat_id].get("pack_name", f"pack{abs(chat_id)}_by_{BOT_USERNAME}")
     pack_title = f"Sticker Pack {chat_id}"
@@ -141,10 +142,23 @@ def send_as_sticker(chat_id, text):
             file_id = stickers[-1]["file_id"]
             requests.post(API + "sendSticker", data={"chat_id": chat_id, "sticker": file_id})
 
-def make_text_sticker(text, path):
+def make_text_sticker(text, path, background_file_id=None):
+    # ساخت بوم اولیه
     img = Image.new("RGBA", (512, 512), (255, 255, 255, 0))
-    draw = ImageDraw.Draw(img)
 
+    # اگر بکگراند فرستاده شده باشه
+    if background_file_id:
+        file_info = requests.get(API + f"getFile?file_id={background_file_id}").json()
+        if file_info.get("ok"):
+            file_path = file_info["result"]["file_path"]
+            file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
+            resp = requests.get(file_url)
+            if resp.status_code == 200:
+                bg = Image.open(BytesIO(resp.content)).convert("RGBA")
+                bg = bg.resize((512, 512))
+                img.paste(bg, (0, 0))
+
+    draw = ImageDraw.Draw(img)
     font_path = os.environ.get("FONT_PATH", "Vazir.ttf")
 
     # پیدا کردن سایز مناسب فونت داینامیک (حتی بزرگ‌تر)
