@@ -1,5 +1,5 @@
-flask
-requests
-pillow
-python-telegram-bot
-waitress
+flask==2.0.1
+requests==2.26.0
+pillow==9.0.0
+waitress==2.0.0
+python-dotenv==0.19.1
