@@ -1,2 +1,0 @@
-font_path = os.environ.get("FONT_PATH", "Vazir.ttf")
-font = ImageFont.truetype(font_path, 70)
