@@ -116,7 +116,7 @@ def webhook():
     return "ok"
 
 def send_as_sticker(chat_id, text, background_file_id=None):
-    sticker_path = "/images/photo1756588391.jpg"
+    sticker_path = "sticker.png"
     ok = make_text_sticker(text, sticker_path, background_file_id)
     if not ok:
         send_message(chat_id, "❌ خطا در ساخت استیکر")
@@ -157,70 +157,128 @@ def send_as_sticker(chat_id, text, background_file_id=None):
             file_id = stickers[-1]["file_id"]
             requests.post(API + "sendSticker", data={"chat_id": chat_id, "sticker": file_id})
 
+def get_font(size):
+    """بارگذاری فونت با fallback برای فونت‌های مختلف"""
+    font_paths = [
+        "Vazir.ttf",
+        "NotoSans-Regular.ttf", 
+        "arial.ttf",
+        "DejaVuSans.ttf",
+        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+        "/System/Library/Fonts/Arial.ttf",
+        "/Windows/Fonts/arial.ttf"
+    ]
+    
+    for font_path in font_paths:
+        try:
+            return ImageFont.truetype(font_path, size)
+        except (OSError, IOError):
+            continue
+    
+    # اگر هیچ فونت پیدا نشد، از فونت پیش‌فرض استفاده کن
+    try:
+        return ImageFont.load_default()
+    except:
+        # آخرین راه حل: ایجاد فونت ساده
+        return None
+
 def make_text_sticker(text, path, background_file_id=None):
     try:
+        logger.info(f"Creating sticker with text: {text}")
+        
+        # ایجاد تصویر پایه
         img = Image.new("RGBA", (512, 512), (255, 255, 255, 0))
 
         # 📌 اگر بکگراند هست → جایگزین کن
         if background_file_id:
-            file_info = requests.get(API + f"getFile?file_id={background_file_id}").json()
-            if file_info.get("ok"):
-                file_path = file_info["result"]["file_path"]
-                file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
-                resp = requests.get(file_url)
-                if resp.status_code == 200:
-                    bg = Image.open(BytesIO(resp.content)).convert("RGBA")
-                    bg = bg.resize((512, 512))
-                    img.paste(bg, (0, 0))
+            try:
+                file_info = requests.get(API + f"getFile?file_id={background_file_id}").json()
+                if file_info.get("ok"):
+                    file_path = file_info["result"]["file_path"]
+                    file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
+                    resp = requests.get(file_url)
+                    if resp.status_code == 200:
+                        bg = Image.open(BytesIO(resp.content)).convert("RGBA")
+                        bg = bg.resize((512, 512))
+                        img.paste(bg, (0, 0))
+                        logger.info("Background image loaded successfully")
+            except Exception as e:
+                logger.error(f"Error loading background: {e}")
 
         draw = ImageDraw.Draw(img)
-        font_path = "Vazir.ttf"  # فونت مناسب فارسی
         
-        # 📌 سایز فونت بزرگتر - از 240 به 300 پیکسل
+        # 📌 بارگذاری فونت با fallback
         initial_font_size = 300
-        try:
-            font = ImageFont.truetype(font_path, initial_font_size)
-        except OSError:
-            # اگر فونت فارسی پیدا نشد، از فونت پیش‌فرض با سایز بزرگ استفاده کن
+        font = get_font(initial_font_size)
+        
+        if font is None:
+            logger.error("No font could be loaded, using basic text rendering")
+            # استفاده از فونت پیش‌فرض PIL
             font = ImageFont.load_default()
 
         # محاسبه اندازه متن
-        bbox = draw.textbbox((0, 0), text, font=font)
-        w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        try:
+            bbox = draw.textbbox((0, 0), text, font=font)
+            w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        except:
+            # اگر textbbox کار نکرد، از textsize استفاده کن
+            try:
+                w, h = draw.textsize(text, font=font)
+            except:
+                # آخرین راه حل: تخمین سایز
+                w, h = len(text) * 20, 30
         
-        # تنظیم خودکار سایز فونت برای جا شدن در استیکر
+        # تنظیم خودکار سایز فونت
         font_size = initial_font_size
-        max_width = 450  # حداکثر عرض (با حاشیه 31 پیکسل از هر طرف)
-        max_height = 450  # حداکثر ارتفاع
+        max_width = 450
+        max_height = 450
         
         while (w > max_width or h > max_height) and font_size > 60:
             font_size -= 15
-            try:
-                font = ImageFont.truetype(font_path, font_size)
-            except OSError:
+            font = get_font(font_size)
+            if font is None:
                 font = ImageFont.load_default()
-            bbox = draw.textbbox((0, 0), text, font=font)
-            w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+                break
+            
+            try:
+                bbox = draw.textbbox((0, 0), text, font=font)
+                w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            except:
+                try:
+                    w, h = draw.textsize(text, font=font)
+                except:
+                    w, h = len(text) * (font_size // 15), font_size
         
         # مرکز کردن متن
         x = (512 - w) / 2
         y = (512 - h) / 2
 
-        # حاشیه سفید ضخیم برای خوانایی عالی
-        outline_thickness = 20  # ضخامت حاشیه افزایش یافت
+        # حاشیه سفید برای خوانایی
+        outline_thickness = 20
         
-        # ایجاد حاشیه با کیفیت بالا
+        # ایجاد حاشیه
         for dx in range(-outline_thickness, outline_thickness + 1, 3):
             for dy in range(-outline_thickness, outline_thickness + 1, 3):
                 distance = (dx*dx + dy*dy) ** 0.5
                 if distance <= outline_thickness:
-                    draw.text((x + dx, y + dy), text, font=font, fill="white")
+                    try:
+                        draw.text((x + dx, y + dy), text, font=font, fill="white")
+                    except:
+                        pass
 
-        # متن اصلی با رنگ مشکی پررنگ
-        draw.text((x, y), text, fill="#000000", font=font)
+        # متن اصلی
+        try:
+            draw.text((x, y), text, fill="#000000", font=font)
+        except Exception as e:
+            logger.error(f"Error drawing main text: {e}")
+            # fallback: رسم متن بدون فونت خاص
+            draw.text((x, y), text, fill="#000000")
 
+        # ذخیره تصویر
         img.save(path, "PNG")
+        logger.info(f"Sticker saved successfully to {path}")
         return True
+        
     except Exception as e:
         logger.error(f"make_text_sticker error: {e}")
         return False
