@@ -157,34 +157,38 @@ def make_text_sticker(text, path, background_file_id=None):
 
         draw = ImageDraw.Draw(img)
 
-        # سایز متن دینامیک
-        font_size = 800
+        # 📌 فونت رو از خیلی بزرگ شروع می‌کنیم
+        font_size = 1000
         font = get_font(font_size)
         w, h = draw.textbbox((0, 0), text, font=font)[2:]
-        while (w > 480 or h > 480) and font_size > 100:
-            font_size -= 20
+        # کم می‌کنیم تا جا بشه تو 512×512
+        while (w > 500 or h > 500) and font_size > 50:
+            font_size -= 10
             font = get_font(font_size)
             w, h = draw.textbbox((0, 0), text, font=font)[2:]
-        
+
         x = (512 - w) / 2
         y = (512 - h) / 2
 
-        outline_thickness = max(6, font_size // 12)
+        # 📌 ضخامت outline کوچیک‌تر از قبل
+        outline_thickness = max(2, font_size // 20)
 
         # حاشیه سفید
-        for dx in range(-outline_thickness, outline_thickness+1, 2):
-            for dy in range(-outline_thickness, outline_thickness+1, 2):
-                draw.text((x+dx, y+dy), text, font=font, fill="white")
+        for dx in range(-outline_thickness, outline_thickness + 1):
+            for dy in range(-outline_thickness, outline_thickness + 1):
+                if dx != 0 or dy != 0:
+                    draw.text((x+dx, y+dy), text, font=font, fill="white")
 
         # متن اصلی
         draw.text((x, y), text, font=font, fill="black")
 
         img.save(path, "PNG")
-        logger.info(f"✅ Sticker saved with font_size={font_size}, outline={outline_thickness}")
+        logger.info(f"✅ Sticker saved with font_size={font_size}")
         return True
     except Exception as e:
         logger.error(f"make_text_sticker error: {e}")
         return False
+
 
 def send_as_sticker(chat_id, text, background_file_id=None):
     sticker_path = "sticker.png"
