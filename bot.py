@@ -116,7 +116,7 @@ def webhook():
     return "ok"
 
 def send_as_sticker(chat_id, text, background_file_id=None):
-    sticker_path = "sticker.png"
+    sticker_path = "/images/photo1756588391.jpg"
     ok = make_text_sticker(text, sticker_path, background_file_id)
     if not ok:
         send_message(chat_id, "❌ خطا در ساخت استیکر")
@@ -176,43 +176,48 @@ def make_text_sticker(text, path, background_file_id=None):
         draw = ImageDraw.Draw(img)
         font_path = "Vazir.ttf"  # فونت مناسب فارسی
         
-        # 📌 سایز فونت بزرگتر شده - از 180 به 240
+        # 📌 سایز فونت بزرگتر - از 240 به 300 پیکسل
+        initial_font_size = 300
         try:
-            font = ImageFont.truetype(font_path, 240)  # سایز بزرگ‌تر برای متن
+            font = ImageFont.truetype(font_path, initial_font_size)
         except OSError:
             # اگر فونت فارسی پیدا نشد، از فونت پیش‌فرض با سایز بزرگ استفاده کن
             font = ImageFont.load_default()
 
-        # اندازه متن را محاسبه کن
+        # محاسبه اندازه متن
         bbox = draw.textbbox((0, 0), text, font=font)
         w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
         
-        # اگر متن خیلی بزرگ شد، سایز فونت را کاهش بده
-        if w > 480 or h > 480:  # حاشیه 16 پیکسل از هر طرف
-            # سایز فونت را تا جایی کاهش بده که متن جا بشه
-            font_size = 240
-            while (w > 480 or h > 480) and font_size > 50:
-                font_size -= 10
-                try:
-                    font = ImageFont.truetype(font_path, font_size)
-                except OSError:
-                    font = ImageFont.load_default()
-                bbox = draw.textbbox((0, 0), text, font=font)
-                w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        # تنظیم خودکار سایز فونت برای جا شدن در استیکر
+        font_size = initial_font_size
+        max_width = 450  # حداکثر عرض (با حاشیه 31 پیکسل از هر طرف)
+        max_height = 450  # حداکثر ارتفاع
+        
+        while (w > max_width or h > max_height) and font_size > 60:
+            font_size -= 15
+            try:
+                font = ImageFont.truetype(font_path, font_size)
+            except OSError:
+                font = ImageFont.load_default()
+            bbox = draw.textbbox((0, 0), text, font=font)
+            w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
         
         # مرکز کردن متن
         x = (512 - w) / 2
         y = (512 - h) / 2
 
-        # حاشیه سفید ضخیم‌تر برای خوانایی بهتر
-        outline_range = 15  # از 12 به 15 افزایش یافت
-        for dx in range(-outline_range, outline_range + 1, 2):
-            for dy in range(-outline_range, outline_range + 1, 2):
-                if dx*dx + dy*dy <= outline_range*outline_range:
+        # حاشیه سفید ضخیم برای خوانایی عالی
+        outline_thickness = 20  # ضخامت حاشیه افزایش یافت
+        
+        # ایجاد حاشیه با کیفیت بالا
+        for dx in range(-outline_thickness, outline_thickness + 1, 3):
+            for dy in range(-outline_thickness, outline_thickness + 1, 3):
+                distance = (dx*dx + dy*dy) ** 0.5
+                if distance <= outline_thickness:
                     draw.text((x + dx, y + dy), text, font=font, fill="white")
 
-        # متن اصلی با رنگ مشکی
-        draw.text((x, y), text, fill="black", font=font)
+        # متن اصلی با رنگ مشکی پررنگ
+        draw.text((x, y), text, fill="#000000", font=font)
 
         img.save(path, "PNG")
         return True
