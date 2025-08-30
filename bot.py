@@ -154,13 +154,7 @@ def make_text_sticker(text, path, background_file_id=None):
             print("❌ Error loading background:", e)
 
     draw = ImageDraw.Draw(img)
-    font_path = os.environ.get("FONT_PATH", "Vazir.ttf")
-
-    # استفاده از فونت Vazir (اگر نباشد از DejaVuSans-Bold استفاده می‌کنیم)
-    try:
-        font_test = ImageFont.truetype(font_path, 100)
-    except Exception:
-        font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"  # فقط فونت DejaVuSans-Bold
 
     best_font = None
     w = h = 0
