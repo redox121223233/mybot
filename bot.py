@@ -207,8 +207,8 @@ def make_text_sticker(text, path, background_file_id=None):
 
         draw = ImageDraw.Draw(img)
         
-        # 📌 سایز فونت بسیار بزرگ - 600 پیکسل!
-        initial_font_size = 600
+        # 📌 سایز فونت حداکثری - 1000 پیکسل! (بزرگترین ممکن)
+        initial_font_size = 1000
         font = get_font(initial_font_size)
         
         if font is None:
@@ -226,15 +226,15 @@ def make_text_sticker(text, path, background_file_id=None):
                 w, h = draw.textsize(text, font=font)
             except:
                 # آخرین راه حل: تخمین سایز
-                w, h = len(text) * 35, 60
+                w, h = len(text) * 50, 100
         
-        # تنظیم خودکار سایز فونت - تقریباً تمام فضا را پر کند
+        # تنظیم خودکار سایز فونت - حداکثر فضای ممکن
         font_size = initial_font_size
-        max_width = 500  # تقریباً تمام عرض استیکر (فقط 6 پیکسل حاشیه)
-        max_height = 500  # تقریباً تمام ارتفاع استیکر
+        max_width = 510  # تقریباً کل عرض استیکر (فقط 1 پیکسل حاشیه)
+        max_height = 510  # تقریباً کل ارتفاع استیکر
         
-        while (w > max_width or h > max_height) and font_size > 120:  # حداقل سایز 120 پیکسل
-            font_size -= 8  # کاهش آرام‌تر
+        while (w > max_width or h > max_height) and font_size > 200:  # حداقل سایز 200 پیکسل
+            font_size -= 5  # کاهش خیلی آرام
             font = get_font(font_size)
             if font is None:
                 font = ImageFont.load_default()
@@ -253,11 +253,11 @@ def make_text_sticker(text, path, background_file_id=None):
         x = (512 - w) / 2
         y = (512 - h) / 2
 
-        # حاشیه سفید بسیار ضخیم برای خوانایی فوق‌العاده
-        outline_thickness = 30  # از 25 به 30 افزایش یافت
+        # حاشیه سفید فوق‌العاده ضخیم برای خوانایی مطلق
+        outline_thickness = 40  # از 30 به 40 افزایش یافت - ضخیم‌ترین ممکن
         
-        # ایجاد حاشیه با کیفیت فوق‌العاده
-        for dx in range(-outline_thickness, outline_thickness + 1, 1):  # گام 1 برای کیفیت بالا
+        # ایجاد حاشیه با حداکثر کیفیت
+        for dx in range(-outline_thickness, outline_thickness + 1, 1):
             for dy in range(-outline_thickness, outline_thickness + 1, 1):
                 distance = (dx*dx + dy*dy) ** 0.5
                 if distance <= outline_thickness:
@@ -266,7 +266,7 @@ def make_text_sticker(text, path, background_file_id=None):
                     except:
                         pass
 
-        # متن اصلی با رنگ مشکی پررنگ
+        # متن اصلی با رنگ مشکی فوق‌پررنگ
         try:
             draw.text((x, y), text, fill="#000000", font=font)
         except Exception as e:
@@ -276,7 +276,7 @@ def make_text_sticker(text, path, background_file_id=None):
 
         # ذخیره تصویر
         img.save(path, "PNG")
-        logger.info(f"Sticker saved successfully to {path}")
+        logger.info(f"Sticker saved successfully to {path} with font size: {font_size}")
         return True
         
     except Exception as e:
