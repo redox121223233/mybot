@@ -207,8 +207,8 @@ def make_text_sticker(text, path, background_file_id=None):
 
         draw = ImageDraw.Draw(img)
         
-        # 📌 بارگذاری فونت با fallback
-        initial_font_size = 300
+        # 📌 سایز فونت بسیار بزرگتر - از 300 به 400 پیکسل
+        initial_font_size = 400
         font = get_font(initial_font_size)
         
         if font is None:
@@ -226,15 +226,15 @@ def make_text_sticker(text, path, background_file_id=None):
                 w, h = draw.textsize(text, font=font)
             except:
                 # آخرین راه حل: تخمین سایز
-                w, h = len(text) * 20, 30
+                w, h = len(text) * 25, 40
         
-        # تنظیم خودکار سایز فونت
+        # تنظیم خودکار سایز فونت - حداکثر فضای بیشتری اشغال کند
         font_size = initial_font_size
-        max_width = 450
-        max_height = 450
+        max_width = 480  # از 450 به 480 افزایش یافت (فقط 16 پیکسل حاشیه از هر طرف)
+        max_height = 480  # از 450 به 480 افزایش یافت
         
-        while (w > max_width or h > max_height) and font_size > 60:
-            font_size -= 15
+        while (w > max_width or h > max_height) and font_size > 80:  # حداقل سایز از 60 به 80 افزایش یافت
+            font_size -= 10  # کاهش تدریجی‌تر (از 15 به 10)
             font = get_font(font_size)
             if font is None:
                 font = ImageFont.load_default()
@@ -253,12 +253,12 @@ def make_text_sticker(text, path, background_file_id=None):
         x = (512 - w) / 2
         y = (512 - h) / 2
 
-        # حاشیه سفید برای خوانایی
-        outline_thickness = 20
+        # حاشیه سفید ضخیم‌تر برای خوانایی عالی
+        outline_thickness = 25  # از 20 به 25 افزایش یافت
         
-        # ایجاد حاشیه
-        for dx in range(-outline_thickness, outline_thickness + 1, 3):
-            for dy in range(-outline_thickness, outline_thickness + 1, 3):
+        # ایجاد حاشیه با کیفیت بالا
+        for dx in range(-outline_thickness, outline_thickness + 1, 2):  # گام کوچکتر برای کیفیت بهتر
+            for dy in range(-outline_thickness, outline_thickness + 1, 2):
                 distance = (dx*dx + dy*dy) ** 0.5
                 if distance <= outline_thickness:
                     try:
@@ -266,7 +266,7 @@ def make_text_sticker(text, path, background_file_id=None):
                     except:
                         pass
 
-        # متن اصلی
+        # متن اصلی با رنگ مشکی پررنگ
         try:
             draw.text((x, y), text, fill="#000000", font=font)
         except Exception as e:
