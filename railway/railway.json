@@ -2,11 +2,11 @@
 {
   "build": {
     "builder": "NIXPACKS",
-    "buildCommand": "pip install -r requirements.txt"
+    "buildCommand": "apt-get update && apt-get install -y zlib1g-dev libjpeg-dev && pip install -r requirements.txt"
   },
   "deploy": {
-    "startCommand": "python bot_fixed.py",
-    "healthcheckPath": "/",
+    "startCommand": "python bot_reliable.py",
+    "healthcheckPath": "/ping",
     "healthcheckTimeout": 100,
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 10
