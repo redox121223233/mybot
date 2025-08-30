@@ -146,34 +146,43 @@ def make_text_sticker(text, path, background_file_id=None):
         img = Image.new("RGBA", (512, 512), (255, 255, 255, 0))
 
         draw = ImageDraw.Draw(img)
-        font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+        # استفاده از فونت ایرانی (در صورت عدم موجودیت فونت، از فونت پیش‌فرض استفاده می‌شود)
+        font_path = "Vazir.ttf"  # فرض بر اینکه فونت Vazir برای فارسی مناسب است
+        try:
+            font = ImageFont.truetype(font_path, 150)
+        except OSError:
+            font = ImageFont.load_default()
 
-        # شروع از سایز بزرگ و کم‌کردن تا جا بشه
-        font_size = 400
-        while font_size > 50:
-            try:
-                font = ImageFont.truetype(font_path, font_size)
-            except OSError:
-                font = ImageFont.load_default()
-            try:
-                bbox = draw.textbbox((0, 0), text, font=font)
-                w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-            except AttributeError:
-                w, h = draw.textsize(text, font=font)
-            if w <= 480 and h <= 480:
-                break
-            font_size -= 10
+        # اندازه‌گیری اندازه متن
+        bbox = draw.textbbox((0, 0), text, font=font)
+        w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
 
+        # تنظیم متن در مرکز
         x = (512 - w) / 2
         y = (512 - h) / 2
 
-        # حاشیه سفید
+        # حاشیه سفید ضخیم‌تر
         outline_range = 10
         for dx in range(-outline_range, outline_range + 1, 2):
             for dy in range(-outline_range, outline_range + 1, 2):
-                draw.text((x+dx, y+dy), text, font=font, fill="white")
+                if dx*dx + dy*dy <= outline_range*outline_range:
+                    draw.text((x + dx, y + dy), text, font=font, fill="white")
 
+        # متن اصلی
         draw.text((x, y), text, fill="black", font=font)
+        
+        # اضافه کردن عکس بکگراند (در صورتی که ارسال شده باشد)
+        if background_file_id:
+            file_info = requests.get(API + f"getFile?file_id={background_file_id}").json()
+            if file_info.get("ok"):
+                file_path = file_info["result"]["file_path"]
+                file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
+                resp = requests.get(file_url)
+                if resp.status_code == 200:
+                    bg = Image.open(BytesIO(resp.content)).convert("RGBA")
+                    bg = bg.resize((512, 512))
+                    img.paste(bg, (0, 0), bg)
+
         img.save(path, "PNG")
         return True
     except Exception as e:
