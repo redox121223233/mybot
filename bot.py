@@ -116,19 +116,13 @@ def send_as_sticker(chat_id, text, background_file_id=None):
     pack_name = user_data[chat_id].get("pack_name", f"pack{abs(chat_id)}_by_{BOT_USERNAME}")
     pack_title = f"Sticker Pack {chat_id}"
 
+    # بررسی اینکه آیا پک استیکر وجود داره یا نه
     resp = requests.get(API + f"getStickerSet?name={pack_name}").json()
 
     if not resp.get("ok"):
-        with open(sticker_path, "rb") as f:
-            files = {"png_sticker": f}
-            data = {
-                "user_id": chat_id,
-                "name": pack_name,
-                "title": pack_title,
-                "emojis": "🔥"
-            }
-            r = requests.post(API + "createNewStickerSet", data=data, files=files)
-            logger.info(f"Create set resp: {r.json()}")
+        send_message(chat_id, f"آیا می‌خواهید پک جدید بسازید یا استیکر جدید به پک قبلی اضافه شود؟\n 1. ساخت پک جدید\n 2. اضافه کردن به پک قبلی")
+        user_data[chat_id]["step"] = "pack_choice"
+        return "ok"
     else:
         with open(sticker_path, "rb") as f:
             files = {"png_sticker": f}
