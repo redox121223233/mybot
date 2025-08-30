@@ -207,8 +207,8 @@ def make_text_sticker(text, path, background_file_id=None):
 
         draw = ImageDraw.Draw(img)
         
-        # 📌 سایز فونت بسیار بزرگتر - از 300 به 400 پیکسل
-        initial_font_size = 400
+        # 📌 سایز فونت بسیار بزرگ - 600 پیکسل!
+        initial_font_size = 600
         font = get_font(initial_font_size)
         
         if font is None:
@@ -226,15 +226,15 @@ def make_text_sticker(text, path, background_file_id=None):
                 w, h = draw.textsize(text, font=font)
             except:
                 # آخرین راه حل: تخمین سایز
-                w, h = len(text) * 25, 40
+                w, h = len(text) * 35, 60
         
-        # تنظیم خودکار سایز فونت - حداکثر فضای بیشتری اشغال کند
+        # تنظیم خودکار سایز فونت - تقریباً تمام فضا را پر کند
         font_size = initial_font_size
-        max_width = 480  # از 450 به 480 افزایش یافت (فقط 16 پیکسل حاشیه از هر طرف)
-        max_height = 480  # از 450 به 480 افزایش یافت
+        max_width = 500  # تقریباً تمام عرض استیکر (فقط 6 پیکسل حاشیه)
+        max_height = 500  # تقریباً تمام ارتفاع استیکر
         
-        while (w > max_width or h > max_height) and font_size > 80:  # حداقل سایز از 60 به 80 افزایش یافت
-            font_size -= 10  # کاهش تدریجی‌تر (از 15 به 10)
+        while (w > max_width or h > max_height) and font_size > 120:  # حداقل سایز 120 پیکسل
+            font_size -= 8  # کاهش آرام‌تر
             font = get_font(font_size)
             if font is None:
                 font = ImageFont.load_default()
@@ -253,12 +253,12 @@ def make_text_sticker(text, path, background_file_id=None):
         x = (512 - w) / 2
         y = (512 - h) / 2
 
-        # حاشیه سفید ضخیم‌تر برای خوانایی عالی
-        outline_thickness = 25  # از 20 به 25 افزایش یافت
+        # حاشیه سفید بسیار ضخیم برای خوانایی فوق‌العاده
+        outline_thickness = 30  # از 25 به 30 افزایش یافت
         
-        # ایجاد حاشیه با کیفیت بالا
-        for dx in range(-outline_thickness, outline_thickness + 1, 2):  # گام کوچکتر برای کیفیت بهتر
-            for dy in range(-outline_thickness, outline_thickness + 1, 2):
+        # ایجاد حاشیه با کیفیت فوق‌العاده
+        for dx in range(-outline_thickness, outline_thickness + 1, 1):  # گام 1 برای کیفیت بالا
+            for dy in range(-outline_thickness, outline_thickness + 1, 1):
                 distance = (dx*dx + dy*dy) ** 0.5
                 if distance <= outline_thickness:
                     try:
