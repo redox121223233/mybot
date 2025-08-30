@@ -137,8 +137,9 @@ def send_as_sticker(chat_id, text, background_file_id=None):
             requests.post(API + "sendSticker", data={"chat_id": chat_id, "sticker": file_id})
 
 def make_text_sticker(text, path, background_file_id=None):
-    img = Image.new("RGBA", (512, 512), (255, 255, 255, 0))
+    img = Image.new("RGBA", (512, 512), (255, 255, 255, 0))  # تصویر شفاف 512x512
 
+    # لود بکگراند
     if background_file_id:
         try:
             file_info = requests.get(API + f"getFile?file_id={background_file_id}").json()
@@ -154,37 +155,33 @@ def make_text_sticker(text, path, background_file_id=None):
             print("❌ Error loading background:", e)
 
     draw = ImageDraw.Draw(img)
-    font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"  # فقط فونت DejaVuSans-Bold
 
-    best_font = None
-    w = h = 0
-    for size in range(50, 1500, 5):  # تست سایز تا 1500
-        try:
-            font = ImageFont.truetype(font_path, size)
-        except Exception:
-            continue
-        bbox = draw.textbbox((0, 0), text, font=font)
-        w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        if w < 512 and h < 512:  # فقط مطمئن بشیم از بوم بیرون نزنه
-            best_font = font
-        else:
-            break
+    # استفاده از فونت DejaVuSans-Bold (فونت بزرگ)
+    font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+    font = ImageFont.truetype(font_path, 120)  # تنظیم فونت با سایز بزرگتر
 
-    font = best_font
-    bbox = draw.textbbox((0, 0), text, font=font)
-    w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+    # پیدا کردن اندازه متن
+    w, h = draw.textsize(text, font=font)
 
+    # اگر متن بزرگتر از اندازه استیکر بود، سایز رو کمی کوچیک‌تر می‌کنیم
+    while w > 512 or h > 512:
+        font = ImageFont.truetype(font_path, font.size - 10)  # کاهش سایز فونت
+        w, h = draw.textsize(text, font=font)
+
+    # وسط‌چین کردن متن
     x = (512 - w) / 2
     y = (512 - h) / 2
 
-    # حاشیه سفید
-    outline_range = 6
+    # اضافه کردن حاشیه سفید برای بهتر دیده شدن متن
+    outline_range = 8  # ضخیم‌تر شدن حاشیه
     for dx in range(-outline_range, outline_range + 1):
         for dy in range(-outline_range, outline_range + 1):
             if dx != 0 or dy != 0:
                 draw.text((x + dx, y + dy), text, font=font, fill="white")
 
+    # متن اصلی
     draw.text((x, y), text, fill="black", font=font)
+
     img.save(path, "PNG")
 
 def show_main_menu(chat_id):
