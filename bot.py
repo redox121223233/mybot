@@ -49,19 +49,40 @@ def webhook():
             return "ok"
 
         if text == "🎁 تست رایگان":
-            user_data[chat_id] = {"mode": "free", "count": 0, "step": "pack_name", "pack_name": None, "background": None}
-            send_message(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:")
+            user_data[chat_id] = {"mode": "free", "count": 0, "step": "ask_pack_choice", "pack_name": None, "background": None}
+            send_message(chat_id, "📝 آیا می‌خواهید پک جدید بسازید یا استیکر جدید به پک قبلی اضافه کنید؟\n1. ساخت پک جدید\n2. اضافه کردن به پک قبلی")
             return "ok"
 
         state = user_data.get(chat_id, {})
         if state.get("mode") == "free":
             step = state.get("step")
 
+            if step == "ask_pack_choice":
+                if text == "1":  # ساخت پک جدید
+                    send_message(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:")
+                    user_data[chat_id]["step"] = "pack_name"
+                elif text == "2":  # اضافه کردن به پک قبلی
+                    pack_name = user_data[chat_id].get("pack_name")
+                    if pack_name:
+                        send_message(chat_id, "📷 حالا یک عکس برای بکگراند استیکرت بفرست:")
+                        user_data[chat_id]["step"] = "background"
+                    else:
+                        send_message(chat_id, "❌ هنوز پک استیکری ساخته نشده.")
+                        user_data[chat_id]["step"] = "ask_pack_choice"
+                return "ok"
+
             if step == "pack_name":
                 pack_name = text.replace(" ", "_")
                 user_data[chat_id]["pack_name"] = f"{pack_name}_by_{BOT_USERNAME}"
-                user_data[chat_id]["step"] = "background"
                 send_message(chat_id, "📷 حالا یک عکس برای بکگراند استیکرت بفرست:")
+                user_data[chat_id]["step"] = "background"
+                return "ok"
+
+            if step == "background":
+                file_id = msg["photo"][-1]["file_id"]
+                user_data[chat_id]["background"] = file_id
+                user_data[chat_id]["step"] = "text"
+                send_message(chat_id, "✍️ حالا متن استیکرت رو بفرست:")
                 return "ok"
 
             if step == "text":
@@ -116,11 +137,10 @@ def send_as_sticker(chat_id, text, background_file_id=None):
     pack_name = user_data[chat_id].get("pack_name", f"pack{abs(chat_id)}_by_{BOT_USERNAME}")
     pack_title = f"Sticker Pack {chat_id}"
 
-    # بررسی اینکه آیا پک استیکر وجود داره یا نه
     resp = requests.get(API + f"getStickerSet?name={pack_name}").json()
 
     if not resp.get("ok"):
-        send_message(chat_id, f"آیا می‌خواهید پک جدید بسازید یا استیکر جدید به پک قبلی اضافه شود؟\n 1. ساخت پک جدید\n 2. اضافه کردن به پک قبلی")
+        send_message(chat_id, f"آیا می‌خواهید پک جدید بسازید یا استیکر جدید به پک قبلی اضافه شود؟\n1. ساخت پک جدید\n2. اضافه کردن به پک قبلی")
         user_data[chat_id]["step"] = "pack_choice"
         return "ok"
     else:
@@ -146,8 +166,8 @@ def make_text_sticker(text, path, background_file_id=None):
         img = Image.new("RGBA", (512, 512), (255, 255, 255, 0))
 
         draw = ImageDraw.Draw(img)
-        # استفاده از فونت ایرانی (در صورت عدم موجودیت فونت، از فونت پیش‌فرض استفاده می‌شود)
-        font_path = "Vazir.ttf"  # فرض بر اینکه فونت Vazir برای فارسی مناسب است
+        font_path = "Vazir.ttf"  # استفاده از فونت مناسب فارسی
+
         try:
             font = ImageFont.truetype(font_path, 150)
         except OSError:
