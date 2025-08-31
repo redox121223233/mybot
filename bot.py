@@ -83,7 +83,10 @@ def webhook():
                 background_file_id = user_data[chat_id].get("background")
                 send_as_sticker(chat_id, text_sticker, background_file_id)
                 user_data[chat_id]["count"] += 1
-                send_message(chat_id, f"✅ استیکر شماره {user_data[chat_id]['count']} ساخته شد.")
+                
+                # 🔥 مهم: بعد از ساخت استیکر، state را برای استیکر بعدی آماده کن
+                send_message(chat_id, f"✅ استیکر شماره {user_data[chat_id]['count']} ساخته شد.\n\n✍️ متن استیکر بعدی را بفرست:")
+                # step همچنان "text" باقی می‌ماند تا کاربر بتواند استیکر بعدی بسازد
                 return "ok"
 
         # دکمه‌های منو
@@ -221,8 +224,9 @@ def make_text_sticker(text, path, background_file_id=None):
         language = detect_language(text)
         logger.info(f"Detected language: {language}")
         
-        # ایجاد تصویر پایه
-        img = Image.new("RGBA", (512, 512), (255, 255, 255, 0))
+        # 🔥 ایجاد تصویر کوچکتر برای زوم کردن - 256×256
+        base_size = 256
+        img = Image.new("RGBA", (base_size, base_size), (255, 255, 255, 0))
 
         # 📌 اگر بکگراند هست → جایگزین کن
         if background_file_id:
@@ -234,7 +238,7 @@ def make_text_sticker(text, path, background_file_id=None):
                     resp = requests.get(file_url)
                     if resp.status_code == 200:
                         bg = Image.open(BytesIO(resp.content)).convert("RGBA")
-                        bg = bg.resize((512, 512))
+                        bg = bg.resize((base_size, base_size))
                         img.paste(bg, (0, 0))
                         logger.info("Background image loaded successfully")
             except Exception as e:
@@ -242,11 +246,11 @@ def make_text_sticker(text, path, background_file_id=None):
 
         draw = ImageDraw.Draw(img)
         
-        # 📌 سایز فونت بر اساس زبان
+        # 📌 سایز فونت بزرگتر برای زوم
         if language == "persian":
-            initial_font_size = 1000  # فارسی کمی کوچکتر برای وضوح
+            initial_font_size = 800  # فارسی
         else:
-            initial_font_size = 1400  # انگلیسی بزرگتر
+            initial_font_size = 1000  # انگلیسی
             
         font = get_font(initial_font_size, language)
         
@@ -262,18 +266,18 @@ def make_text_sticker(text, path, background_file_id=None):
             try:
                 w, h = draw.textsize(text, font=font)
             except:
-                w, h = len(text) * 60, 120
-        
-        # تنظیم خودکار سایز فونت
+                w, h = len(text) * 30, 60
+
+        # تنظیم خودکار سایز فونت برای تصویر 256×256
         font_size = initial_font_size
         if language == "persian":
-            max_width = 460  # فارسی فضای کمتری نیاز دارد
-            max_height = 460
-            min_font_size = 300
+            max_width = 230  # فارسی
+            max_height = 230
+            min_font_size = 150
         else:
-            max_width = 490  # انگلیسی فضای بیشتری می‌گیرد
-            max_height = 490
-            min_font_size = 350
+            max_width = 240  # انگلیسی
+            max_height = 240
+            min_font_size = 180
         
         while (w > max_width or h > max_height) and font_size > min_font_size:
             font_size -= 5
@@ -289,17 +293,17 @@ def make_text_sticker(text, path, background_file_id=None):
                 try:
                     w, h = draw.textsize(text, font=font)
                 except:
-                    w, h = len(text) * (font_size // 15), font_size
+                    w, h = len(text) * (font_size // 30), font_size // 2
         
         # مرکز کردن متن
-        x = (512 - w) / 2
-        y = (512 - h) / 2
+        x = (base_size - w) / 2
+        y = (base_size - h) / 2
 
-        # 📌 حاشیه بهینه شده بر اساس زبان
+        # 📌 حاشیه متناسب با سایز کوچکتر
         if language == "persian":
-            outline_thickness = 8  # فارسی حاشیه نازکتر
+            outline_thickness = 4  # فارسی حاشیه نازکتر
         else:
-            outline_thickness = 12  # انگلیسی حاشیه ضخیمتر
+            outline_thickness = 6  # انگلیسی حاشیه ضخیمتر
         
         # ایجاد حاشیه با کیفیت بالا
         for offset in range(1, outline_thickness + 1):
@@ -323,9 +327,12 @@ def make_text_sticker(text, path, background_file_id=None):
             logger.error(f"Error drawing main text: {e}")
             draw.text((x, y), text, fill="#000000")
 
-        # ذخیره تصویر با کیفیت بالا
-        img.save(path, "PNG", optimize=True)
-        logger.info(f"Sticker saved successfully to {path} with font size: {font_size} for {language}")
+        # 🔥 زوم کردن تصویر از 256×256 به 512×512 (2x zoom)
+        img_zoomed = img.resize((512, 512), Image.LANCZOS)
+
+        # ذخیره تصویر زوم شده
+        img_zoomed.save(path, "PNG", optimize=True)
+        logger.info(f"Zoomed sticker saved successfully to {path} with font size: {font_size} for {language} (2x zoom applied)")
         return True
         
     except Exception as e:
