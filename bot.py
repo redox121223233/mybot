@@ -159,9 +159,8 @@ def send_as_sticker(chat_id, text, background_file_id=None):
 
 def get_font(size):
     """بارگذاری فونت با اولویت فونت‌های فارسی"""
-    # اولویت با فونت‌های فارسی
     font_paths = [
-        "Vazir.ttf",  # فونت فارسی اصلی
+        "Vazir.ttf",
         "Vazir-Regular.ttf",
         "IRANSans.ttf",
         "Sahel.ttf",
@@ -183,7 +182,6 @@ def get_font(size):
         except (OSError, IOError):
             continue
     
-    # اگر هیچ فونت پیدا نشد، از فونت پیش‌فرض استفاده کن
     try:
         return ImageFont.load_default()
     except:
@@ -214,7 +212,7 @@ def make_text_sticker(text, path, background_file_id=None):
 
         draw = ImageDraw.Draw(img)
         
-        # 📌 سایز فونت فوق‌العاده بزرگ - 1200 پیکسل!
+        # 📌 سایز فونت بزرگ - 1200 پیکسل
         initial_font_size = 1200
         font = get_font(initial_font_size)
         
@@ -222,7 +220,7 @@ def make_text_sticker(text, path, background_file_id=None):
             logger.error("No font could be loaded, using basic text rendering")
             font = ImageFont.load_default()
 
-        # محاسبه اندازه متن با دقت بالا
+        # محاسبه اندازه متن
         try:
             bbox = draw.textbbox((0, 0), text, font=font)
             w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
@@ -232,14 +230,13 @@ def make_text_sticker(text, path, background_file_id=None):
             except:
                 w, h = len(text) * 60, 120
         
-        # تنظیم خودکار سایز فونت - استفاده از حداکثر فضا
+        # تنظیم خودکار سایز فونت
         font_size = initial_font_size
-        max_width = 508  # حداکثر عرض (فقط 2 پیکسل حاشیه)
-        max_height = 508  # حداکثر ارتفاع
+        max_width = 480  # کمی کوچکتر برای کیفیت بهتر
+        max_height = 480
         
-        # کاهش تدریجی سایز فونت تا جا شدن در استیکر
-        while (w > max_width or h > max_height) and font_size > 250:  # حداقل سایز 250 پیکسل
-            font_size -= 3  # کاهش خیلی آرام‌تر
+        while (w > max_width or h > max_height) and font_size > 250:
+            font_size -= 3
             font = get_font(font_size)
             if font is None:
                 font = ImageFont.load_default()
@@ -258,28 +255,33 @@ def make_text_sticker(text, path, background_file_id=None):
         x = (512 - w) / 2
         y = (512 - h) / 2
 
-        # حاشیه سفید فوق‌ضخیم برای خوانایی عالی
-        outline_thickness = 45  # از 40 به 45 افزایش یافت
+        # 📌 حاشیه بهینه شده برای وضوح بهتر
+        outline_thickness = 15  # کاهش از 45 به 15 برای وضوح بهتر
         
-        # ایجاد حاشیه با کیفیت فوق‌العاده
-        for dx in range(-outline_thickness, outline_thickness + 1, 1):
-            for dy in range(-outline_thickness, outline_thickness + 1, 1):
-                distance = (dx*dx + dy*dy) ** 0.5
-                if distance <= outline_thickness:
-                    try:
-                        draw.text((x + dx, y + dy), text, font=font, fill="white")
-                    except:
-                        pass
+        # ایجاد حاشیه با کیفیت بالا - الگوریتم بهبود یافته
+        for offset in range(1, outline_thickness + 1):
+            # رسم حاشیه در 8 جهت اصلی
+            directions = [
+                (-offset, -offset), (0, -offset), (offset, -offset),
+                (-offset, 0),                     (offset, 0),
+                (-offset, offset),  (0, offset),  (offset, offset)
+            ]
+            
+            for dx, dy in directions:
+                try:
+                    draw.text((x + dx, y + dy), text, font=font, fill="white")
+                except:
+                    pass
 
-        # متن اصلی با رنگ مشکی فوق‌پررنگ
+        # متن اصلی با رنگ مشکی
         try:
             draw.text((x, y), text, fill="#000000", font=font)
         except Exception as e:
             logger.error(f"Error drawing main text: {e}")
             draw.text((x, y), text, fill="#000000")
 
-        # ذخیره تصویر
-        img.save(path, "PNG")
+        # ذخیره تصویر با کیفیت بالا
+        img.save(path, "PNG", optimize=True)
         logger.info(f"Sticker saved successfully to {path} with font size: {font_size}")
         return True
         
