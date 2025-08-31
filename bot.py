@@ -1,5 +1,6 @@
 import os
 import logging
+import re
 from flask import Flask, request
 import requests
 from PIL import Image, ImageDraw, ImageFont
@@ -157,27 +158,52 @@ def send_as_sticker(chat_id, text, background_file_id=None):
             file_id = stickers[-1]["file_id"]
             requests.post(API + "sendSticker", data={"chat_id": chat_id, "sticker": file_id})
 
-def get_font(size):
-    """بارگذاری فونت با اولویت فونت‌های فارسی"""
-    font_paths = [
-        "Vazir.ttf",
-        "Vazir-Regular.ttf",
-        "IRANSans.ttf",
-        "Sahel.ttf",
-        "Samim.ttf",
-        "Tanha.ttf",
-        "NotoSans-Regular.ttf", 
-        "arial.ttf",
-        "DejaVuSans.ttf",
-        "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-        "/System/Library/Fonts/Arial.ttf",
-        "/Windows/Fonts/arial.ttf"
-    ]
+def detect_language(text):
+    """تشخیص زبان متن"""
+    # الگوی فارسی
+    persian_pattern = re.compile(r'[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]')
+    persian_chars = len(persian_pattern.findall(text))
+    
+    # الگوی انگلیسی
+    english_pattern = re.compile(r'[a-zA-Z]')
+    english_chars = len(english_pattern.findall(text))
+    
+    if persian_chars > english_chars:
+        return "persian"
+    elif english_chars > 0:
+        return "english"
+    else:
+        return "other"
+
+def get_font(size, language="english"):
+    """بارگذاری فونت بر اساس زبان"""
+    if language == "persian":
+        # فونت‌های فارسی
+        font_paths = [
+            "IRANSans.ttf",
+            "Vazir.ttf",
+            "Vazir-Regular.ttf",
+            "Sahel.ttf",
+            "Samim.ttf",
+            "Tanha.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        ]
+    else:
+        # فونت‌های انگلیسی
+        font_paths = [
+            "arial.ttf",
+            "DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/System/Library/Fonts/Arial.ttf",
+            "/Windows/Fonts/arial.ttf",
+            "NotoSans-Regular.ttf"
+        ]
     
     for font_path in font_paths:
         try:
             font = ImageFont.truetype(font_path, size)
-            logger.info(f"Successfully loaded font: {font_path} with size: {size}")
+            logger.info(f"Successfully loaded font: {font_path} with size: {size} for {language}")
             return font
         except (OSError, IOError):
             continue
@@ -190,6 +216,10 @@ def get_font(size):
 def make_text_sticker(text, path, background_file_id=None):
     try:
         logger.info(f"Creating sticker with text: {text}")
+        
+        # تشخیص زبان
+        language = detect_language(text)
+        logger.info(f"Detected language: {language}")
         
         # ایجاد تصویر پایه
         img = Image.new("RGBA", (512, 512), (255, 255, 255, 0))
@@ -212,9 +242,13 @@ def make_text_sticker(text, path, background_file_id=None):
 
         draw = ImageDraw.Draw(img)
         
-        # 📌 سایز فونت بزرگ - 1200 پیکسل
-        initial_font_size = 1200
-        font = get_font(initial_font_size)
+        # 📌 سایز فونت بر اساس زبان
+        if language == "persian":
+            initial_font_size = 1000  # فارسی کمی کوچکتر برای وضوح
+        else:
+            initial_font_size = 1400  # انگلیسی بزرگتر
+            
+        font = get_font(initial_font_size, language)
         
         if font is None:
             logger.error("No font could be loaded, using basic text rendering")
@@ -232,12 +266,18 @@ def make_text_sticker(text, path, background_file_id=None):
         
         # تنظیم خودکار سایز فونت
         font_size = initial_font_size
-        max_width = 480  # کمی کوچکتر برای کیفیت بهتر
-        max_height = 480
+        if language == "persian":
+            max_width = 460  # فارسی فضای کمتری نیاز دارد
+            max_height = 460
+            min_font_size = 300
+        else:
+            max_width = 490  # انگلیسی فضای بیشتری می‌گیرد
+            max_height = 490
+            min_font_size = 350
         
-        while (w > max_width or h > max_height) and font_size > 250:
-            font_size -= 3
-            font = get_font(font_size)
+        while (w > max_width or h > max_height) and font_size > min_font_size:
+            font_size -= 5
+            font = get_font(font_size, language)
             if font is None:
                 font = ImageFont.load_default()
                 break
@@ -255,10 +295,13 @@ def make_text_sticker(text, path, background_file_id=None):
         x = (512 - w) / 2
         y = (512 - h) / 2
 
-        # 📌 حاشیه بهینه شده برای وضوح بهتر
-        outline_thickness = 15  # کاهش از 45 به 15 برای وضوح بهتر
+        # 📌 حاشیه بهینه شده بر اساس زبان
+        if language == "persian":
+            outline_thickness = 8  # فارسی حاشیه نازکتر
+        else:
+            outline_thickness = 12  # انگلیسی حاشیه ضخیمتر
         
-        # ایجاد حاشیه با کیفیت بالا - الگوریتم بهبود یافته
+        # ایجاد حاشیه با کیفیت بالا
         for offset in range(1, outline_thickness + 1):
             # رسم حاشیه در 8 جهت اصلی
             directions = [
@@ -282,7 +325,7 @@ def make_text_sticker(text, path, background_file_id=None):
 
         # ذخیره تصویر با کیفیت بالا
         img.save(path, "PNG", optimize=True)
-        logger.info(f"Sticker saved successfully to {path} with font size: {font_size}")
+        logger.info(f"Sticker saved successfully to {path} with font size: {font_size} for {language}")
         return True
         
     except Exception as e:
