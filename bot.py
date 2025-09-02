@@ -9,12 +9,12 @@ from bidi.algorithm import get_display
 # ---------------- تنظیمات ---------------- #
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_SECRET = os.getenv("WEBHOOK_SECRET", "secret")
-SUPPORT_ID = os.getenv("SUPPORT_ID", "@YourSupport")  # ایدی پشتیبانی
+SUPPORT_ID = os.getenv("SUPPORT_ID", "@YourSupport")
 API = f"https://api.telegram.org/bot{BOT_TOKEN}/"
 
 FONT_PATH = os.path.join(os.path.dirname(__file__), "Vazirmatn-Regular.ttf")
 
-# دیتای ساده برای مدیریت یوزرها (در عمل میشه DB)
+# دیتای ساده برای مدیریت یوزرها (در عمل بهتره DB باشه)
 user_data = {}
 
 logging.basicConfig(level=logging.INFO)
@@ -23,7 +23,7 @@ app = Flask(__name__)
 
 # ---------------- کمکی ---------------- #
 def reshape_text(text: str) -> str:
-    """اصلاح متن فارسی برای رندر درست"""
+    """اصلاح متن فارسی"""
     reshaped = arabic_reshaper.reshape(text)
     return get_display(reshaped)
 
@@ -36,20 +36,23 @@ def get_font(size=120):
         return ImageFont.load_default()
 
 def make_text_sticker(text, path, is_persian=True, background=None):
+    """ساخت استیکر با متن و بکگراند اختیاری"""
     size = (512, 512)
+
     if background:
         img = Image.open(background).convert("RGBA").resize(size)
     else:
         img = Image.new("RGBA", size, (255, 255, 255, 0))
 
     draw = ImageDraw.Draw(img)
+
     if is_persian:
         text = reshape_text(text)
 
     font_size = 200
     font = get_font(font_size)
 
-    # کاهش سایز تا جا بشه
+    # کاهش سایز تا متن جا بشه
     while True:
         bbox = draw.textbbox((0, 0), text, font=font)
         w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
@@ -87,9 +90,11 @@ def webhook():
     if "message" in update:
         msg = update["message"]
         chat_id = msg["chat"]["id"]
-        text = msg.get("text")
 
-        if text:
+        # اگر متن بود
+        if "text" in msg:
+            text = msg["text"]
+
             if text.startswith("/start"):
                 keyboard = {
                     "keyboard": [
@@ -129,6 +134,22 @@ def webhook():
                     send_sticker(chat_id, sticker_path)
                     if not user["subscribed"]:
                         user["free_used"] += 1
+
+        # اگر عکس بود
+        elif "photo" in msg:
+            file_id = msg["photo"][-1]["file_id"]
+            file_info = requests.get(API + f"getFile?file_id={file_id}").json()
+            file_path = file_info["result"]["file_path"]
+            file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
+            local_path = f"/tmp/{chat_id}_bg.png"
+            with open(local_path, "wb") as f:
+                f.write(requests.get(file_url).content)
+
+            user = user_data.get(chat_id)
+            if user and user.get("mode") == "waiting_text":
+                # ذخیره عکس به عنوان بکگراند
+                user["background"] = local_path
+                send_message(chat_id, "✅ عکس بکگراند ذخیره شد. حالا متن رو بفرست:")
 
     return "ok"
 
