@@ -98,10 +98,10 @@ def webhook():
 # استیکر سازی
 # ======================
 def get_font(size, language="english"):
-    """بارگذاری فونت - اولویت با Vazir برای فارسی"""
+    """بارگذاری فونت - اولویت با Vazirmatn برای فارسی"""
     if language == "persian":
         font_paths = [
-            "Vazir.ttf",
+            "Vazirmatn-Regular.ttf",    # 📌 اسم دقیق فایل
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
         ]
     else:
