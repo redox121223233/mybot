@@ -1,6 +1,5 @@
 import os
 import logging
-import re
 from flask import Flask, request
 import requests
 from PIL import Image, ImageDraw, ImageFont
@@ -18,12 +17,10 @@ if not BOT_TOKEN:
 
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "secret")
 APP_URL = os.environ.get("APP_URL")
-BOT_USERNAME = os.environ.get("BOT_USERNAME", "MyBot")  # یوزرنیم ربات بدون @
+BOT_USERNAME = os.environ.get("BOT_USERNAME", "MyBot")  # username ربات بدون @
 API = f"https://api.telegram.org/bot{BOT_TOKEN}/"
 
-# دیتابیس ساده در حافظه
 user_data = {}
-
 app = Flask(__name__)
 
 @app.route("/")
@@ -34,13 +31,11 @@ def home():
 def webhook():
     update = request.get_json(force=True, silent=True) or {}
     msg = update.get("message")
-
     if not msg:
         return "ok"
 
     chat_id = msg["chat"]["id"]
 
-    # 📌 پردازش متن
     if "text" in msg:
         text = msg["text"]
 
@@ -59,10 +54,10 @@ def webhook():
             step = state.get("step")
 
             if step == "ask_pack_choice":
-                if text == "1":  # ساخت پک جدید
+                if text == "1":
                     send_message(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:")
                     user_data[chat_id]["step"] = "pack_name"
-                elif text == "2":  # اضافه کردن به پک قبلی
+                elif text == "2":
                     if user_data[chat_id].get("pack_name"):
                         send_message(chat_id, "📷 یک عکس برای بکگراند استیکرت بفرست:")
                         user_data[chat_id]["step"] = "background"
@@ -83,29 +78,9 @@ def webhook():
                 background_file_id = user_data[chat_id].get("background")
                 send_as_sticker(chat_id, text_sticker, background_file_id)
                 user_data[chat_id]["count"] += 1
-                
-                # 🔥 مهم: بعد از ساخت استیکر، state را برای استیکر بعدی آماده کن
-                send_message(chat_id, f"✅ استیکر شماره {user_data[chat_id]['count']} ساخته شد.\n\n✍️ متن استیکر بعدی را بفرست:")
-                # step همچنان "text" باقی می‌ماند تا کاربر بتواند استیکر بعدی بسازد
+                send_message(chat_id, f"✅ استیکر شماره {user_data[chat_id]['count']} ساخته شد.")
                 return "ok"
 
-        # دکمه‌های منو
-        if text == "⭐ اشتراک":
-            send_message(chat_id, "💳 بخش اشتراک بعداً فعال خواهد شد.")
-        elif text == "📂 پک من":
-            pack_name = user_data.get(chat_id, {}).get("pack_name")
-            if pack_name:
-                pack_url = f"https://t.me/addstickers/{pack_name}"
-                send_message(chat_id, f"🗂 پک استیکرت اینجاست:\n{pack_url}")
-            else:
-                send_message(chat_id, "❌ هنوز پکی برایت ساخته نشده.")
-        elif text == "ℹ️ درباره":
-            send_message(chat_id, "ℹ️ این ربات برای ساخت استیکر متنی است. نسخه فعلی رایگان است.")
-        elif text == "📞 پشتیبانی":
-            support_id = os.environ.get("SUPPORT_ID", "@YourSupportID")
-            send_message(chat_id, f"📞 برای پشتیبانی با {support_id} در تماس باش.")
-
-    # 📌 پردازش عکس
     elif "photo" in msg:
         state = user_data.get(chat_id, {})
         if state.get("mode") == "free" and state.get("step") == "background":
@@ -119,116 +94,45 @@ def webhook():
 
     return "ok"
 
-def send_as_sticker(chat_id, text, background_file_id=None):
-    sticker_path = "sticker.png"
-    ok = make_text_sticker(text, sticker_path, background_file_id)
-    if not ok:
-        send_message(chat_id, "❌ خطا در ساخت استیکر")
-        return
-
-    pack_name = user_data[chat_id].get("pack_name", f"pack{abs(chat_id)}_by_{BOT_USERNAME}")
-    pack_title = f"Sticker Pack {chat_id}"
-
-    resp = requests.get(API + f"getStickerSet?name={pack_name}").json()
-
-    if not resp.get("ok"):  # اگر پک وجود نداشت، اول باید ساخته بشه
-        with open(sticker_path, "rb") as f:
-            files = {"png_sticker": f}
-            data = {
-                "user_id": chat_id,
-                "name": pack_name,
-                "title": pack_title,
-                "emojis": "🔥"
-            }
-            r = requests.post(API + "createNewStickerSet", data=data, files=files)
-            logger.info(f"Create sticker resp: {r.json()}")
-    else:  # پک هست → استیکر جدید اضافه کن
-        with open(sticker_path, "rb") as f:
-            files = {"png_sticker": f}
-            data = {
-                "user_id": chat_id,
-                "name": pack_name,
-                "emojis": "🔥"
-            }
-            r = requests.post(API + "addStickerToSet", data=data, files=files)
-            logger.info(f"Add sticker resp: {r.json()}")
-
-    # ارسال استیکر به کاربر
-    final = requests.get(API + f"getStickerSet?name={pack_name}").json()
-    if final.get("ok"):
-        stickers = final["result"]["stickers"]
-        if stickers:
-            file_id = stickers[-1]["file_id"]
-            requests.post(API + "sendSticker", data={"chat_id": chat_id, "sticker": file_id})
-
-def detect_language(text):
-    """تشخیص زبان متن"""
-    # الگوی فارسی
-    persian_pattern = re.compile(r'[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]')
-    persian_chars = len(persian_pattern.findall(text))
-    
-    # الگوی انگلیسی
-    english_pattern = re.compile(r'[a-zA-Z]')
-    english_chars = len(english_pattern.findall(text))
-    
-    if persian_chars > english_chars:
-        return "persian"
-    elif english_chars > 0:
-        return "english"
-    else:
-        return "other"
-
+# ======================
+# استیکر سازی
+# ======================
 def get_font(size, language="english"):
-    """بارگذاری فونت بر اساس زبان"""
+    """بارگذاری فونت - اولویت با Vazir برای فارسی"""
     if language == "persian":
-        # فونت‌های فارسی
         font_paths = [
-            "IRANSans.ttf",
             "Vazir.ttf",
-            "Vazir-Regular.ttf",
-            "Sahel.ttf",
-            "Samim.ttf",
-            "Tanha.ttf",
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
         ]
     else:
-        # فونت‌های انگلیسی
         font_paths = [
             "arial.ttf",
             "DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/System/Library/Fonts/Arial.ttf",
-            "/Windows/Fonts/arial.ttf",
-            "NotoSans-Regular.ttf"
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
         ]
-    
+
     for font_path in font_paths:
         try:
             font = ImageFont.truetype(font_path, size)
-            logger.info(f"Successfully loaded font: {font_path} with size: {size} for {language}")
+            logger.info(f"Loaded font: {font_path}")
             return font
-        except (OSError, IOError):
+        except:
             continue
-    
-    try:
-        return ImageFont.load_default()
-    except:
-        return None
+
+    return ImageFont.load_default()
+
+def detect_language(text):
+    for ch in text:
+        if '\u0600' <= ch <= '\u06FF':
+            return "persian"
+    return "english"
 
 def make_text_sticker(text, path, background_file_id=None):
     try:
-        logger.info(f"Creating sticker with text: {text}")
-        
-        # تشخیص زبان
         language = detect_language(text)
-        logger.info(f"Detected language: {language}")
-        
-        # 🔥 ایجاد تصویر کوچکتر برای زوم کردن - 256×256
-        base_size = 256
+        base_size = 512
         img = Image.new("RGBA", (base_size, base_size), (255, 255, 255, 0))
 
-        # 📌 اگر بکگراند هست → جایگزین کن
         if background_file_id:
             try:
                 file_info = requests.get(API + f"getFile?file_id={background_file_id}").json()
@@ -240,105 +144,71 @@ def make_text_sticker(text, path, background_file_id=None):
                         bg = Image.open(BytesIO(resp.content)).convert("RGBA")
                         bg = bg.resize((base_size, base_size))
                         img.paste(bg, (0, 0))
-                        logger.info("Background image loaded successfully")
             except Exception as e:
                 logger.error(f"Error loading background: {e}")
 
         draw = ImageDraw.Draw(img)
-        
-        # 📌 سایز فونت بزرگتر برای زوم
-        if language == "persian":
-            initial_font_size = 800  # فارسی
-        else:
-            initial_font_size = 1000  # انگلیسی
-            
-        font = get_font(initial_font_size, language)
-        
-        if font is None:
-            logger.error("No font could be loaded, using basic text rendering")
-            font = ImageFont.load_default()
 
-        # محاسبه اندازه متن
-        try:
+        font_size = 400
+        font = get_font(font_size, language)
+
+        while True:
             bbox = draw.textbbox((0, 0), text, font=font)
             w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        except:
-            try:
-                w, h = draw.textsize(text, font=font)
-            except:
-                w, h = len(text) * 30, 60
-
-        # تنظیم خودکار سایز فونت برای تصویر 256×256
-        font_size = initial_font_size
-        if language == "persian":
-            max_width = 230  # فارسی
-            max_height = 230
-            min_font_size = 150
-        else:
-            max_width = 240  # انگلیسی
-            max_height = 240
-            min_font_size = 180
-        
-        while (w > max_width or h > max_height) and font_size > min_font_size:
-            font_size -= 5
-            font = get_font(font_size, language)
-            if font is None:
-                font = ImageFont.load_default()
+            if w <= base_size - 20 and h <= base_size - 20:
                 break
-            
-            try:
-                bbox = draw.textbbox((0, 0), text, font=font)
-                w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-            except:
-                try:
-                    w, h = draw.textsize(text, font=font)
-                except:
-                    w, h = len(text) * (font_size // 30), font_size // 2
-        
-        # مرکز کردن متن
+            font_size -= 10
+            font = get_font(font_size, language)
+
         x = (base_size - w) / 2
         y = (base_size - h) / 2
 
-        # 📌 حاشیه متناسب با سایز کوچکتر
-        if language == "persian":
-            outline_thickness = 4  # فارسی حاشیه نازکتر
-        else:
-            outline_thickness = 6  # انگلیسی حاشیه ضخیمتر
-        
-        # ایجاد حاشیه با کیفیت بالا
-        for offset in range(1, outline_thickness + 1):
-            # رسم حاشیه در 8 جهت اصلی
-            directions = [
-                (-offset, -offset), (0, -offset), (offset, -offset),
-                (-offset, 0),                     (offset, 0),
-                (-offset, offset),  (0, offset),  (offset, offset)
-            ]
-            
-            for dx, dy in directions:
-                try:
+        outline_thickness = max(3, font_size // 20)
+        for dx in range(-outline_thickness, outline_thickness + 1):
+            for dy in range(-outline_thickness, outline_thickness + 1):
+                if dx != 0 or dy != 0:
                     draw.text((x + dx, y + dy), text, font=font, fill="white")
-                except:
-                    pass
 
-        # متن اصلی با رنگ مشکی
-        try:
-            draw.text((x, y), text, fill="#000000", font=font)
-        except Exception as e:
-            logger.error(f"Error drawing main text: {e}")
-            draw.text((x, y), text, fill="#000000")
+        draw.text((x, y), text, font=font, fill="black")
 
-        # 🔥 زوم کردن تصویر از 256×256 به 512×512 (2x zoom)
-        img_zoomed = img.resize((512, 512), Image.LANCZOS)
-
-        # ذخیره تصویر زوم شده
-        img_zoomed.save(path, "PNG", optimize=True)
-        logger.info(f"Zoomed sticker saved successfully to {path} with font size: {font_size} for {language} (2x zoom applied)")
+        img.save(path, "PNG")
         return True
-        
     except Exception as e:
         logger.error(f"make_text_sticker error: {e}")
         return False
 
+def send_as_sticker(chat_id, text, background_file_id=None):
+    sticker_path = "sticker.png"
+    ok = make_text_sticker(text, sticker_path, background_file_id)
+    if not ok:
+        send_message(chat_id, "❌ خطا در ساخت استیکر")
+        return
+
+    pack_name = user_data[chat_id].get("pack_name", f"pack{abs(chat_id)}_by_{BOT_USERNAME}")
+    pack_title = f"Sticker Pack {chat_id}"
+
+    resp = requests.get(API + f"getStickerSet?name={pack_name}").json()
+    if not resp.get("ok"):
+        with open(sticker_path, "rb") as f:
+            files = {"png_sticker": f}
+            data = {"user_id": chat_id, "name": pack_name, "title": pack_title, "emojis": "🔥"}
+            requests.post(API + "createNewStickerSet", data=data, files=files)
+    else:
+        with open(sticker_path, "rb") as f:
+            files = {"png_sticker": f}
+            data = {"user_id": chat_id, "name": pack_name, "emojis": "🔥"}
+            requests.post(API + "addStickerToSet", data=data, files=files)
+
+    final = requests.get(API + f"getStickerSet?name={pack_name}").json()
+    if final.get("ok"):
+        stickers = final["result"]["stickers"]
+        if stickers:
+            file_id = stickers[-1]["file_id"]
+            requests.post(API + "sendSticker", data={"chat_id": chat_id, "sticker": file_id})
+
+# ======================
+# Helpers
+# ======================
 def show_main_menu(chat_id):
     keyboard = {
         "keyboard": [
@@ -362,8 +232,5 @@ if __name__ == "__main__":
         webhook_url = f"{APP_URL}/webhook/{WEBHOOK_SECRET}"
         resp = requests.get(API + f"setWebhook?url={webhook_url}")
         logger.info(f"setWebhook: {resp.json()}")
-    else:
-        logger.warning("⚠️ APP_URL is not set. Webhook not registered.")
-
     port = int(os.environ.get("PORT", 8080))
     serve(app, host="0.0.0.0", port=port)
