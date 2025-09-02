@@ -101,7 +101,7 @@ def get_font(size, language="english"):
     """بارگذاری فونت - اولویت با Vazirmatn برای فارسی"""
     if language == "persian":
         font_paths = [
-            "Vazirmatn-Regular.ttf",    # 📌 اسم دقیق فایل
+            "Vazirmatn-Black.ttf",    # 📌 اسم دقیق فایل
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
         ]
     else:
