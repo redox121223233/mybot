@@ -65,16 +65,34 @@ def webhook():
                     send_message(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:")
                     user_data[chat_id]["step"] = "pack_name"
                 elif text == "2":  # اضافه کردن به پک قبلی
-                    if user_data[chat_id].get("pack_name"):
-                        send_message(chat_id, "📷 یک عکس برای بکگراند استیکرت بفرست:")
-                        user_data[chat_id]["step"] = "background"
+                    pack_name = user_data[chat_id].get("pack_name")
+                    if pack_name:
+                        # بررسی اینکه پک واقعاً وجود دارد یا نه
+                        resp = requests.get(API + f"getStickerSet?name={pack_name}").json()
+                        if resp.get("ok"):
+                            send_message(chat_id, "📷 یک عکس برای بکگراند استیکرت بفرست:")
+                            user_data[chat_id]["step"] = "background"
+                        else:
+                            send_message(chat_id, "❌ پک قبلی پیدا نشد. لطفاً پک جدید بسازید.")
+                            user_data[chat_id]["step"] = "pack_name"
+                            send_message(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:")
                     else:
                         send_message(chat_id, "❌ هنوز پک استیکری نداری. اول باید پک جدید بسازی.")
+                        user_data[chat_id]["step"] = "pack_name"
+                        send_message(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:")
                 return "ok"
 
             if step == "pack_name":
                 pack_name = text.replace(" ", "_")
-                user_data[chat_id]["pack_name"] = f"{pack_name}_by_{BOT_USERNAME}"
+                full_pack_name = f"{pack_name}_by_{BOT_USERNAME}"
+                
+                # بررسی اینکه پک با این نام وجود دارد یا نه
+                resp = requests.get(API + f"getStickerSet?name={full_pack_name}").json()
+                if resp.get("ok"):
+                    send_message(chat_id, f"❌ پک با نام '{pack_name}' از قبل وجود دارد. لطفاً نام دیگری انتخاب کنید:")
+                    return "ok"
+                
+                user_data[chat_id]["pack_name"] = full_pack_name
                 send_message(chat_id, "📷 یک عکس برای بکگراند استیکرت بفرست:")
                 user_data[chat_id]["step"] = "background"
                 return "ok"
@@ -97,8 +115,13 @@ def webhook():
         elif text == "📂 پک من":
             pack_name = user_data.get(chat_id, {}).get("pack_name")
             if pack_name:
-                pack_url = f"https://t.me/addstickers/{pack_name}"
-                send_message(chat_id, f"🗂 پک استیکرت اینجاست:\n{pack_url}")
+                # بررسی اینکه پک واقعاً وجود دارد
+                resp = requests.get(API + f"getStickerSet?name={pack_name}").json()
+                if resp.get("ok"):
+                    pack_url = f"https://t.me/addstickers/{pack_name}"
+                    send_message(chat_id, f"🗂 پک استیکرت اینجاست:\n{pack_url}")
+                else:
+                    send_message(chat_id, "❌ هنوز پکی برایت ساخته نشده.")
             else:
                 send_message(chat_id, "❌ هنوز پکی برایت ساخته نشده.")
         elif text == "ℹ️ درباره":
@@ -128,7 +151,11 @@ def send_as_sticker(chat_id, text, background_file_id=None):
         send_message(chat_id, "❌ خطا در ساخت استیکر")
         return
 
-    pack_name = user_data[chat_id].get("pack_name", f"pack{abs(chat_id)}_by_{BOT_USERNAME}")
+    pack_name = user_data[chat_id].get("pack_name")
+    if not pack_name:
+        send_message(chat_id, "❌ خطا: نام پک تعریف نشده")
+        return
+        
     pack_title = f"Sticker Pack {chat_id}"
 
     resp = requests.get(API + f"getStickerSet?name={pack_name}").json()
@@ -240,9 +267,15 @@ def make_text_sticker(text, path, background_file_id=None):
         if language == "persian_arabic":
             text = reshape_text(text)
         
-        # 🔥 ایجاد تصویر کوچکتر برای زوم کردن - 256×256
-        base_size = 256
-        img = Image.new("RGBA", (base_size, base_size), (255, 255, 255, 0))
+        # 🔥 بدون زوم برای فارسی، با زوم برای انگلیسی
+        if language == "persian_arabic":
+            # فارسی: بدون زوم، مستقیم 512×512
+            img_size = 512
+            img = Image.new("RGBA", (img_size, img_size), (255, 255, 255, 0))
+        else:
+            # انگلیسی: با زوم 2x
+            img_size = 256
+            img = Image.new("RGBA", (img_size, img_size), (255, 255, 255, 0))
 
         # 📌 اگر بکگراند هست → جایگزین کن
         if background_file_id:
@@ -254,7 +287,7 @@ def make_text_sticker(text, path, background_file_id=None):
                     resp = requests.get(file_url)
                     if resp.status_code == 200:
                         bg = Image.open(BytesIO(resp.content)).convert("RGBA")
-                        bg = bg.resize((base_size, base_size))
+                        bg = bg.resize((img_size, img_size))
                         img.paste(bg, (0, 0))
                         logger.info("Background image loaded successfully")
             except Exception as e:
@@ -262,8 +295,17 @@ def make_text_sticker(text, path, background_file_id=None):
 
         draw = ImageDraw.Draw(img)
         
-        # 📌 سایز فونت یکسان برای همه زبان‌ها
-        initial_font_size = 600  # سایز یکسان برای فارسی و انگلیسی
+        # 📌 سایز فونت بر اساس زبان و اندازه تصویر
+        if language == "persian_arabic":
+            initial_font_size = 1200  # فارسی: سایز بزرگ برای 512×512
+            max_width = 460
+            max_height = 460
+            min_font_size = 300
+        else:
+            initial_font_size = 600   # انگلیسی: سایز کوچک برای 256×256 (که بعداً زوم می‌شود)
+            max_width = 230
+            max_height = 230
+            min_font_size = 150
             
         font = get_font(initial_font_size, language)
         
@@ -279,13 +321,10 @@ def make_text_sticker(text, path, background_file_id=None):
             try:
                 w, h = draw.textsize(text, font=font)
             except:
-                w, h = len(text) * 30, 60
+                w, h = len(text) * (initial_font_size // 20), initial_font_size // 2
 
-        # تنظیم خودکار سایز فونت برای تصویر 256×256
+        # تنظیم خودکار سایز فونت
         font_size = initial_font_size
-        max_width = 230   # یکسان برای همه زبان‌ها
-        max_height = 230  # یکسان برای همه زبان‌ها
-        min_font_size = 150  # یکسان برای همه زبان‌ها
         
         while (w > max_width or h > max_height) and font_size > min_font_size:
             font_size -= 5
@@ -301,14 +340,17 @@ def make_text_sticker(text, path, background_file_id=None):
                 try:
                     w, h = draw.textsize(text, font=font)
                 except:
-                    w, h = len(text) * (font_size // 30), font_size // 2
+                    w, h = len(text) * (font_size // 20), font_size // 2
         
         # مرکز کردن متن
-        x = (base_size - w) / 2
-        y = (base_size - h) / 2
+        x = (img_size - w) / 2
+        y = (img_size - h) / 2
 
-        # 📌 حاشیه یکسان برای همه زبان‌ها
-        outline_thickness = 5  # یکسان برای همه زبان‌ها
+        # 📌 حاشیه بر اساس زبان
+        if language == "persian_arabic":
+            outline_thickness = 8  # فارسی: حاشیه ضخیم‌تر برای 512×512
+        else:
+            outline_thickness = 5  # انگلیسی: حاشیه نازک‌تر برای 256×256
         
         # ایجاد حاشیه با کیفیت بالا
         for offset in range(1, outline_thickness + 1):
@@ -332,12 +374,17 @@ def make_text_sticker(text, path, background_file_id=None):
             logger.error(f"Error drawing main text: {e}")
             draw.text((x, y), text, fill="#000000")
 
-        # 🔥 زوم کردن تصویر از 256×256 به 512×512 (2x zoom)
-        img_zoomed = img.resize((512, 512), Image.LANCZOS)
+        # 🔥 زوم فقط برای انگلیسی
+        if language == "persian_arabic":
+            # فارسی: بدون زوم
+            final_img = img
+        else:
+            # انگلیسی: زوم 2x
+            final_img = img.resize((512, 512), Image.LANCZOS)
 
-        # ذخیره تصویر زوم شده
-        img_zoomed.save(path, "PNG", optimize=True)
-        logger.info(f"Zoomed sticker saved successfully to {path} with font size: {font_size} for {language} (2x zoom applied)")
+        # ذخیره تصویر
+        final_img.save(path, "PNG", optimize=True)
+        logger.info(f"Sticker saved successfully to {path} with font size: {font_size} for {language}")
         return True
         
     except Exception as e:
