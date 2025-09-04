@@ -82,10 +82,15 @@ def webhook():
                 return "ok"
             
             user_data[chat_id]["mode"] = "free"
-            user_data[chat_id]["count"] = 0
-            user_data[chat_id]["step"] = "ask_pack_choice"
-            user_data[chat_id]["pack_name"] = None
-            user_data[chat_id]["background"] = None
+            # مهم: count, pack_name و background را reset نکن اگر کاربر قبلاً پکی دارد
+            if not user_data[chat_id].get("pack_name"):
+                user_data[chat_id]["count"] = 0
+                user_data[chat_id]["step"] = "ask_pack_choice"
+                user_data[chat_id]["pack_name"] = None
+                user_data[chat_id]["background"] = None
+            else:
+                # اگر کاربر قبلاً پکی دارد، مستقیماً به مرحله text برو
+                user_data[chat_id]["step"] = "text"
             
             # نمایش وضعیت محدودیت
             next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
@@ -93,7 +98,11 @@ def webhook():
             
             # بررسی پک‌های موجود
             created_packs = user_data[chat_id].get("created_packs", [])
-            if created_packs:
+            if user_data[chat_id].get("pack_name"):
+                # اگر کاربر قبلاً پکی دارد، مستقیماً به ساخت استیکر ادامه دهد
+                pack_name = user_data[chat_id]["pack_name"]
+                send_message(chat_id, limit_info + f"✅ ادامه ساخت استیکر در پک فعلی\n✍️ متن استیکر بعدی را بفرست:")
+            elif created_packs:
                 send_message(chat_id, limit_info + "📝 آیا می‌خواهید پک جدید بسازید یا به پک قبلی اضافه کنید؟\n1. ساخت پک جدید\n2. اضافه کردن به پک قبلی")
             else:
                 send_message(chat_id, limit_info + "📝 شما هنوز پکی ندارید. لطفاً یک نام برای پک استیکر خود انتخاب کن:")
@@ -165,6 +174,10 @@ def webhook():
                 send_message(chat_id, "⚙️ در حال ساخت استیکر...")
                 background_file_id = user_data[chat_id].get("background")
                 
+                # Debug: بررسی pack_name
+                pack_name = user_data[chat_id].get("pack_name")
+                logger.info(f"Creating sticker for pack: {pack_name}")
+                
                 # ارسال استیکر و بررسی موفقیت
                 success = send_as_sticker(chat_id, text_sticker, background_file_id)
                 
@@ -178,7 +191,9 @@ def webhook():
                     limit_info = f"\n📊 وضعیت: {remaining}/5 استیکر باقی مانده\n🔄 زمان بعدی: {next_reset_time}"
                     
                     send_message(chat_id, f"✅ استیکر شماره {user_data[chat_id]['count']} ساخته شد.{limit_info}\n\n✍️ متن استیکر بعدی را بفرست:")
-                # step همچنان "text" باقی می‌ماند تا کاربر بتواند استیکر بعدی بسازد
+                    
+                    # مهم: pack_name و background را حفظ کن تا استیکر بعدی در همان پک قرار بگیرد
+                    # step همچنان "text" باقی می‌ماند تا کاربر بتواند استیکر بعدی بسازد
                 return "ok"
 
         # دکمه‌های منو
@@ -186,12 +201,33 @@ def webhook():
             send_message(chat_id, "💳 بخش اشتراک بعداً فعال خواهد شد.")
         elif text == "📂 پک من":
             created_packs = user_data.get(chat_id, {}).get("created_packs", [])
+            current_pack = user_data.get(chat_id, {}).get("pack_name")
+            
+            logger.info(f"User {chat_id} packs: {created_packs}")
+            logger.info(f"User {chat_id} current pack: {current_pack}")
+            
             if created_packs:
                 pack_list = "🗂 پک‌های شما:\n\n"
                 for i, pack in enumerate(created_packs, 1):
                     pack_url = f"https://t.me/addstickers/{pack['name']}"
                     pack_list += f"{i}. {pack['title']}\n{pack_url}\n\n"
                 send_message(chat_id, pack_list)
+            elif current_pack:
+                # اگر پک فعلی وجود دارد اما در لیست نیست، آن را اضافه کن
+                user_info = requests.get(API + f"getChat?chat_id={chat_id}").json()
+                first_name = user_info.get("result", {}).get("first_name", "User")
+                pack_title = f"{first_name}'s Stickers"
+                
+                if "created_packs" not in user_data[chat_id]:
+                    user_data[chat_id]["created_packs"] = []
+                
+                user_data[chat_id]["created_packs"].append({
+                    "name": current_pack,
+                    "title": pack_title
+                })
+                
+                pack_url = f"https://t.me/addstickers/{current_pack}"
+                send_message(chat_id, f"🗂 پک شما:\n\n1. {pack_title}\n{pack_url}")
             else:
                 send_message(chat_id, "❌ هنوز پکی برایت ساخته نشده.")
         elif text == "ℹ️ درباره":
