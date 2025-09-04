@@ -101,11 +101,13 @@ def webhook():
                 text_sticker = text
                 send_message(chat_id, "⚙️ در حال ساخت استیکر...")
                 background_file_id = user_data[chat_id].get("background")
-                send_as_sticker(chat_id, text_sticker, background_file_id)
-                user_data[chat_id]["count"] += 1
                 
-                # 🔥 مهم: بعد از ساخت استیکر، state را برای استیکر بعدی آماده کن
-                send_message(chat_id, f"✅ استیکر شماره {user_data[chat_id]['count']} ساخته شد.\n\n✍️ متن استیکر بعدی را بفرست:")
+                # ارسال استیکر و بررسی موفقیت
+                success = send_as_sticker(chat_id, text_sticker, background_file_id)
+                
+                if success:
+                    user_data[chat_id]["count"] += 1
+                    send_message(chat_id, f"✅ استیکر شماره {user_data[chat_id]['count']} ساخته شد.\n\n✍️ متن استیکر بعدی را بفرست:")
                 # step همچنان "text" باقی می‌ماند تا کاربر بتواند استیکر بعدی بسازد
                 return "ok"
 
@@ -149,16 +151,17 @@ def send_as_sticker(chat_id, text, background_file_id=None):
     ok = make_text_sticker(text, sticker_path, background_file_id)
     if not ok:
         send_message(chat_id, "❌ خطا در ساخت استیکر")
-        return
+        return False
 
     pack_name = user_data[chat_id].get("pack_name")
     if not pack_name:
         send_message(chat_id, "❌ خطا: نام پک تعریف نشده")
-        return
+        return False
         
     pack_title = f"Sticker Pack {chat_id}"
 
     resp = requests.get(API + f"getStickerSet?name={pack_name}").json()
+    sticker_created = False
 
     if not resp.get("ok"):  # اگر پک وجود نداشت، اول باید ساخته بشه
         with open(sticker_path, "rb") as f:
@@ -171,6 +174,11 @@ def send_as_sticker(chat_id, text, background_file_id=None):
             }
             r = requests.post(API + "createNewStickerSet", data=data, files=files)
             logger.info(f"Create sticker resp: {r.json()}")
+            if r.json().get("ok"):
+                sticker_created = True
+            else:
+                send_message(chat_id, f"❌ خطا در ساخت پک: {r.json().get('description', 'خطای نامشخص')}")
+                return False
     else:  # پک هست → استیکر جدید اضافه کن
         with open(sticker_path, "rb") as f:
             files = {"png_sticker": f}
@@ -181,14 +189,38 @@ def send_as_sticker(chat_id, text, background_file_id=None):
             }
             r = requests.post(API + "addStickerToSet", data=data, files=files)
             logger.info(f"Add sticker resp: {r.json()}")
+            if r.json().get("ok"):
+                sticker_created = True
+            else:
+                send_message(chat_id, f"❌ خطا در اضافه کردن استیکر: {r.json().get('description', 'خطای نامشخص')}")
+                return False
 
-    # ارسال استیکر به کاربر
-    final = requests.get(API + f"getStickerSet?name={pack_name}").json()
-    if final.get("ok"):
-        stickers = final["result"]["stickers"]
-        if stickers:
-            file_id = stickers[-1]["file_id"]
-            requests.post(API + "sendSticker", data={"chat_id": chat_id, "sticker": file_id})
+    # ارسال استیکر به کاربر - روش بهتر: ارسال مستقیم فایل
+    if sticker_created:
+        try:
+            with open(sticker_path, "rb") as f:
+                files = {"sticker": f}
+                data = {"chat_id": chat_id}
+                send_resp = requests.post(API + "sendSticker", data=data, files=files)
+                logger.info(f"Send sticker resp: {send_resp.json()}")
+                
+                if not send_resp.json().get("ok"):
+                    # اگر ارسال مستقیم کار نکرد، از پک بخوان
+                    final = requests.get(API + f"getStickerSet?name={pack_name}").json()
+                    if final.get("ok"):
+                        stickers = final["result"]["stickers"]
+                        if stickers:
+                            file_id = stickers[-1]["file_id"]
+                            requests.post(API + "sendSticker", data={"chat_id": chat_id, "sticker": file_id})
+                            return True
+                    return False
+                return True
+        except Exception as e:
+            logger.error(f"Error sending sticker: {e}")
+            send_message(chat_id, "❌ خطا در ارسال استیکر")
+            return False
+    
+    return False
 
 def reshape_text(text):
     """اصلاح متن فارسی/عربی با کتابخانه‌های arabic_reshaper و bidi"""
