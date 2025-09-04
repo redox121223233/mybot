@@ -222,7 +222,7 @@ def get_font(size, language="english"):
         # فونت‌های فارسی/عربی
         font_paths = [
             "Vazirmatn-Regular.ttf",
-            "IRANSans.ttf",
+            "IRANSans.ttf", 
             "Vazir.ttf",
             "Vazir-Regular.ttf",
             "Sahel.ttf",
