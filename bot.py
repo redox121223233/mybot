@@ -1,6 +1,7 @@
 import os
 import logging
 import re
+import time
 from flask import Flask, request
 import requests
 from PIL import Image, ImageDraw, ImageFont
@@ -47,25 +48,55 @@ def webhook():
         text = msg["text"]
 
         if text == "/start":
-            user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": []}
+            user_data[chat_id] = {
+                "mode": None, 
+                "count": 0, 
+                "step": None, 
+                "pack_name": None, 
+                "background": None, 
+                "created_packs": [],
+                "sticker_usage": [],
+                "last_reset": time.time()
+            }
             show_main_menu(chat_id)
             return "ok"
 
         if text == "🎁 تست رایگان":
             if chat_id not in user_data:
-                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": []}
+                user_data[chat_id] = {
+                    "mode": None, 
+                    "count": 0, 
+                    "step": None, 
+                    "pack_name": None, 
+                    "background": None, 
+                    "created_packs": [],
+                    "sticker_usage": [],
+                    "last_reset": time.time()
+                }
+            
+            # بررسی محدودیت استیکر
+            remaining, next_reset = check_sticker_limit(chat_id)
+            if remaining <= 0:
+                next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
+                send_message(chat_id, f"⏰ محدودیت روزانه شما تمام شده!\n\n🔄 زمان بعدی: {next_reset_time}\n\n💎 برای ساخت استیکر نامحدود، اشتراک تهیه کنید.")
+                return "ok"
+            
             user_data[chat_id]["mode"] = "free"
             user_data[chat_id]["count"] = 0
             user_data[chat_id]["step"] = "ask_pack_choice"
             user_data[chat_id]["pack_name"] = None
             user_data[chat_id]["background"] = None
             
+            # نمایش وضعیت محدودیت
+            next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
+            limit_info = f"📊 وضعیت شما: {remaining}/5 استیکر باقی مانده\n🔄 زمان بعدی: {next_reset_time}\n\n"
+            
             # بررسی پک‌های موجود
             created_packs = user_data[chat_id].get("created_packs", [])
             if created_packs:
-                send_message(chat_id, "📝 آیا می‌خواهید پک جدید بسازید یا به پک قبلی اضافه کنید؟\n1. ساخت پک جدید\n2. اضافه کردن به پک قبلی")
+                send_message(chat_id, limit_info + "📝 آیا می‌خواهید پک جدید بسازید یا به پک قبلی اضافه کنید؟\n1. ساخت پک جدید\n2. اضافه کردن به پک قبلی")
             else:
-                send_message(chat_id, "📝 شما هنوز پکی ندارید. لطفاً یک نام برای پک استیکر خود انتخاب کن:")
+                send_message(chat_id, limit_info + "📝 شما هنوز پکی ندارید. لطفاً یک نام برای پک استیکر خود انتخاب کن:")
                 user_data[chat_id]["step"] = "pack_name"
             return "ok"
 
@@ -123,6 +154,13 @@ def webhook():
                 return "ok"
 
             if step == "text":
+                # بررسی محدودیت قبل از ساخت استیکر
+                remaining, next_reset = check_sticker_limit(chat_id)
+                if remaining <= 0:
+                    next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
+                    send_message(chat_id, f"⏰ محدودیت روزانه شما تمام شده!\n\n🔄 زمان بعدی: {next_reset_time}\n\n💎 برای ساخت استیکر نامحدود، اشتراک تهیه کنید.")
+                    return "ok"
+                
                 text_sticker = text
                 send_message(chat_id, "⚙️ در حال ساخت استیکر...")
                 background_file_id = user_data[chat_id].get("background")
@@ -132,7 +170,14 @@ def webhook():
                 
                 if success:
                     user_data[chat_id]["count"] += 1
-                    send_message(chat_id, f"✅ استیکر شماره {user_data[chat_id]['count']} ساخته شد.\n\n✍️ متن استیکر بعدی را بفرست:")
+                    record_sticker_usage(chat_id)  # ثبت استفاده
+                    
+                    # نمایش وضعیت محدودیت
+                    remaining, next_reset = check_sticker_limit(chat_id)
+                    next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
+                    limit_info = f"\n📊 وضعیت: {remaining}/5 استیکر باقی مانده\n🔄 زمان بعدی: {next_reset_time}"
+                    
+                    send_message(chat_id, f"✅ استیکر شماره {user_data[chat_id]['count']} ساخته شد.{limit_info}\n\n✍️ متن استیکر بعدی را بفرست:")
                 # step همچنان "text" باقی می‌ماند تا کاربر بتواند استیکر بعدی بسازد
                 return "ok"
 
@@ -239,26 +284,33 @@ def send_as_sticker(chat_id, text, background_file_id=None):
                 send_message(chat_id, f"❌ خطا در اضافه کردن استیکر: {r.json().get('description', 'خطای نامشخص')}")
                 return False
 
-    # ارسال استیکر به کاربر - روش بهتر: ارسال مستقیم فایل
+    # ارسال استیکر به کاربر - ارسال از پک (تنها روش صحیح)
     if sticker_created:
         try:
-            with open(sticker_path, "rb") as f:
-                files = {"sticker": f}
-                data = {"chat_id": chat_id}
-                send_resp = requests.post(API + "sendSticker", data=data, files=files)
-                logger.info(f"Send sticker resp: {send_resp.json()}")
-                
-                if not send_resp.json().get("ok"):
-                    # اگر ارسال مستقیم کار نکرد، از پک بخوان
-                    final = requests.get(API + f"getStickerSet?name={pack_name}").json()
-                    if final.get("ok"):
-                        stickers = final["result"]["stickers"]
-                        if stickers:
-                            file_id = stickers[-1]["file_id"]
-                            requests.post(API + "sendSticker", data={"chat_id": chat_id, "sticker": file_id})
-                            return True
+            # کمی صبر کنیم تا API پک را به‌روزرسانی کند
+            time.sleep(1)
+            
+            # دریافت پک و ارسال آخرین استیکر
+            final = requests.get(API + f"getStickerSet?name={pack_name}").json()
+            if final.get("ok"):
+                stickers = final["result"]["stickers"]
+                if stickers:
+                    file_id = stickers[-1]["file_id"]
+                    send_resp = requests.post(API + "sendSticker", data={"chat_id": chat_id, "sticker": file_id})
+                    logger.info(f"Send sticker resp: {send_resp.json()}")
+                    
+                    if send_resp.json().get("ok"):
+                        return True
+                    else:
+                        logger.error(f"Failed to send sticker: {send_resp.json()}")
+                        send_message(chat_id, "❌ خطا در ارسال استیکر")
+                        return False
+                else:
+                    send_message(chat_id, "❌ استیکر در پک پیدا نشد")
                     return False
-                return True
+            else:
+                send_message(chat_id, "❌ پک پیدا نشد")
+                return False
         except Exception as e:
             logger.error(f"Error sending sticker: {e}")
             send_message(chat_id, "❌ خطا در ارسال استیکر")
@@ -458,9 +510,17 @@ def make_text_sticker(text, path, background_file_id=None):
             # انگلیسی: زوم 2x
             final_img = img.resize((512, 512), Image.LANCZOS)
 
-        # ذخیره تصویر
-        final_img.save(path, "PNG", optimize=True)
-        logger.info(f"Sticker saved successfully to {path} with font size: {font_size} for {language}")
+        # ذخیره تصویر با بهینه‌سازی برای استیکر
+        final_img.save(path, "PNG", optimize=True, compress_level=9)
+        
+        # بررسی حجم فایل
+        file_size = os.path.getsize(path)
+        if file_size > 512 * 1024:  # اگر بیشتر از 512KB باشد
+            logger.warning(f"Sticker file too large: {file_size} bytes, compressing...")
+            # کاهش کیفیت
+            final_img.save(path, "PNG", optimize=True, compress_level=9, quality=85)
+        
+        logger.info(f"Sticker saved successfully to {path} with font size: {font_size} for {language}, size: {os.path.getsize(path)} bytes")
         return True
         
     except Exception as e:
@@ -481,6 +541,53 @@ def show_main_menu(chat_id):
         "text": "👋 خوش اومدی! یکی از گزینه‌ها رو انتخاب کن:",
         "reply_markup": keyboard
     })
+
+def check_sticker_limit(chat_id):
+    """بررسی محدودیت استیکر برای کاربر"""
+    if chat_id not in user_data:
+        return 5, time.time() + 24 * 3600  # 5 استیکر، 24 ساعت بعد
+    
+    current_time = time.time()
+    user_info = user_data[chat_id]
+    
+    # اگر 24 ساعت گذشته، reset کن
+    if current_time - user_info.get("last_reset", 0) >= 24 * 3600:
+        user_info["sticker_usage"] = []
+        user_info["last_reset"] = current_time
+    
+    # شمارش استیکرهای استفاده شده در 24 ساعت گذشته
+    used_stickers = len(user_info.get("sticker_usage", []))
+    remaining = 5 - used_stickers
+    
+    # زمان reset بعدی
+    next_reset = user_info.get("last_reset", current_time) + 24 * 3600
+    
+    return max(0, remaining), next_reset
+
+def record_sticker_usage(chat_id):
+    """ثبت استفاده از استیکر"""
+    if chat_id not in user_data:
+        user_data[chat_id] = {
+            "mode": None, 
+            "count": 0, 
+            "step": None, 
+            "pack_name": None, 
+            "background": None, 
+            "created_packs": [],
+            "sticker_usage": [],
+            "last_reset": time.time()
+        }
+    
+    current_time = time.time()
+    user_info = user_data[chat_id]
+    
+    # اگر 24 ساعت گذشته، reset کن
+    if current_time - user_info.get("last_reset", 0) >= 24 * 3600:
+        user_info["sticker_usage"] = []
+        user_info["last_reset"] = current_time
+    
+    # اضافه کردن زمان استفاده
+    user_info["sticker_usage"].append(current_time)
 
 def send_message(chat_id, text):
     requests.post(API + "sendMessage", json={"chat_id": chat_id, "text": text})
