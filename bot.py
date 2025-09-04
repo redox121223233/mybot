@@ -2,6 +2,7 @@ import os
 import logging
 import re
 import time
+import json
 from flask import Flask, request
 import requests
 from PIL import Image, ImageDraw, ImageFont
@@ -26,6 +27,35 @@ API = f"https://api.telegram.org/bot{BOT_TOKEN}/"
 
 # دیتابیس ساده در حافظه
 user_data = {}
+
+# فایل ذخیره‌سازی داده‌ها
+DATA_FILE = "user_data.json"
+
+def load_user_data():
+    """بارگذاری داده‌های کاربر از فایل"""
+    global user_data
+    try:
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE, 'r', encoding='utf-8') as f:
+                user_data = json.load(f)
+                logger.info(f"Loaded user data: {len(user_data)} users")
+        else:
+            user_data = {}
+    except Exception as e:
+        logger.error(f"Error loading user data: {e}")
+        user_data = {}
+
+def save_user_data():
+    """ذخیره داده‌های کاربر در فایل"""
+    try:
+        with open(DATA_FILE, 'w', encoding='utf-8') as f:
+            json.dump(user_data, f, ensure_ascii=False, indent=2)
+        logger.info(f"Saved user data: {len(user_data)} users")
+    except Exception as e:
+        logger.error(f"Error saving user data: {e}")
+
+# بارگذاری داده‌ها در شروع
+load_user_data()
 
 app = Flask(__name__)
 
@@ -213,6 +243,7 @@ def webhook():
             
             logger.info(f"User {chat_id} packs: {created_packs}")
             logger.info(f"User {chat_id} current pack: {current_pack}")
+            logger.info(f"Full user data for {chat_id}: {user_data.get(chat_id, {})}")
             
             # اگر created_packs خالی است اما current_pack وجود دارد، آن را اضافه کن
             if not created_packs and current_pack:
@@ -232,6 +263,7 @@ def webhook():
                     })
                     created_packs = user_data[chat_id]["created_packs"]
                     logger.info(f"Added current pack to created_packs: {current_pack}")
+                    save_user_data()  # ذخیره فوری
             
             if created_packs:
                 pack_list = "🗂 پک‌های شما:\n\n"
@@ -314,6 +346,7 @@ def send_as_sticker(chat_id, text, background_file_id=None):
                     })
                     logger.info(f"Pack added to created_packs: {pack_name} - {pack_title}")
                     logger.info(f"User {chat_id} created_packs: {user_data[chat_id]['created_packs']}")
+                    save_user_data()  # ذخیره فوری
             else:
                 send_message(chat_id, f"❌ خطا در ساخت پک: {r.json().get('description', 'خطای نامشخص')}")
                 return False
@@ -637,6 +670,7 @@ def record_sticker_usage(chat_id):
     
     # اضافه کردن زمان استفاده
     user_info["sticker_usage"].append(current_time)
+    save_user_data()  # ذخیره فوری
 
 def get_user_packs_from_api(chat_id):
     """دریافت پک‌های کاربر از API تلگرام"""
