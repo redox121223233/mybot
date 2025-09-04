@@ -262,11 +262,8 @@ def make_text_sticker(text, path, background_file_id=None):
 
         draw = ImageDraw.Draw(img)
         
-        # 📌 سایز فونت بزرگتر برای زوم
-        if language == "persian_arabic":
-            initial_font_size = 800  # فارسی/عربی
-        else:
-            initial_font_size = 1000  # انگلیسی
+        # 📌 سایز فونت یکسان برای همه زبان‌ها
+        initial_font_size = 600  # سایز یکسان برای فارسی و انگلیسی
             
         font = get_font(initial_font_size, language)
         
@@ -286,14 +283,9 @@ def make_text_sticker(text, path, background_file_id=None):
 
         # تنظیم خودکار سایز فونت برای تصویر 256×256
         font_size = initial_font_size
-        if language == "persian_arabic":
-            max_width = 230  # فارسی/عربی
-            max_height = 230
-            min_font_size = 150
-        else:
-            max_width = 240  # انگلیسی
-            max_height = 240
-            min_font_size = 180
+        max_width = 230   # یکسان برای همه زبان‌ها
+        max_height = 230  # یکسان برای همه زبان‌ها
+        min_font_size = 150  # یکسان برای همه زبان‌ها
         
         while (w > max_width or h > max_height) and font_size > min_font_size:
             font_size -= 5
@@ -315,11 +307,8 @@ def make_text_sticker(text, path, background_file_id=None):
         x = (base_size - w) / 2
         y = (base_size - h) / 2
 
-        # 📌 حاشیه متناسب با سایز کوچکتر
-        if language == "persian_arabic":
-            outline_thickness = 4  # فارسی/عربی حاشیه نازکتر
-        else:
-            outline_thickness = 6  # انگلیسی حاشیه ضخیمتر
+        # 📌 حاشیه یکسان برای همه زبان‌ها
+        outline_thickness = 5  # یکسان برای همه زبان‌ها
         
         # ایجاد حاشیه با کیفیت بالا
         for offset in range(1, outline_thickness + 1):
