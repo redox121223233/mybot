@@ -329,10 +329,10 @@ def make_text_sticker(text, path, background_file_id=None):
         
         # 📌 سایز فونت بر اساس زبان و اندازه تصویر
         if language == "persian_arabic":
-            initial_font_size = 1200  # فارسی: سایز بزرگ برای 512×512
-            max_width = 460
-            max_height = 460
-            min_font_size = 300
+            initial_font_size = 400   # فارسی: سایز متوسط برای 512×512
+            max_width = 400
+            max_height = 400
+            min_font_size = 100
         else:
             initial_font_size = 600   # انگلیسی: سایز کوچک برای 256×256 (که بعداً زوم می‌شود)
             max_width = 230
@@ -380,7 +380,7 @@ def make_text_sticker(text, path, background_file_id=None):
 
         # 📌 حاشیه بر اساس زبان
         if language == "persian_arabic":
-            outline_thickness = 8  # فارسی: حاشیه ضخیم‌تر برای 512×512
+            outline_thickness = 4  # فارسی: حاشیه متوسط برای 512×512
         else:
             outline_thickness = 5  # انگلیسی: حاشیه نازک‌تر برای 256×256
         
