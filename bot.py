@@ -237,42 +237,6 @@ def webhook():
         # دکمه‌های منو
         if text == "⭐ اشتراک":
             send_message(chat_id, "💳 بخش اشتراک بعداً فعال خواهد شد.")
-        elif text == "📂 پک من":
-            created_packs = user_data.get(chat_id, {}).get("created_packs", [])
-            current_pack = user_data.get(chat_id, {}).get("pack_name")
-            
-            logger.info(f"User {chat_id} packs: {created_packs}")
-            logger.info(f"User {chat_id} current pack: {current_pack}")
-            logger.info(f"Full user data for {chat_id}: {user_data.get(chat_id, {})}")
-            
-            # اگر created_packs خالی است اما current_pack وجود دارد، آن را اضافه کن
-            if not created_packs and current_pack:
-                # بررسی اینکه پک واقعاً وجود دارد
-                resp = requests.get(API + f"getStickerSet?name={current_pack}").json()
-                if resp.get("ok"):
-                    user_info = requests.get(API + f"getChat?chat_id={chat_id}").json()
-                    first_name = user_info.get("result", {}).get("first_name", "User")
-                    pack_title = f"{first_name}'s Stickers"
-                    
-                    if "created_packs" not in user_data[chat_id]:
-                        user_data[chat_id]["created_packs"] = []
-                    
-                    user_data[chat_id]["created_packs"].append({
-                        "name": current_pack,
-                        "title": pack_title
-                    })
-                    created_packs = user_data[chat_id]["created_packs"]
-                    logger.info(f"Added current pack to created_packs: {current_pack}")
-                    save_user_data()  # ذخیره فوری
-            
-            if created_packs:
-                pack_list = "🗂 پک‌های شما:\n\n"
-                for i, pack in enumerate(created_packs, 1):
-                    pack_url = f"https://t.me/addstickers/{pack['name']}"
-                    pack_list += f"{i}. {pack['title']}\n{pack_url}\n\n"
-                send_message(chat_id, pack_list)
-            else:
-                send_message(chat_id, "❌ هنوز پکی برایت ساخته نشده.")
         elif text == "ℹ️ درباره":
             send_message(chat_id, "ℹ️ این ربات برای ساخت استیکر متنی است. نسخه فعلی رایگان است.")
         elif text == "📞 پشتیبانی":
@@ -613,8 +577,7 @@ def show_main_menu(chat_id):
     keyboard = {
         "keyboard": [
             ["🎁 تست رایگان", "⭐ اشتراک"],
-            ["📂 پک من", "ℹ️ درباره"],
-            ["📞 پشتیبانی"]
+            ["ℹ️ درباره", "📞 پشتیبانی"]
         ],
         "resize_keyboard": True
     }
@@ -632,17 +595,23 @@ def check_sticker_limit(chat_id):
     current_time = time.time()
     user_info = user_data[chat_id]
     
-    # اگر 24 ساعت گذشته، reset کن
-    if current_time - user_info.get("last_reset", 0) >= 24 * 3600:
+    # دریافت زمان آخرین reset (اگر وجود نداشت، از الان شروع کن)
+    last_reset = user_info.get("last_reset", current_time)
+    
+    # محاسبه زمان reset بعدی (بر اساس آخرین reset)
+    next_reset = last_reset + 24 * 3600
+    
+    # اگر زمان reset گذشته، reset کن
+    if current_time >= next_reset:
         user_info["sticker_usage"] = []
         user_info["last_reset"] = current_time
+        next_reset = current_time + 24 * 3600
+        save_user_data()  # ذخیره تغییرات
+        logger.info(f"Reset limit for user {chat_id} at {current_time}")
     
     # شمارش استیکرهای استفاده شده در 24 ساعت گذشته
     used_stickers = len(user_info.get("sticker_usage", []))
     remaining = 5 - used_stickers
-    
-    # زمان reset بعدی
-    next_reset = user_info.get("last_reset", current_time) + 24 * 3600
     
     return max(0, remaining), next_reset
 
@@ -663,10 +632,17 @@ def record_sticker_usage(chat_id):
     current_time = time.time()
     user_info = user_data[chat_id]
     
-    # اگر 24 ساعت گذشته، reset کن
-    if current_time - user_info.get("last_reset", 0) >= 24 * 3600:
+    # دریافت زمان آخرین reset (اگر وجود نداشت، از الان شروع کن)
+    last_reset = user_info.get("last_reset", current_time)
+    
+    # محاسبه زمان reset بعدی
+    next_reset = last_reset + 24 * 3600
+    
+    # اگر زمان reset گذشته، reset کن
+    if current_time >= next_reset:
         user_info["sticker_usage"] = []
         user_info["last_reset"] = current_time
+        logger.info(f"Reset limit for user {chat_id} at {current_time}")
     
     # اضافه کردن زمان استفاده
     user_info["sticker_usage"].append(current_time)
