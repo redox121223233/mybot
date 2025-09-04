@@ -23,6 +23,7 @@ if not BOT_TOKEN:
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "secret")
 APP_URL = os.environ.get("APP_URL")
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "MyBot")  # یوزرنیم ربات بدون @
+CHANNEL_LINK = os.environ.get("CHANNEL_LINK", "@YourChannel")  # لینک کانال اجباری
 API = f"https://api.telegram.org/bot{BOT_TOKEN}/"
 
 # دیتابیس ساده در حافظه
@@ -78,6 +79,11 @@ def webhook():
         text = msg["text"]
 
         if text == "/start":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+            
             # اگر کاربر قبلاً وجود دارد، داده‌های مهم را حفظ کن
             if chat_id in user_data:
                 old_data = user_data[chat_id]
@@ -106,6 +112,11 @@ def webhook():
             return "ok"
 
         if text == "🎁 تست رایگان":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+                
             if chat_id not in user_data:
                 user_data[chat_id] = {
                     "mode": None, 
@@ -250,10 +261,22 @@ def webhook():
 
         # دکمه‌های منو
         if text == "⭐ اشتراک":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
             send_message(chat_id, "💳 بخش اشتراک بعداً فعال خواهد شد.")
         elif text == "ℹ️ درباره":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
             send_message(chat_id, "ℹ️ این ربات برای ساخت استیکر متنی است. نسخه فعلی رایگان است.")
         elif text == "📞 پشتیبانی":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
             support_id = os.environ.get("SUPPORT_ID", "@YourSupportID")
             send_message(chat_id, f"📞 برای پشتیبانی با {support_id} در تماس باش.")
 
@@ -693,6 +716,63 @@ def get_user_packs_from_api(chat_id):
     except Exception as e:
         logger.error(f"Error getting user packs from API: {e}")
         return []
+
+def check_channel_membership(chat_id):
+    """بررسی عضویت کاربر در کانال اجباری"""
+    try:
+        # استخراج channel_id از لینک
+        if CHANNEL_LINK.startswith("@"):
+            channel_username = CHANNEL_LINK[1:]  # حذف @
+        elif "t.me/" in CHANNEL_LINK:
+            channel_username = CHANNEL_LINK.split("t.me/")[-1]
+            if channel_username.startswith("@"):
+                channel_username = channel_username[1:]
+        else:
+            channel_username = CHANNEL_LINK
+        
+        # بررسی عضویت
+        response = requests.get(API + f"getChatMember", params={
+            "chat_id": f"@{channel_username}",
+            "user_id": chat_id
+        }).json()
+        
+        if response.get("ok"):
+            status = response["result"]["status"]
+            # اگر عضو است (member, administrator, creator)
+            return status in ["member", "administrator", "creator"]
+        else:
+            logger.error(f"Error checking membership: {response}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error in check_channel_membership: {e}")
+        return False
+
+def send_membership_required_message(chat_id):
+    """ارسال پیام عضویت اجباری"""
+    message = f"""🔒 عضویت در کانال اجباری است!
+
+برای استفاده از ربات، ابتدا باید عضو کانال ما شوید:
+
+📢 {CHANNEL_LINK}
+
+بعد از عضویت، دوباره /start را بزنید."""
+    
+    # ایجاد دکمه عضویت
+    keyboard = {
+        "inline_keyboard": [[
+            {
+                "text": "📢 عضویت در کانال",
+                "url": f"https://t.me/{CHANNEL_LINK.replace('@', '')}"
+            }
+        ]]
+    }
+    
+    requests.post(API + "sendMessage", json={
+        "chat_id": chat_id,
+        "text": message,
+        "reply_markup": keyboard
+    })
 
 def send_message(chat_id, text):
     requests.post(API + "sendMessage", json={"chat_id": chat_id, "text": text})
