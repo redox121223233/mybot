@@ -73,6 +73,14 @@ def webhook():
                     "sticker_usage": [],
                     "last_reset": time.time()
                 }
+            else:
+                # اگر کاربر قبلاً وجود دارد، created_packs را حفظ کن
+                if "created_packs" not in user_data[chat_id]:
+                    user_data[chat_id]["created_packs"] = []
+                if "sticker_usage" not in user_data[chat_id]:
+                    user_data[chat_id]["sticker_usage"] = []
+                if "last_reset" not in user_data[chat_id]:
+                    user_data[chat_id]["last_reset"] = time.time()
             
             # بررسی محدودیت استیکر
             remaining, next_reset = check_sticker_limit(chat_id)
@@ -206,28 +214,31 @@ def webhook():
             logger.info(f"User {chat_id} packs: {created_packs}")
             logger.info(f"User {chat_id} current pack: {current_pack}")
             
+            # اگر created_packs خالی است اما current_pack وجود دارد، آن را اضافه کن
+            if not created_packs and current_pack:
+                # بررسی اینکه پک واقعاً وجود دارد
+                resp = requests.get(API + f"getStickerSet?name={current_pack}").json()
+                if resp.get("ok"):
+                    user_info = requests.get(API + f"getChat?chat_id={chat_id}").json()
+                    first_name = user_info.get("result", {}).get("first_name", "User")
+                    pack_title = f"{first_name}'s Stickers"
+                    
+                    if "created_packs" not in user_data[chat_id]:
+                        user_data[chat_id]["created_packs"] = []
+                    
+                    user_data[chat_id]["created_packs"].append({
+                        "name": current_pack,
+                        "title": pack_title
+                    })
+                    created_packs = user_data[chat_id]["created_packs"]
+                    logger.info(f"Added current pack to created_packs: {current_pack}")
+            
             if created_packs:
                 pack_list = "🗂 پک‌های شما:\n\n"
                 for i, pack in enumerate(created_packs, 1):
                     pack_url = f"https://t.me/addstickers/{pack['name']}"
                     pack_list += f"{i}. {pack['title']}\n{pack_url}\n\n"
                 send_message(chat_id, pack_list)
-            elif current_pack:
-                # اگر پک فعلی وجود دارد اما در لیست نیست، آن را اضافه کن
-                user_info = requests.get(API + f"getChat?chat_id={chat_id}").json()
-                first_name = user_info.get("result", {}).get("first_name", "User")
-                pack_title = f"{first_name}'s Stickers"
-                
-                if "created_packs" not in user_data[chat_id]:
-                    user_data[chat_id]["created_packs"] = []
-                
-                user_data[chat_id]["created_packs"].append({
-                    "name": current_pack,
-                    "title": pack_title
-                })
-                
-                pack_url = f"https://t.me/addstickers/{current_pack}"
-                send_message(chat_id, f"🗂 پک شما:\n\n1. {pack_title}\n{pack_url}")
             else:
                 send_message(chat_id, "❌ هنوز پکی برایت ساخته نشده.")
         elif text == "ℹ️ درباره":
@@ -301,6 +312,8 @@ def send_as_sticker(chat_id, text, background_file_id=None):
                         "name": pack_name,
                         "title": pack_title
                     })
+                    logger.info(f"Pack added to created_packs: {pack_name} - {pack_title}")
+                    logger.info(f"User {chat_id} created_packs: {user_data[chat_id]['created_packs']}")
             else:
                 send_message(chat_id, f"❌ خطا در ساخت پک: {r.json().get('description', 'خطای نامشخص')}")
                 return False
@@ -624,6 +637,32 @@ def record_sticker_usage(chat_id):
     
     # اضافه کردن زمان استفاده
     user_info["sticker_usage"].append(current_time)
+
+def get_user_packs_from_api(chat_id):
+    """دریافت پک‌های کاربر از API تلگرام"""
+    try:
+        # دریافت اطلاعات کاربر
+        user_info = requests.get(API + f"getChat?chat_id={chat_id}").json()
+        first_name = user_info.get("result", {}).get("first_name", "User")
+        
+        # جستجو برای پک‌هایی که با نام کاربر شروع می‌شوند
+        # این روش کامل نیست اما می‌تواند کمک کند
+        packs = []
+        
+        # اگر pack_name فعلی وجود دارد، آن را بررسی کن
+        current_pack = user_data.get(chat_id, {}).get("pack_name")
+        if current_pack:
+            resp = requests.get(API + f"getStickerSet?name={current_pack}").json()
+            if resp.get("ok"):
+                packs.append({
+                    "name": current_pack,
+                    "title": f"{first_name}'s Stickers"
+                })
+        
+        return packs
+    except Exception as e:
+        logger.error(f"Error getting user packs from API: {e}")
+        return []
 
 def send_message(chat_id, text):
     requests.post(API + "sendMessage", json={"chat_id": chat_id, "text": text})
