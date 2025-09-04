@@ -78,16 +78,30 @@ def webhook():
         text = msg["text"]
 
         if text == "/start":
-            user_data[chat_id] = {
-                "mode": None, 
-                "count": 0, 
-                "step": None, 
-                "pack_name": None, 
-                "background": None, 
-                "created_packs": [],
-                "sticker_usage": [],
-                "last_reset": time.time()
-            }
+            # اگر کاربر قبلاً وجود دارد، داده‌های مهم را حفظ کن
+            if chat_id in user_data:
+                old_data = user_data[chat_id]
+                user_data[chat_id] = {
+                    "mode": None, 
+                    "count": 0, 
+                    "step": None, 
+                    "pack_name": None, 
+                    "background": None, 
+                    "created_packs": [],
+                    "sticker_usage": old_data.get("sticker_usage", []),  # حفظ محدودیت
+                    "last_reset": old_data.get("last_reset", time.time())  # حفظ زمان reset
+                }
+            else:
+                user_data[chat_id] = {
+                    "mode": None, 
+                    "count": 0, 
+                    "step": None, 
+                    "pack_name": None, 
+                    "background": None, 
+                    "created_packs": [],
+                    "sticker_usage": [],
+                    "last_reset": time.time()
+                }
             show_main_menu(chat_id)
             return "ok"
 
@@ -139,7 +153,7 @@ def webhook():
             if user_data[chat_id].get("pack_name"):
                 # اگر کاربر قبلاً پکی دارد، مستقیماً به ساخت استیکر ادامه دهد
                 pack_name = user_data[chat_id]["pack_name"]
-                send_message(chat_id, limit_info + f"✅ ادامه ساخت استیکر در پک فعلی\n✍️ متن استیکر بعدی را بفرست:")
+                send_message(chat_id, limit_info + f"✅ ادامه ساخت استیکر در پک فعلی\n✍️ متن استیکر بعدی را بفرست:\n\n📷 یا عکس جدید برای تغییر بکگراند بفرست:")
             elif created_packs:
                 send_message(chat_id, limit_info + "📝 آیا می‌خواهید پک جدید بسازید یا به پک قبلی اضافه کنید؟\n1. ساخت پک جدید\n2. اضافه کردن به پک قبلی")
             else:
@@ -228,7 +242,7 @@ def webhook():
                     next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
                     limit_info = f"\n📊 وضعیت: {remaining}/5 استیکر باقی مانده\n🔄 زمان بعدی: {next_reset_time}"
                     
-                    send_message(chat_id, f"✅ استیکر شماره {user_data[chat_id]['count']} ساخته شد.{limit_info}\n\n✍️ متن استیکر بعدی را بفرست:")
+                    send_message(chat_id, f"✅ استیکر شماره {user_data[chat_id]['count']} ساخته شد.{limit_info}\n\n✍️ متن استیکر بعدی را بفرست:\n\n📷 یا عکس جدید برای تغییر بکگراند بفرست:")
                     
                     # مهم: pack_name و background را حفظ کن تا استیکر بعدی در همان پک قرار بگیرد
                     # step همچنان "text" باقی می‌ماند تا کاربر بتواند استیکر بعدی بسازد
@@ -246,14 +260,20 @@ def webhook():
     # 📌 پردازش عکس
     elif "photo" in msg:
         state = user_data.get(chat_id, {})
-        if state.get("mode") == "free" and state.get("step") == "background":
+        if state.get("mode") == "free":
             photos = msg.get("photo", [])
             if photos:
                 file_id = photos[-1].get("file_id")
                 if file_id:
-                    user_data[chat_id]["background"] = file_id
-                    user_data[chat_id]["step"] = "text"
-                    send_message(chat_id, "✍️ حالا متن استیکرت رو بفرست:")
+                    if state.get("step") == "background":
+                        # عکس اول برای بکگراند
+                        user_data[chat_id]["background"] = file_id
+                        user_data[chat_id]["step"] = "text"
+                        send_message(chat_id, "✍️ حالا متن استیکرت رو بفرست:")
+                    elif state.get("step") == "text":
+                        # تغییر بکگراند در حین ساخت استیکر
+                        user_data[chat_id]["background"] = file_id
+                        send_message(chat_id, "✅ بکگراند تغییر کرد!\n✍️ متن استیکر بعدی را بفرست:")
 
     return "ok"
 
