@@ -1,10 +1,14 @@
 import os
 import logging
-import requests
+import re
 from flask import Flask, request
+import requests
 from PIL import Image, ImageDraw, ImageFont
+from waitress import serve
+from io import BytesIO
 import arabic_reshaper
 from bidi.algorithm import get_display
+
 # --- Logger ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("bot")
@@ -159,18 +163,27 @@ def send_as_sticker(chat_id, text, background_file_id=None):
             file_id = stickers[-1]["file_id"]
             requests.post(API + "sendSticker", data={"chat_id": chat_id, "sticker": file_id})
 
+def reshape_text(text):
+    """اصلاح متن فارسی/عربی با کتابخانه‌های arabic_reshaper و bidi"""
+    try:
+        reshaped = arabic_reshaper.reshape(text)
+        return get_display(reshaped)
+    except Exception as e:
+        logger.error(f"Error reshaping text: {e}")
+        return text
+
 def detect_language(text):
     """تشخیص زبان متن"""
-    # الگوی فارسی
-    persian_pattern = re.compile(r'[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]')
-    persian_chars = len(persian_pattern.findall(text))
+    # الگوی فارسی/عربی
+    persian_arabic_pattern = re.compile(r'[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]')
+    persian_arabic_chars = len(persian_arabic_pattern.findall(text))
     
     # الگوی انگلیسی
     english_pattern = re.compile(r'[a-zA-Z]')
     english_chars = len(english_pattern.findall(text))
     
-    if persian_chars > english_chars:
-        return "persian"
+    if persian_arabic_chars > english_chars:
+        return "persian_arabic"
     elif english_chars > 0:
         return "english"
     else:
@@ -178,9 +191,10 @@ def detect_language(text):
 
 def get_font(size, language="english"):
     """بارگذاری فونت بر اساس زبان"""
-    if language == "persian":
-        # فونت‌های فارسی
+    if language == "persian_arabic":
+        # فونت‌های فارسی/عربی
         font_paths = [
+            "Vazirmatn-Regular.ttf",
             "IRANSans.ttf",
             "Vazir.ttf",
             "Vazir-Regular.ttf",
@@ -222,6 +236,10 @@ def make_text_sticker(text, path, background_file_id=None):
         language = detect_language(text)
         logger.info(f"Detected language: {language}")
         
+        # اصلاح متن فارسی/عربی
+        if language == "persian_arabic":
+            text = reshape_text(text)
+        
         # 🔥 ایجاد تصویر کوچکتر برای زوم کردن - 256×256
         base_size = 256
         img = Image.new("RGBA", (base_size, base_size), (255, 255, 255, 0))
@@ -245,8 +263,8 @@ def make_text_sticker(text, path, background_file_id=None):
         draw = ImageDraw.Draw(img)
         
         # 📌 سایز فونت بزرگتر برای زوم
-        if language == "persian":
-            initial_font_size = 800  # فارسی
+        if language == "persian_arabic":
+            initial_font_size = 800  # فارسی/عربی
         else:
             initial_font_size = 1000  # انگلیسی
             
@@ -268,8 +286,8 @@ def make_text_sticker(text, path, background_file_id=None):
 
         # تنظیم خودکار سایز فونت برای تصویر 256×256
         font_size = initial_font_size
-        if language == "persian":
-            max_width = 230  # فارسی
+        if language == "persian_arabic":
+            max_width = 230  # فارسی/عربی
             max_height = 230
             min_font_size = 150
         else:
@@ -298,8 +316,8 @@ def make_text_sticker(text, path, background_file_id=None):
         y = (base_size - h) / 2
 
         # 📌 حاشیه متناسب با سایز کوچکتر
-        if language == "persian":
-            outline_thickness = 4  # فارسی حاشیه نازکتر
+        if language == "persian_arabic":
+            outline_thickness = 4  # فارسی/عربی حاشیه نازکتر
         else:
             outline_thickness = 6  # انگلیسی حاشیه ضخیمتر
         
