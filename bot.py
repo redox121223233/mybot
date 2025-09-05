@@ -35,7 +35,36 @@ DATA_FILE = "user_data.json"
 def load_user_data():
     """بارگذاری داده‌های کاربر از فایل"""
     global user_data
-    @app.post(f"/webhook/{WEBHOOK_SECRET}")
+    try:
+        if os.path.exists(DATA_FILE):
+            with open(DATA_FILE, 'r', encoding='utf-8') as f:
+                user_data = json.load(f)
+                logger.info(f"Loaded user data: {len(user_data)} users")
+        else:
+            user_data = {}
+    except Exception as e:
+        logger.error(f"Error loading user data: {e}")
+        user_data = {}
+
+def save_user_data():
+    """ذخیره داده‌های کاربر در فایل"""
+    try:
+        with open(DATA_FILE, 'w', encoding='utf-8') as f:
+            json.dump(user_data, f, ensure_ascii=False, indent=2)
+        logger.info(f"Saved user data: {len(user_data)} users")
+    except Exception as e:
+        logger.error(f"Error saving user data: {e}")
+
+# بارگذاری داده‌ها در شروع
+load_user_data()
+
+app = Flask(__name__)
+
+@app.route("/")
+def home():
+    return "✅ Bot is running!"
+
+@app.post(f"/webhook/{WEBHOOK_SECRET}")
 def webhook():
     update = request.get_json(force=True, silent=True) or {}
     msg = update.get("message")
@@ -166,36 +195,6 @@ def webhook():
                         send_message(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
                 return "ok"
 
-    try:
-        if os.path.exists(DATA_FILE):
-            with open(DATA_FILE, 'r', encoding='utf-8') as f:
-                user_data = json.load(f)
-                logger.info(f"Loaded user data: {len(user_data)} users")
-        else:
-            user_data = {}
-    except Exception as e:
-        logger.error(f"Error loading user data: {e}")
-        user_data = {}
-
-def save_user_data():
-    """ذخیره داده‌های کاربر در فایل"""
-    try:
-        with open(DATA_FILE, 'w', encoding='utf-8') as f:
-            json.dump(user_data, f, ensure_ascii=False, indent=2)
-        logger.info(f"Saved user data: {len(user_data)} users")
-    except Exception as e:
-        logger.error(f"Error saving user data: {e}")
-
-# بارگذاری داده‌ها در شروع
-load_user_data()
-
-app = Flask(__name__)
-
-@app.route("/")
-def home():
-    return "✅ Bot is running!"
-
-# ------------ ادامه (webhook و ...) در بخش بعدی -------------
             if step == "select_pack":
                 try:
                     pack_index = int(text) - 1
@@ -262,6 +261,8 @@ def home():
                     
                     send_message(chat_id, f"✅ استیکر شماره {user_data[chat_id]['count']} ساخته شد.{limit_info}\n\n✍️ متن استیکر بعدی را بفرست:\n\n📷 یا عکس جدید برای تغییر بکگراند بفرست:")
                     
+                    # مهم: pack_name و background را حفظ کن تا استیکر بعدی در همان پک قرار بگیرد
+                    # step همچنان "text" باقی می‌ماند تا کاربر بتواند استیکر بعدی بسازد
                 return "ok"
 
         # دکمه‌های منو
@@ -304,6 +305,7 @@ def home():
                         send_message(chat_id, "✅ بکگراند تغییر کرد!\n✍️ متن استیکر بعدی را بفرست:")
 
     return "ok"
+
 def send_as_sticker(chat_id, text, background_file_id=None):
     sticker_path = "sticker.png"
     ok = make_text_sticker(text, sticker_path, background_file_id)
@@ -320,7 +322,7 @@ def send_as_sticker(chat_id, text, background_file_id=None):
     user_info = requests.get(API + f"getChat?chat_id={chat_id}").json()
     username = user_info.get("result", {}).get("username", f"user_{chat_id}")
     first_name = user_info.get("result", {}).get("first_name", "User")
-
+    
     pack_title = f"{first_name}'s Stickers"
 
     resp = requests.get(API + f"getStickerSet?name={pack_name}").json()
@@ -349,7 +351,7 @@ def send_as_sticker(chat_id, text, background_file_id=None):
                     if existing_pack["name"] == pack_name:
                         pack_exists = True
                         break
-
+                
                 if not pack_exists:
                     user_data[chat_id]["created_packs"].append({
                         "name": pack_name,
@@ -408,46 +410,260 @@ def send_as_sticker(chat_id, text, background_file_id=None):
             logger.error(f"Error sending sticker: {e}")
             send_message(chat_id, "❌ خطا در ارسال استیکر")
             return False
+    
     return False
+
+def reshape_text(text):
+    """متن فارسی رو بدون تغییر برمی‌گردونه تا ترتیب حروف حفظ بشه"""
+    # غیرفعال کردن reshape برای حفظ ترتیب طبیعی حروف
+    return text
+
+def sanitize_pack_name(text):
+    """تبدیل نام پک به فرمت قابل قبول برای Telegram API"""
+    import unicodedata
+    
+    # حذف کاراکترهای غیرمجاز و تبدیل به ASCII
+    sanitized = ""
+    for char in text:
+        # اگر کاراکتر ASCII حرف یا عدد باشد
+        if char.isalnum() and ord(char) < 128:
+            sanitized += char
+        # اگر فاصله باشد
+        elif char.isspace():
+            sanitized += "_"
+        # اگر کاراکتر فارسی باشد، به انگلیسی تبدیل کن
+        elif '\u0600' <= char <= '\u06FF':  # محدوده کاراکترهای فارسی/عربی
+            # تبدیل ساده فارسی به انگلیسی (می‌تونید کامل‌تر کنید)
+            persian_to_english = {
+                'ا': 'a', 'ب': 'b', 'پ': 'p', 'ت': 't', 'ث': 's', 'ج': 'j', 'چ': 'ch',
+                'ح': 'h', 'خ': 'kh', 'د': 'd', 'ذ': 'z', 'ر': 'r', 'ز': 'z', 'ژ': 'zh',
+                'س': 's', 'ش': 'sh', 'ص': 's', 'ض': 'z', 'ط': 't', 'ظ': 'z', 'ع': 'a',
+                'غ': 'gh', 'ف': 'f', 'ق': 'gh', 'ک': 'k', 'گ': 'g', 'ل': 'l', 'م': 'm',
+                'ن': 'n', 'و': 'v', 'ه': 'h', 'ی': 'y', 'ئ': 'e', 'ء': 'a'
+            }
+            sanitized += persian_to_english.get(char, 'x')
+        # اگر ایموجی باشد، حذف کن (ایموجی‌ها معمولاً در محدوده 0x1F600-0x1F64F و سایر محدوده‌ها هستند)
+        elif (ord(char) >= 0x1F600 and ord(char) <= 0x1F64F) or \
+             (ord(char) >= 0x1F300 and ord(char) <= 0x1F5FF) or \
+             (ord(char) >= 0x1F680 and ord(char) <= 0x1F6FF) or \
+             (ord(char) >= 0x1F1E0 and ord(char) <= 0x1F1FF) or \
+             (ord(char) >= 0x2600 and ord(char) <= 0x26FF) or \
+             (ord(char) >= 0x2700 and ord(char) <= 0x27BF) or \
+             (ord(char) >= 0xFE00 and ord(char) <= 0xFE0F) or \
+             (ord(char) >= 0x1F900 and ord(char) <= 0x1F9FF) or \
+             (ord(char) >= 0x1F018 and ord(char) <= 0x1F270):
+            # ایموجی رو حذف کن (هیچ کاراکتری اضافه نکن)
+            continue
+        # سایر کاراکترها رو حذف کن
+        else:
+            sanitized += "x"
+    
+    # حذف کاراکترهای تکراری _ و محدود کردن طول
+    sanitized = re.sub(r'_+', '_', sanitized)
+    sanitized = sanitized.strip('_')
+    
+    # اگر خالی شد یا خیلی کوتاه بود
+    if not sanitized or len(sanitized) < 2:
+        sanitized = "pack"
+    
+    # محدود کردن طول به 64 کاراکتر (محدودیت Telegram)
+    if len(sanitized) > 64:
+        sanitized = sanitized[:64]
+    
+    return sanitized
+
+def _measure_text(draw, text, font):
+    """اندازه‌گیری امن متن (پهنای یک خط)"""
+    try:
+        bbox = draw.textbbox((0, 0), text, font=font)
+        return bbox[2] - bbox[0], bbox[3] - bbox[1]
+    except Exception:
+        try:
+            w, h = draw.textsize(text, font=font)
+            return w, h
+        except Exception:
+            return len(text) * max(font.size // 2, 1), font.size
+
+def _hard_wrap_word(draw, word, font, max_width):
+    """شکستن کلمات خیلی بلند به چند بخش که داخل max_width جا شوند"""
+    parts = []
+    start = 0
+    n = len(word)
+    if n == 0:
+        return [word]
+    while start < n:
+        lo, hi = 1, n - start
+        best = 1
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            segment = word[start:start + mid]
+            w, _ = _measure_text(draw, segment, font)
+            if w <= max_width:
+                best = mid
+                lo = mid + 1
+            else:
+                hi = mid - 1
+        parts.append(word[start:start + best])
+        start += best
+        if best == 0:
+            break
+    return parts
+
+def wrap_text_multiline(draw, text, font, max_width, is_rtl=False):
+    """شکستن متن به خطوط متعدد با در نظر گرفتن فاصله‌ها و کلمات خیلی بلند.
+    برای حفظ ترتیب طبیعی حروف، از روش ساده استفاده می‌کنیم.
+    """
+    if not text:
+        return [""]
+    
+    # برای متن فارسی، از روش ساده‌تر استفاده می‌کنیم
+    if is_rtl:
+        # شکستن ساده بر اساس فاصله
+        words = text.split()
+        lines = []
+        current_line = ""
+        
+        for word in words:
+            test_line = current_line + " " + word if current_line else word
+            w, _ = _measure_text(draw, test_line, font)
+            
+            if w <= max_width:
+                current_line = test_line
+            else:
+                if current_line:
+                    lines.append(current_line)
+                current_line = word
+        
+        if current_line:
+            lines.append(current_line)
+        
+        return lines or [""]
+    
+    # برای متن انگلیسی، از روش قبلی استفاده می‌کنیم
+    tokens = re.split(r"(\s+)", text)
+    lines = []
+    current = ""
+    for token in tokens:
+        if token.strip() == "":
+            # فضای خالی: فقط اگر چیزی در خط داریم اضافه شود
+            tentative = current + token
+            w, _ = _measure_text(draw, tentative, font)
+            if w <= max_width:
+                current = tentative
+            else:
+                if current:
+                    lines.append(current.rstrip())
+                    current = ""
+            continue
+        # کلمه غیرسفید
+        tentative = current + token
+        w, _ = _measure_text(draw, tentative, font)
+        if w <= max_width:
+            current = tentative
+        else:
+            # اگر خود کلمه جا نشود باید کلمه را خرد کنیم
+            if current:
+                lines.append(current.rstrip())
+                current = ""
+            # خرد کردن کلمه طولانی
+            for part in _hard_wrap_word(draw, token, font, max_width):
+                w_part, _ = _measure_text(draw, part, font)
+                if current == "" and w_part <= max_width:
+                    current = part
+                else:
+                    if current:
+                        lines.append(current.rstrip())
+                    current = part
+    if current:
+        lines.append(current.rstrip())
+    
+    return lines or [""]
+
+def measure_multiline_block(draw, lines, font, line_spacing_px):
+    """محاسبه اندازه بلوک چندخطی"""
+    max_w = 0
+    total_h = 0
+    for i, line in enumerate(lines):
+        w, h = _measure_text(draw, line, font)
+        max_w = max(max_w, w)
+        total_h += h
+        if i < len(lines) - 1:
+            total_h += line_spacing_px
+    return max_w, total_h
+
+def detect_language(text):
+    """تشخیص زبان متن"""
+    # الگوی فارسی/عربی
+    persian_arabic_pattern = re.compile(r'[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]')
+    persian_arabic_chars = len(persian_arabic_pattern.findall(text))
+    
+    # الگوی انگلیسی
+    english_pattern = re.compile(r'[a-zA-Z]')
+    english_chars = len(english_pattern.findall(text))
+    
+    if persian_arabic_chars > english_chars:
+        return "persian_arabic"
+    elif english_chars > 0:
+        return "english"
+    else:
+        return "other"
+
 def get_font(size, language="english"):
-    # فونت مناسب فارسی یا انگلیسی از پوشه پروژه یا مسیرهای رایج
+    """بارگذاری فونت بر اساس زبان"""
     if language == "persian_arabic":
-        font_options = [
-            "Vazirmatn-Regular.ttf", "Vazir-Regular.ttf", "IRANSans.ttf", 
+        # فونت‌های فارسی/عربی
+        font_paths = [
+            "Vazirmatn-Regular.ttf",
+            "IRANSans.ttf", 
+            "Vazir.ttf",
+            "Vazir-Regular.ttf",
+            "Sahel.ttf",
+            "Samim.ttf",
+            "Tanha.ttf",
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
         ]
     else:
-        font_options = [
-            "arial.ttf", "DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        # فونت‌های انگلیسی
+        font_paths = [
+            "arial.ttf",
+            "DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/System/Library/Fonts/Arial.ttf",
+            "/Windows/Fonts/arial.ttf",
+            "NotoSans-Regular.ttf"
         ]
-    for font_path in font_options:
+    
+    for font_path in font_paths:
         try:
             font = ImageFont.truetype(font_path, size)
-            logger.info(f"Font loaded: {font_path}")
+            logger.info(f"Successfully loaded font: {font_path} with size: {size} for {language}")
             return font
-        except Exception as e:
-            logger.warning(f"Font load failed ({font_path}): {e}")
-    logger.warning("No proper font found! Using default font (may break RTL letters!)")
-    return ImageFont.load_default()
-
-def reshape_text(text):
+        except (OSError, IOError):
+            continue
+    
     try:
-        reshaped = arabic_reshaper.reshape(text)
-        return get_display(reshaped)
-    except Exception as e:
-        logger.error(f"Error reshaping text: {e}")
-        return text
+        return ImageFont.load_default()
+    except:
+        return None
 
 def make_text_sticker(text, path, background_file_id=None):
     try:
-        logger.info(f"Creating sticker for text: {text}")
+        logger.info(f"Creating sticker with text: {text}")
+        
+        # تشخیص زبان
         language = detect_language(text)
-        is_rtl = language == "persian_arabic"
-        text_display = reshape_text(text) if is_rtl else text
-
+        logger.info(f"Detected language: {language}")
+        
+        # اصلاح متن فارسی/عربی
+        if language == "persian_arabic":
+            text = reshape_text(text)
+        
+        # 🔥 رندر روی 256×256 و در پایان زوم 2x برای هر دو زبان
         img_size = 256
-        img = Image.new("RGBA", (img_size, img_size), (255,255,255,0))
+        img = Image.new("RGBA", (img_size, img_size), (255, 255, 255, 0))
+
+        # 📌 اگر بکگراند هست → جایگزین کن
         if background_file_id:
             try:
                 file_info = requests.get(API + f"getFile?file_id={background_file_id}").json()
@@ -458,56 +674,295 @@ def make_text_sticker(text, path, background_file_id=None):
                     if resp.status_code == 200:
                         bg = Image.open(BytesIO(resp.content)).convert("RGBA")
                         bg = bg.resize((img_size, img_size))
-                        img.paste(bg, (0,0))
-                        logger.info("BG OK")
+                        img.paste(bg, (0, 0))
+                        logger.info("Background image loaded successfully")
             except Exception as e:
-                logger.error(f"BG load error: {e}")
+                logger.error(f"Error loading background: {e}")
 
         draw = ImageDraw.Draw(img)
-        min_font_size = 42
-        max_font_size = 170 if language == "english" else 200
-        font_size = max_font_size
-        block_w = block_h = 99999
-        while (block_w > 200 or block_h > 200) and font_size >= min_font_size:
-            font = get_font(font_size, language)
-            lines = wrap_text_multiline(draw, text_display, font, 200, is_rtl)
-            block_w, block_h = measure_multiline_block(draw, lines, font, int(font_size * 0.14))
-            if block_w > 200 or block_h > 200:
-                font_size -= 6
+        
+        # 📌 تنظیمات فونت و باکس متن (کاهش اندازه برای جلوگیری از خروج از کادر)
+        if language == "persian_arabic":
+            initial_font_size = 200  # کاهش از 600 به 200
+            min_font_size = 40       # کاهش از 80 به 40
+        else:
+            initial_font_size = 180  # کاهش از 600 به 180
+            min_font_size = 50       # کاهش از 100 به 50
+        max_width = 200              # کاهش از 230 به 200
+        max_height = 200             # کاهش از 230 به 200
+            
+        font = get_font(initial_font_size, language)
+        
+        if font is None:
+            logger.error("No font could be loaded, using basic text rendering")
+            font = ImageFont.load_default()
 
-        x = (img_size - block_w) // 2
-        y = (img_size - block_h) // 2
-        line_spacing = max(int(font_size * 0.14), 3)
+        # محاسبه اندازه متن اولیه برای تنظیم فونت
+        try:
+            bbox = draw.textbbox((0, 0), text, font=font)
+            w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        except:
+            try:
+                w, h = draw.textsize(text, font=font)
+            except:
+                w, h = len(text) * (initial_font_size // 20), initial_font_size // 2
+
+        # تنظیم خودکار سایز فونت
+        font_size = initial_font_size
+        
+        while True:
+            # بازشکستن با فونت جاری و اندازه‌گیری بلوک چندخطی
+            line_spacing = max(int(font_size * 0.15), 4)
+            wrapped_lines = wrap_text_multiline(draw, text, font, max_width, is_rtl=(language=="persian_arabic"))
+            block_w, block_h = measure_multiline_block(draw, wrapped_lines, font, line_spacing)
+            if (block_w <= max_width and block_h <= max_height):
+                lines = wrapped_lines
+                break
+            if font_size <= min_font_size:
+                # حداقل ممکن؛ جلوگیری از حلقه بی‌نهایت
+                lines = wrapped_lines
+                break
+            font_size -= 3  # کاهش کمتر برای تنظیم دقیق‌تر
+            font = get_font(font_size, language)
+            if font is None:
+                font = ImageFont.load_default()
+                break
+            
+            try:
+                bbox = draw.textbbox((0, 0), text, font=font)
+                w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            except:
+                try:
+                    w, h = draw.textsize(text, font=font)
+                except:
+                    w, h = len(text) * (font_size // 20), font_size // 2
+        
+        # شکستن متن به چند خط در محدوده
+        if language == "persian_arabic":
+            line_spacing = max(int(font_size * 0.15), 3)  # فاصله متوسط برای فارسی
+        else:
+            line_spacing = max(int(font_size * 0.12), 2)  # فاصله کم برای انگلیسی
+        lines = wrap_text_multiline(draw, text, font, max_width, is_rtl=(language=="persian_arabic"))
+        block_w, block_h = measure_multiline_block(draw, lines, font, line_spacing)
+        x = (img_size - block_w) / 2
+        # وسط‌چین عمودی برای هر دو زبان
+        is_rtl = (language == "persian_arabic")
+        y = (img_size - block_h) / 2
+
+        # 📌 حاشیه بر اساس زبان (کاهش برای متن کوچک‌تر)
+        if language == "persian_arabic":
+            outline_thickness = 2  # فارسی: حاشیه نازک
+        else:
+            outline_thickness = 1  # انگلیسی: حاشیه خیلی نازک
+        
+        # رسم هر خط با حاشیه و متن
         current_y = y
         for line in lines:
-            w, h = _measure_text(draw, line, font)
-            line_x = x + (block_w - w) if is_rtl else x + (block_w - w)//2
-            for dx in (-1,0,1):
-                for dy in (-1,0,1):
-                    if dx!=0 or dy!=0:
-                        draw.text((line_x+dx, current_y+dy), line, font=font, fill="white")
-            draw.text((line_x, current_y), line, font=font, fill="black")
-            current_y += h + line_spacing
-        img2 = img.resize((512,512), Image.LANCZOS)
-        img2.save(path, "PNG", optimize=True)
-        return True
-    except Exception as e:
-        logger.error(f"Sticker error: {e}")
-        return False
-# ... sanitize_pack_name، wrap_text_multiline، measure_multiline_block،
-# detect_language، _measure_text، _hard_wrap_word و...
+            w_line, h_line = _measure_text(draw, line, font)
+            # وسط‌چین برای هر دو زبان
+            line_x = x + (block_w - w_line) / 2
+            # حاشیه
+            for offset in range(1, outline_thickness + 1):
+                directions = [
+                    (-offset, -offset), (0, -offset), (offset, -offset),
+                    (-offset, 0),                     (offset, 0),
+                    (-offset, offset),  (0, offset),  (offset, offset)
+                ]
+                for dx, dy in directions:
+                    try:
+                        draw.text((line_x + dx, current_y + dy), line, font=font, fill="white")
+                    except Exception:
+                        pass
+            # متن اصلی
+            try:
+                draw.text((line_x, current_y), line, fill="#000000", font=font)
+            except Exception as e:
+                logger.error(f"Error drawing line: {e}")
+                draw.text((line_x, current_y), line, fill="#000000")
+            current_y += h_line + line_spacing
 
-# (بقیه کد دقیقا مطابق کد اولیه خودت کپی کن)
+        # 🔥 زوم 2x برای هر دو زبان جهت بهبود کیفیت لبه‌ها
+        final_img = img.resize((512, 512), Image.LANCZOS)
+
+        # ذخیره تصویر با بهینه‌سازی برای استیکر
+        final_img.save(path, "PNG", optimize=True, compress_level=9)
+        
+        # بررسی حجم فایل
+        file_size = os.path.getsize(path)
+        if file_size > 512 * 1024:  # اگر بیشتر از 512KB باشد
+            logger.warning(f"Sticker file too large: {file_size} bytes, compressing...")
+            # کاهش کیفیت
+            final_img.save(path, "PNG", optimize=True, compress_level=9, quality=85)
+        
+        logger.info(f"Sticker saved successfully to {path} with font size: {font_size} for {language}, size: {os.path.getsize(path)} bytes")
+        return True
+        
+    except Exception as e:
+        logger.error(f"make_text_sticker error: {e}")
+        return False
+
+def show_main_menu(chat_id):
+    keyboard = {
+        "keyboard": [
+            ["🎁 تست رایگان", "⭐ اشتراک"],
+            ["ℹ️ درباره", "📞 پشتیبانی"]
+        ],
+        "resize_keyboard": True
+    }
+    requests.post(API + "sendMessage", json={
+        "chat_id": chat_id,
+        "text": "👋 خوش اومدی! یکی از گزینه‌ها رو انتخاب کن:",
+        "reply_markup": keyboard
+    })
+
+def check_sticker_limit(chat_id):
+    """بررسی محدودیت استیکر برای کاربر"""
+    if chat_id not in user_data:
+        return 5, time.time() + 24 * 3600  # 5 استیکر، 24 ساعت بعد
+    
+    current_time = time.time()
+    user_info = user_data[chat_id]
+    
+    # دریافت زمان آخرین reset (اگر وجود نداشت، از الان شروع کن)
+    last_reset = user_info.get("last_reset", current_time)
+    
+    # محاسبه زمان reset بعدی (بر اساس آخرین reset)
+    next_reset = last_reset + 24 * 3600
+    
+    # اگر زمان reset گذشته، reset کن
+    if current_time >= next_reset:
+        user_info["sticker_usage"] = []
+        user_info["last_reset"] = current_time
+        next_reset = current_time + 24 * 3600
+        save_user_data()  # ذخیره تغییرات
+        logger.info(f"Reset limit for user {chat_id} at {current_time}")
+    
+    # شمارش استیکرهای استفاده شده در 24 ساعت گذشته
+    used_stickers = len(user_info.get("sticker_usage", []))
+    remaining = 5 - used_stickers
+    
+    return max(0, remaining), next_reset
+
+def record_sticker_usage(chat_id):
+    """ثبت استفاده از استیکر"""
+    if chat_id not in user_data:
+        user_data[chat_id] = {
+            "mode": None, 
+            "count": 0, 
+            "step": None, 
+            "pack_name": None, 
+            "background": None, 
+            "created_packs": [],
+            "sticker_usage": [],
+            "last_reset": time.time()
+        }
+    
+    current_time = time.time()
+    user_info = user_data[chat_id]
+    
+    # دریافت زمان آخرین reset (اگر وجود نداشت، از الان شروع کن)
+    last_reset = user_info.get("last_reset", current_time)
+    
+    # محاسبه زمان reset بعدی
+    next_reset = last_reset + 24 * 3600
+    
+    # اگر زمان reset گذشته، reset کن
+    if current_time >= next_reset:
+        user_info["sticker_usage"] = []
+        user_info["last_reset"] = current_time
+        logger.info(f"Reset limit for user {chat_id} at {current_time}")
+    
+    # اضافه کردن زمان استفاده
+    user_info["sticker_usage"].append(current_time)
+    save_user_data()  # ذخیره فوری
+
+def get_user_packs_from_api(chat_id):
+    """دریافت پک‌های کاربر از API تلگرام"""
+    try:
+        # دریافت اطلاعات کاربر
+        user_info = requests.get(API + f"getChat?chat_id={chat_id}").json()
+        first_name = user_info.get("result", {}).get("first_name", "User")
+        
+        # جستجو برای پک‌هایی که با نام کاربر شروع می‌شوند
+        # این روش کامل نیست اما می‌تواند کمک کند
+        packs = []
+        
+        # اگر pack_name فعلی وجود دارد، آن را بررسی کن
+        current_pack = user_data.get(chat_id, {}).get("pack_name")
+        if current_pack:
+            resp = requests.get(API + f"getStickerSet?name={current_pack}").json()
+            if resp.get("ok"):
+                packs.append({
+                    "name": current_pack,
+                    "title": f"{first_name}'s Stickers"
+                })
+        
+        return packs
+    except Exception as e:
+        logger.error(f"Error getting user packs from API: {e}")
+        return []
+
+def check_channel_membership(chat_id):
+    """بررسی عضویت کاربر در کانال اجباری"""
+    try:
+        # استخراج channel_id از لینک
+        if CHANNEL_LINK.startswith("@"):
+            channel_username = CHANNEL_LINK[1:]  # حذف @
+        elif "t.me/" in CHANNEL_LINK:
+            channel_username = CHANNEL_LINK.split("t.me/")[-1]
+            if channel_username.startswith("@"):
+                channel_username = channel_username[1:]
+        else:
+            channel_username = CHANNEL_LINK
+        
+        # بررسی عضویت
+        response = requests.get(API + f"getChatMember", params={
+            "chat_id": f"@{channel_username}",
+            "user_id": chat_id
+        }).json()
+        
+        if response.get("ok"):
+            status = response["result"]["status"]
+            # اگر عضو است (member, administrator, creator)
+            return status in ["member", "administrator", "creator"]
+        else:
+            logger.error(f"Error checking membership: {response}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error in check_channel_membership: {e}")
+        return False
+
+def send_membership_required_message(chat_id):
+    """ارسال پیام عضویت اجباری"""
+    message = f"""🔒 عضویت در کانال اجباری است!
+
+برای استفاده از ربات، ابتدا باید عضو کانال ما شوید:
+
+📢 {CHANNEL_LINK}
+
+بعد از عضویت، دوباره /start را بزنید."""
+    
+    # ایجاد دکمه عضویت
+    keyboard = {
+        "inline_keyboard": [[
+            {
+                "text": "📢 عضویت در کانال",
+                "url": f"https://t.me/{CHANNEL_LINK.replace('@', '')}"
+            }
+        ]]
+    }
+    
+    requests.post(API + "sendMessage", json={
+        "chat_id": chat_id,
+        "text": message,
+        "reply_markup": keyboard
+    })
+
+def send_message(chat_id, text):
+    requests.post(API + "sendMessage", json={"chat_id": chat_id, "text": text})
 
 if __name__ == "__main__":
-    # تست مخصوص فونت و reshape
-    imgtest = Image.new("RGBA", (400, 100), (255,255,255,0))
-    d = ImageDraw.Draw(imgtest)
-    fnt = get_font(48, "persian_arabic")
-    sample_txt = reshape_text("سلام دوست من! خوش آمدید 🍐")
-    d.text((10,25), sample_txt, font=fnt, fill="black")
-    imgtest.save("test_reshaped_fa.png")
-
     if APP_URL:
         webhook_url = f"{APP_URL}/webhook/{WEBHOOK_SECRET}"
         resp = requests.get(API + f"setWebhook?url={webhook_url}")
@@ -517,4 +972,3 @@ if __name__ == "__main__":
 
     port = int(os.environ.get("PORT", 8080))
     serve(app, host="0.0.0.0", port=port)
-
