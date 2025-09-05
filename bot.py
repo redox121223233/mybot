@@ -575,15 +575,9 @@ def make_text_sticker(text, path, background_file_id=None):
         if language == "persian_arabic":
             text = reshape_text(text)
         
-        # 🔥 بدون زوم برای فارسی، با زوم برای انگلیسی
-        if language == "persian_arabic":
-            # فارسی: بدون زوم، مستقیم 512×512
-            img_size = 512
-            img = Image.new("RGBA", (img_size, img_size), (255, 255, 255, 0))
-        else:
-            # انگلیسی: با زوم 2x
-            img_size = 256
-            img = Image.new("RGBA", (img_size, img_size), (255, 255, 255, 0))
+        # 🔥 رندر روی 256×256 و در پایان زوم 2x برای هر دو زبان
+        img_size = 256
+        img = Image.new("RGBA", (img_size, img_size), (255, 255, 255, 0))
 
         # 📌 اگر بکگراند هست → جایگزین کن
         if background_file_id:
@@ -603,17 +597,15 @@ def make_text_sticker(text, path, background_file_id=None):
 
         draw = ImageDraw.Draw(img)
         
-        # 📌 سایز فونت بر اساس زبان و اندازه تصویر
+        # 📌 تنظیمات فونت و باکس متن (یکسان برای هر دو زبان روی بوم 256)
         if language == "persian_arabic":
-            initial_font_size = 400   # فارسی: سایز متوسط برای 512×512
-            max_width = 400
-            max_height = 400
-            min_font_size = 100
+            initial_font_size = 600
+            min_font_size = 80
         else:
-            initial_font_size = 600   # انگلیسی: سایز کوچک برای 256×256 (که بعداً زوم می‌شود)
-            max_width = 230
-            max_height = 230
-            min_font_size = 150
+            initial_font_size = 600
+            min_font_size = 100
+        max_width = 230
+        max_height = 230
             
         font = get_font(initial_font_size, language)
         
@@ -639,7 +631,11 @@ def make_text_sticker(text, path, background_file_id=None):
             line_spacing = max(int(font_size * 0.15), 4)
             wrapped_lines = wrap_text_multiline(draw, text, font, max_width)
             block_w, block_h = measure_multiline_block(draw, wrapped_lines, font, line_spacing)
-            if (block_w <= max_width and block_h <= max_height) or font_size <= min_font_size:
+            if (block_w <= max_width and block_h <= max_height):
+                lines = wrapped_lines
+                break
+            if font_size <= 20:
+                # حداقل ممکن؛ جلوگیری از حلقه بی‌نهایت
                 lines = wrapped_lines
                 break
             font_size -= 5
@@ -695,13 +691,8 @@ def make_text_sticker(text, path, background_file_id=None):
                 draw.text((line_x, current_y), line, fill="#000000")
             current_y += h_line + line_spacing
 
-        # 🔥 زوم فقط برای انگلیسی
-        if language == "persian_arabic":
-            # فارسی: بدون زوم
-            final_img = img
-        else:
-            # انگلیسی: زوم 2x
-            final_img = img.resize((512, 512), Image.LANCZOS)
+        # 🔥 زوم 2x برای هر دو زبان جهت بهبود کیفیت لبه‌ها
+        final_img = img.resize((512, 512), Image.LANCZOS)
 
         # ذخیره تصویر با بهینه‌سازی برای استیکر
         final_img.save(path, "PNG", optimize=True, compress_level=9)
