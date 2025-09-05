@@ -555,8 +555,12 @@ def wrap_text_multiline(draw, text, font, max_width, is_rtl=False):
                     current = part
     if current:
         lines.append(current.rstrip())
-    # برای RTL نیازی به برعکس کردن ترتیب خطوط نیست؛ بالا به پایین می‌رویم
-    return [ln for ln in lines if ln != ""] or [""]
+    
+    # برای RTL، خطوط رو از راست به چپ مرتب کن
+    if is_rtl:
+        lines = [line.strip() for line in lines if line.strip()]
+    
+    return lines or [""]
 
 def measure_multiline_block(draw, lines, font, line_spacing_px):
     """محاسبه اندازه بلوک چندخطی"""
@@ -717,23 +721,22 @@ def make_text_sticker(text, path, background_file_id=None):
                     w, h = len(text) * (font_size // 20), font_size // 2
         
         # شکستن متن به چند خط در محدوده
-        line_spacing = max(int(font_size * 0.15), 4)
-        lines = wrap_text_multiline(draw, text, font, max_width)
+        if language == "persian_arabic":
+            line_spacing = max(int(font_size * 0.2), 6)  # فاصله بیشتر برای فارسی
+        else:
+            line_spacing = max(int(font_size * 0.15), 4)  # فاصله عادی برای انگلیسی
+        lines = wrap_text_multiline(draw, text, font, max_width, is_rtl=(language=="persian_arabic"))
         block_w, block_h = measure_multiline_block(draw, lines, font, line_spacing)
         x = (img_size - block_w) / 2
-        # شروع از بالا برای زبان RTL (فارسی/عربی)، وسط‌چین عمودی برای انگلیسی
+        # وسط‌چین عمودی برای هر دو زبان
         is_rtl = (language == "persian_arabic")
-        if is_rtl:
-            top_padding = max(int(font_size * 0.1), 8)
-            y = top_padding
-        else:
-            y = (img_size - block_h) / 2
+        y = (img_size - block_h) / 2
 
         # 📌 حاشیه بر اساس زبان
         if language == "persian_arabic":
-            outline_thickness = 4  # فارسی: حاشیه متوسط برای 512×512
+            outline_thickness = 6  # فارسی: حاشیه ضخیم‌تر برای خوانایی بهتر
         else:
-            outline_thickness = 5  # انگلیسی: حاشیه نازک‌تر برای 256×256
+            outline_thickness = 5  # انگلیسی: حاشیه نازک‌تر
         
         # رسم هر خط با حاشیه و متن
         current_y = y
