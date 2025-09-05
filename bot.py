@@ -419,7 +419,9 @@ def reshape_text(text):
         # استفاده از arabic_reshaper برای چسباندن حروف
         reshaped = arabic_reshaper.reshape(text)
         # استفاده از bidi برای ترتیب درست
-        return get_display(reshaped)
+        display_text = get_display(reshaped)
+        # برعکس کردن ترتیب برای حفظ ترتیب طبیعی
+        return display_text[::-1]
     except Exception as e:
         logger.error(f"Error reshaping text: {e}")
         return text
@@ -700,13 +702,13 @@ def make_text_sticker(text, path, background_file_id=None):
         
         # 📌 تنظیمات فونت و باکس متن (بهینه‌سازی برای متن فارسی)
         if language == "persian_arabic":
-            initial_font_size = 150  # کاهش بیشتر برای فارسی
-            min_font_size = 30       # کاهش بیشتر برای فارسی
+            initial_font_size = 120  # کاهش بیشتر برای فارسی
+            min_font_size = 25       # کاهش بیشتر برای فارسی
         else:
             initial_font_size = 220  # افزایش فونت انگلیسی
             min_font_size = 60       # افزایش حداقل فونت انگلیسی
-        max_width = 180              # کاهش بیشتر برای فارسی
-        max_height = 180             # کاهش بیشتر برای فارسی
+        max_width = 160              # کاهش بیشتر برای فارسی
+        max_height = 160             # کاهش بیشتر برای فارسی
             
         font = get_font(initial_font_size, language)
         
