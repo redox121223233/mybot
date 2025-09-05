@@ -414,9 +414,15 @@ def send_as_sticker(chat_id, text, background_file_id=None):
     return False
 
 def reshape_text(text):
-    """متن فارسی رو بدون تغییر برمی‌گردونه تا ترتیب حروف حفظ بشه"""
-    # غیرفعال کردن reshape برای حفظ ترتیب طبیعی حروف
-    return text
+    """اصلاح متن فارسی/عربی با حفظ ترتیب طبیعی حروف"""
+    try:
+        # استفاده از arabic_reshaper برای چسباندن حروف
+        reshaped = arabic_reshaper.reshape(text)
+        # استفاده از bidi برای ترتیب درست
+        return get_display(reshaped)
+    except Exception as e:
+        logger.error(f"Error reshaping text: {e}")
+        return text
 
 def sanitize_pack_name(text):
     """تبدیل نام پک به فرمت قابل قبول برای Telegram API"""
@@ -518,9 +524,35 @@ def wrap_text_multiline(draw, text, font, max_width, is_rtl=False):
     
     # برای متن فارسی، از روش ساده‌تر استفاده می‌کنیم
     if is_rtl:
-        # برای متن فارسی، همیشه کل متن را در یک خط قرار بده
-        # اگر خیلی طولانی است، فونت را کوچک‌تر کن
-        return [text]
+        # اگر متن کوتاه است، کل متن را در یک خط قرار بده
+        w, _ = _measure_text(draw, text, font)
+        if w <= max_width:
+            return [text]
+        
+        # اگر متن طولانی است، بر اساس فاصله شکست بده
+        words = text.split()
+        if len(words) == 1:
+            # اگر فقط یک کلمه است، آن را خرد کن
+            return _hard_wrap_word(draw, text, font, max_width)
+        
+        lines = []
+        current_line = ""
+        
+        for word in words:
+            test_line = current_line + " " + word if current_line else word
+            w, _ = _measure_text(draw, test_line, font)
+            
+            if w <= max_width:
+                current_line = test_line
+            else:
+                if current_line:
+                    lines.append(current_line)
+                current_line = word
+        
+        if current_line:
+            lines.append(current_line)
+        
+        return lines or [""]
     
     # برای متن انگلیسی، از روش قبلی استفاده می‌کنیم
     tokens = re.split(r"(\s+)", text)
