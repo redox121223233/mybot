@@ -416,6 +416,97 @@ def reshape_text(text):
         logger.error(f"Error reshaping text: {e}")
         return text
 
+def _measure_text(draw, text, font):
+    """اندازه‌گیری امن متن (پهنای یک خط)"""
+    try:
+        bbox = draw.textbbox((0, 0), text, font=font)
+        return bbox[2] - bbox[0], bbox[3] - bbox[1]
+    except Exception:
+        try:
+            w, h = draw.textsize(text, font=font)
+            return w, h
+        except Exception:
+            return len(text) * max(font.size // 2, 1), font.size
+
+def _hard_wrap_word(draw, word, font, max_width):
+    """شکستن کلمات خیلی بلند به چند بخش که داخل max_width جا شوند"""
+    parts = []
+    start = 0
+    n = len(word)
+    if n == 0:
+        return [word]
+    while start < n:
+        lo, hi = 1, n - start
+        best = 1
+        while lo <= hi:
+            mid = (lo + hi) // 2
+            segment = word[start:start + mid]
+            w, _ = _measure_text(draw, segment, font)
+            if w <= max_width:
+                best = mid
+                lo = mid + 1
+            else:
+                hi = mid - 1
+        parts.append(word[start:start + best])
+        start += best
+        if best == 0:
+            break
+    return parts
+
+def wrap_text_multiline(draw, text, font, max_width):
+    """شکستن متن به خطوط متعدد با در نظر گرفتن فاصله‌ها و کلمات خیلی بلند"""
+    if not text:
+        return [""]
+    tokens = re.split(r"(\s+)", text)
+    lines = []
+    current = ""
+    for token in tokens:
+        if token.strip() == "":
+            # فضای خالی: فقط اگر چیزی در خط داریم اضافه شود
+            tentative = current + token
+            w, _ = _measure_text(draw, tentative, font)
+            if w <= max_width:
+                current = tentative
+            else:
+                if current:
+                    lines.append(current.rstrip())
+                    current = ""
+            continue
+        # کلمه غیرسفید
+        tentative = current + token
+        w, _ = _measure_text(draw, tentative, font)
+        if w <= max_width:
+            current = tentative
+        else:
+            # اگر خود کلمه جا نشود باید کلمه را خرد کنیم
+            if current:
+                lines.append(current.rstrip())
+                current = ""
+            # خرد کردن کلمه طولانی
+            for part in _hard_wrap_word(draw, token, font, max_width):
+                w_part, _ = _measure_text(draw, part, font)
+                if current == "" and w_part <= max_width:
+                    current = part
+                else:
+                    if current:
+                        lines.append(current.rstrip())
+                    current = part
+    if current:
+        lines.append(current.rstrip())
+    return [ln for ln in lines if ln != ""] or [""]
+
+def measure_multiline_block(draw, lines, font, line_spacing_px):
+    """محاسبه اندازه بلوک چندخطی"""
+    max_w = 0
+    total_h = 0
+    for i, line in enumerate(lines):
+        w, h = _measure_text(draw, line, font)
+        max_w = max(max_w, w)
+        total_h += h
+        if i < len(lines) - 1:
+            total_h += line_spacing_px
+    return max_w, total_h
+
 def detect_language(text):
     """تشخیص زبان متن"""
     # الگوی فارسی/عربی
@@ -530,7 +621,7 @@ def make_text_sticker(text, path, background_file_id=None):
             logger.error("No font could be loaded, using basic text rendering")
             font = ImageFont.load_default()
 
-        # محاسبه اندازه متن
+        # محاسبه اندازه متن اولیه برای تنظیم فونت
         try:
             bbox = draw.textbbox((0, 0), text, font=font)
             w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
@@ -543,7 +634,14 @@ def make_text_sticker(text, path, background_file_id=None):
         # تنظیم خودکار سایز فونت
         font_size = initial_font_size
         
-        while (w > max_width or h > max_height) and font_size > min_font_size:
+        while True:
+            # بازشکستن با فونت جاری و اندازه‌گیری بلوک چندخطی
+            line_spacing = max(int(font_size * 0.15), 4)
+            wrapped_lines = wrap_text_multiline(draw, text, font, max_width)
+            block_w, block_h = measure_multiline_block(draw, wrapped_lines, font, line_spacing)
+            if (block_w <= max_width and block_h <= max_height) or font_size <= min_font_size:
+                lines = wrapped_lines
+                break
             font_size -= 5
             font = get_font(font_size, language)
             if font is None:
@@ -559,9 +657,12 @@ def make_text_sticker(text, path, background_file_id=None):
                 except:
                     w, h = len(text) * (font_size // 20), font_size // 2
         
-        # مرکز کردن متن
-        x = (img_size - w) / 2
-        y = (img_size - h) / 2
+        # شکستن متن به چند خط در محدوده
+        line_spacing = max(int(font_size * 0.15), 4)
+        lines = wrap_text_multiline(draw, text, font, max_width)
+        block_w, block_h = measure_multiline_block(draw, lines, font, line_spacing)
+        x = (img_size - block_w) / 2
+        y = (img_size - block_h) / 2
 
         # 📌 حاشیه بر اساس زبان
         if language == "persian_arabic":
@@ -569,27 +670,30 @@ def make_text_sticker(text, path, background_file_id=None):
         else:
             outline_thickness = 5  # انگلیسی: حاشیه نازک‌تر برای 256×256
         
-        # ایجاد حاشیه با کیفیت بالا
-        for offset in range(1, outline_thickness + 1):
-            # رسم حاشیه در 8 جهت اصلی
-            directions = [
-                (-offset, -offset), (0, -offset), (offset, -offset),
-                (-offset, 0),                     (offset, 0),
-                (-offset, offset),  (0, offset),  (offset, offset)
-            ]
-            
-            for dx, dy in directions:
-                try:
-                    draw.text((x + dx, y + dy), text, font=font, fill="white")
-                except:
-                    pass
-
-        # متن اصلی با رنگ مشکی
-        try:
-            draw.text((x, y), text, fill="#000000", font=font)
-        except Exception as e:
-            logger.error(f"Error drawing main text: {e}")
-            draw.text((x, y), text, fill="#000000")
+        # رسم هر خط با حاشیه و متن
+        current_y = y
+        for line in lines:
+            w_line, h_line = _measure_text(draw, line, font)
+            line_x = x + (block_w - w_line) / 2
+            # حاشیه
+            for offset in range(1, outline_thickness + 1):
+                directions = [
+                    (-offset, -offset), (0, -offset), (offset, -offset),
+                    (-offset, 0),                     (offset, 0),
+                    (-offset, offset),  (0, offset),  (offset, offset)
+                ]
+                for dx, dy in directions:
+                    try:
+                        draw.text((line_x + dx, current_y + dy), line, font=font, fill="white")
+                    except Exception:
+                        pass
+            # متن اصلی
+            try:
+                draw.text((line_x, current_y), line, fill="#000000", font=font)
+            except Exception as e:
+                logger.error(f"Error drawing line: {e}")
+                draw.text((line_x, current_y), line, fill="#000000")
+            current_y += h_line + line_spacing
 
         # 🔥 زوم فقط برای انگلیسی
         if language == "persian_arabic":
