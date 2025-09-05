@@ -453,8 +453,10 @@ def _hard_wrap_word(draw, word, font, max_width):
             break
     return parts
 
-def wrap_text_multiline(draw, text, font, max_width):
-    """شکستن متن به خطوط متعدد با در نظر گرفتن فاصله‌ها و کلمات خیلی بلند"""
+def wrap_text_multiline(draw, text, font, max_width, is_rtl=False):
+    """شکستن متن به خطوط متعدد با در نظر گرفتن فاصله‌ها و کلمات خیلی بلند.
+    برای متون RTL، کلمات به ابتدای خط افزوده می‌شوند تا ترتیب طبیعی حفظ شود.
+    """
     if not text:
         return [""]
     tokens = re.split(r"(\s+)", text)
@@ -463,7 +465,7 @@ def wrap_text_multiline(draw, text, font, max_width):
     for token in tokens:
         if token.strip() == "":
             # فضای خالی: فقط اگر چیزی در خط داریم اضافه شود
-            tentative = current + token
+            tentative = (token + current) if is_rtl else (current + token)
             w, _ = _measure_text(draw, tentative, font)
             if w <= max_width:
                 current = tentative
@@ -473,7 +475,7 @@ def wrap_text_multiline(draw, text, font, max_width):
                     current = ""
             continue
         # کلمه غیرسفید
-        tentative = current + token
+        tentative = (token + current) if is_rtl else (current + token)
         w, _ = _measure_text(draw, tentative, font)
         if w <= max_width:
             current = tentative
@@ -493,6 +495,7 @@ def wrap_text_multiline(draw, text, font, max_width):
                     current = part
     if current:
         lines.append(current.rstrip())
+    # برای RTL نیازی به برعکس کردن ترتیب خطوط نیست؛ بالا به پایین می‌رویم
     return [ln for ln in lines if ln != ""] or [""]
 
 def measure_multiline_block(draw, lines, font, line_spacing_px):
@@ -629,7 +632,7 @@ def make_text_sticker(text, path, background_file_id=None):
         while True:
             # بازشکستن با فونت جاری و اندازه‌گیری بلوک چندخطی
             line_spacing = max(int(font_size * 0.15), 4)
-            wrapped_lines = wrap_text_multiline(draw, text, font, max_width)
+            wrapped_lines = wrap_text_multiline(draw, text, font, max_width, is_rtl=(language=="persian_arabic"))
             block_w, block_h = measure_multiline_block(draw, wrapped_lines, font, line_spacing)
             if (block_w <= max_width and block_h <= max_height):
                 lines = wrapped_lines
