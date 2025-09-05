@@ -700,13 +700,13 @@ def make_text_sticker(text, path, background_file_id=None):
         
         # 📌 تنظیمات فونت و باکس متن (بهینه‌سازی برای متن فارسی)
         if language == "persian_arabic":
-            initial_font_size = 80   # کاهش بیشتر برای فارسی
-            min_font_size = 20       # کاهش بیشتر برای فارسی
+            initial_font_size = 60   # کاهش بیشتر برای فارسی
+            min_font_size = 15       # کاهش بیشتر برای فارسی
         else:
             initial_font_size = 220  # افزایش فونت انگلیسی
             min_font_size = 60       # افزایش حداقل فونت انگلیسی
-        max_width = 140              # کاهش بیشتر برای فارسی
-        max_height = 140             # کاهش بیشتر برای فارسی
+        max_width = 120              # کاهش بیشتر برای فارسی
+        max_height = 120             # کاهش بیشتر برای فارسی
             
         font = get_font(initial_font_size, language)
         
@@ -798,11 +798,8 @@ def make_text_sticker(text, path, background_file_id=None):
                 draw.text((line_x, current_y), line, fill="#000000")
             current_y += h_line + line_spacing
 
-        # 🔥 زوم کمتر برای متن فارسی جهت جلوگیری از خروج از کادر
-        if language == "persian_arabic":
-            final_img = img.resize((400, 400), Image.LANCZOS)  # زوم کمتر برای فارسی
-        else:
-            final_img = img.resize((512, 512), Image.LANCZOS)  # زوم عادی برای انگلیسی
+        # 🔥 زوم 2x برای هر دو زبان جهت بهبود کیفیت لبه‌ها (Telegram فقط 512x512 قبول می‌کنه)
+        final_img = img.resize((512, 512), Image.LANCZOS)
 
         # ذخیره تصویر با بهینه‌سازی برای استیکر
         final_img.save(path, "PNG", optimize=True, compress_level=9)
