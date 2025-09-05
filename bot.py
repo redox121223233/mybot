@@ -518,35 +518,9 @@ def wrap_text_multiline(draw, text, font, max_width, is_rtl=False):
     
     # برای متن فارسی، از روش ساده‌تر استفاده می‌کنیم
     if is_rtl:
-        # اگر متن کوتاه است، کل متن را در یک خط قرار بده
-        w, _ = _measure_text(draw, text, font)
-        if w <= max_width:
-            return [text]
-        
-        # اگر متن طولانی است، بر اساس فاصله شکست بده
-        words = text.split()
-        if len(words) == 1:
-            # اگر فقط یک کلمه است، آن را خرد کن
-            return _hard_wrap_word(draw, text, font, max_width)
-        
-        lines = []
-        current_line = ""
-        
-        for word in words:
-            test_line = current_line + " " + word if current_line else word
-            w, _ = _measure_text(draw, test_line, font)
-            
-            if w <= max_width:
-                current_line = test_line
-            else:
-                if current_line:
-                    lines.append(current_line)
-                current_line = word
-        
-        if current_line:
-            lines.append(current_line)
-        
-        return lines or [""]
+        # برای متن فارسی، همیشه کل متن را در یک خط قرار بده
+        # اگر خیلی طولانی است، فونت را کوچک‌تر کن
+        return [text]
     
     # برای متن انگلیسی، از روش قبلی استفاده می‌کنیم
     tokens = re.split(r"(\s+)", text)
@@ -697,8 +671,8 @@ def make_text_sticker(text, path, background_file_id=None):
             initial_font_size = 150  # کاهش بیشتر برای فارسی
             min_font_size = 30       # کاهش بیشتر برای فارسی
         else:
-            initial_font_size = 180  # کاهش از 600 به 180
-            min_font_size = 50       # کاهش از 100 به 50
+            initial_font_size = 220  # افزایش فونت انگلیسی
+            min_font_size = 60       # افزایش حداقل فونت انگلیسی
         max_width = 180              # کاهش بیشتر برای فارسی
         max_height = 180             # کاهش بیشتر برای فارسی
             
@@ -750,9 +724,9 @@ def make_text_sticker(text, path, background_file_id=None):
         
         # شکستن متن به چند خط در محدوده
         if language == "persian_arabic":
-            line_spacing = max(int(font_size * 0.15), 3)  # فاصله متوسط برای فارسی
+            line_spacing = max(int(font_size * 0.1), 2)  # فاصله کم برای فارسی
         else:
-            line_spacing = max(int(font_size * 0.12), 2)  # فاصله کم برای انگلیسی
+            line_spacing = max(int(font_size * 0.15), 3)  # فاصله متوسط برای انگلیسی
         lines = wrap_text_multiline(draw, text, font, max_width, is_rtl=(language=="persian_arabic"))
         block_w, block_h = measure_multiline_block(draw, lines, font, line_spacing)
         x = (img_size - block_w) / 2
