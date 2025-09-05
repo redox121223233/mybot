@@ -518,8 +518,17 @@ def wrap_text_multiline(draw, text, font, max_width, is_rtl=False):
     
     # برای متن فارسی، از روش ساده‌تر استفاده می‌کنیم
     if is_rtl:
-        # شکستن ساده بر اساس فاصله
+        # اگر متن کوتاه است، کل متن را در یک خط قرار بده
+        w, _ = _measure_text(draw, text, font)
+        if w <= max_width:
+            return [text]
+        
+        # اگر متن طولانی است، بر اساس فاصله شکست بده
         words = text.split()
+        if len(words) == 1:
+            # اگر فقط یک کلمه است، آن را خرد کن
+            return _hard_wrap_word(draw, text, font, max_width)
+        
         lines = []
         current_line = ""
         
@@ -620,6 +629,8 @@ def get_font(size, language="english"):
             "Sahel.ttf",
             "Samim.ttf",
             "Tanha.ttf",
+            "NotoSansArabic-Regular.ttf",
+            "NotoNaskhArabic-Regular.ttf",
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
         ]
     else:
@@ -681,15 +692,15 @@ def make_text_sticker(text, path, background_file_id=None):
 
         draw = ImageDraw.Draw(img)
         
-        # 📌 تنظیمات فونت و باکس متن (کاهش اندازه برای جلوگیری از خروج از کادر)
+        # 📌 تنظیمات فونت و باکس متن (بهینه‌سازی برای متن فارسی)
         if language == "persian_arabic":
-            initial_font_size = 200  # کاهش از 600 به 200
-            min_font_size = 40       # کاهش از 80 به 40
+            initial_font_size = 150  # کاهش بیشتر برای فارسی
+            min_font_size = 30       # کاهش بیشتر برای فارسی
         else:
             initial_font_size = 180  # کاهش از 600 به 180
             min_font_size = 50       # کاهش از 100 به 50
-        max_width = 200              # کاهش از 230 به 200
-        max_height = 200             # کاهش از 230 به 200
+        max_width = 180              # کاهش بیشتر برای فارسی
+        max_height = 180             # کاهش بیشتر برای فارسی
             
         font = get_font(initial_font_size, language)
         
