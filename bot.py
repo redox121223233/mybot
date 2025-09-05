@@ -661,7 +661,13 @@ def make_text_sticker(text, path, background_file_id=None):
         lines = wrap_text_multiline(draw, text, font, max_width)
         block_w, block_h = measure_multiline_block(draw, lines, font, line_spacing)
         x = (img_size - block_w) / 2
-        y = (img_size - block_h) / 2
+        # شروع از بالا برای زبان RTL (فارسی/عربی)، وسط‌چین عمودی برای انگلیسی
+        is_rtl = (language == "persian_arabic")
+        if is_rtl:
+            top_padding = max(int(font_size * 0.1), 8)
+            y = top_padding
+        else:
+            y = (img_size - block_h) / 2
 
         # 📌 حاشیه بر اساس زبان
         if language == "persian_arabic":
@@ -671,7 +677,6 @@ def make_text_sticker(text, path, background_file_id=None):
         
         # رسم هر خط با حاشیه و متن
         current_y = y
-        is_rtl = (language == "persian_arabic")
         for line in lines:
             w_line, h_line = _measure_text(draw, line, font)
             if is_rtl:
