@@ -664,15 +664,15 @@ def make_text_sticker(text, path, background_file_id=None):
 
         draw = ImageDraw.Draw(img)
         
-        # 📌 تنظیمات فونت و باکس متن (یکسان برای هر دو زبان روی بوم 256)
+        # 📌 تنظیمات فونت و باکس متن (کاهش اندازه برای جلوگیری از خروج از کادر)
         if language == "persian_arabic":
-            initial_font_size = 600
-            min_font_size = 80
+            initial_font_size = 200  # کاهش از 600 به 200
+            min_font_size = 40       # کاهش از 80 به 40
         else:
-            initial_font_size = 600
-            min_font_size = 100
-        max_width = 230
-        max_height = 230
+            initial_font_size = 180  # کاهش از 600 به 180
+            min_font_size = 50       # کاهش از 100 به 50
+        max_width = 200              # کاهش از 230 به 200
+        max_height = 200             # کاهش از 230 به 200
             
         font = get_font(initial_font_size, language)
         
@@ -701,11 +701,11 @@ def make_text_sticker(text, path, background_file_id=None):
             if (block_w <= max_width and block_h <= max_height):
                 lines = wrapped_lines
                 break
-            if font_size <= 20:
+            if font_size <= min_font_size:
                 # حداقل ممکن؛ جلوگیری از حلقه بی‌نهایت
                 lines = wrapped_lines
                 break
-            font_size -= 5
+            font_size -= 3  # کاهش کمتر برای تنظیم دقیق‌تر
             font = get_font(font_size, language)
             if font is None:
                 font = ImageFont.load_default()
@@ -722,9 +722,9 @@ def make_text_sticker(text, path, background_file_id=None):
         
         # شکستن متن به چند خط در محدوده
         if language == "persian_arabic":
-            line_spacing = max(int(font_size * 0.2), 6)  # فاصله بیشتر برای فارسی
+            line_spacing = max(int(font_size * 0.15), 3)  # فاصله متوسط برای فارسی
         else:
-            line_spacing = max(int(font_size * 0.15), 4)  # فاصله عادی برای انگلیسی
+            line_spacing = max(int(font_size * 0.12), 2)  # فاصله کم برای انگلیسی
         lines = wrap_text_multiline(draw, text, font, max_width, is_rtl=(language=="persian_arabic"))
         block_w, block_h = measure_multiline_block(draw, lines, font, line_spacing)
         x = (img_size - block_w) / 2
@@ -732,11 +732,11 @@ def make_text_sticker(text, path, background_file_id=None):
         is_rtl = (language == "persian_arabic")
         y = (img_size - block_h) / 2
 
-        # 📌 حاشیه بر اساس زبان
+        # 📌 حاشیه بر اساس زبان (کاهش برای متن کوچک‌تر)
         if language == "persian_arabic":
-            outline_thickness = 6  # فارسی: حاشیه ضخیم‌تر برای خوانایی بهتر
+            outline_thickness = 2  # فارسی: حاشیه نازک
         else:
-            outline_thickness = 5  # انگلیسی: حاشیه نازک‌تر
+            outline_thickness = 1  # انگلیسی: حاشیه خیلی نازک
         
         # رسم هر خط با حاشیه و متن
         current_y = y
