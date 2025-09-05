@@ -668,9 +668,15 @@ def make_text_sticker(text, path, background_file_id=None):
         
         # رسم هر خط با حاشیه و متن
         current_y = y
+        is_rtl = (language == "persian_arabic")
         for line in lines:
             w_line, h_line = _measure_text(draw, line, font)
-            line_x = x + (block_w - w_line) / 2
+            if is_rtl:
+                # راست‌چین برای فارسی/عربی
+                line_x = x + (block_w - w_line)
+            else:
+                # وسط‌چین برای انگلیسی
+                line_x = x + (block_w - w_line) / 2
             # حاشیه
             for offset in range(1, outline_thickness + 1):
                 directions = [
