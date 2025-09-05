@@ -419,9 +419,7 @@ def reshape_text(text):
         # استفاده از arabic_reshaper برای چسباندن حروف
         reshaped = arabic_reshaper.reshape(text)
         # استفاده از bidi برای ترتیب درست
-        display_text = get_display(reshaped)
-        # برعکس کردن ترتیب برای حفظ ترتیب طبیعی
-        return display_text[::-1]
+        return get_display(reshaped)
     except Exception as e:
         logger.error(f"Error reshaping text: {e}")
         return text
@@ -702,13 +700,13 @@ def make_text_sticker(text, path, background_file_id=None):
         
         # 📌 تنظیمات فونت و باکس متن (بهینه‌سازی برای متن فارسی)
         if language == "persian_arabic":
-            initial_font_size = 120  # کاهش بیشتر برای فارسی
-            min_font_size = 25       # کاهش بیشتر برای فارسی
+            initial_font_size = 80   # کاهش بیشتر برای فارسی
+            min_font_size = 20       # کاهش بیشتر برای فارسی
         else:
             initial_font_size = 220  # افزایش فونت انگلیسی
             min_font_size = 60       # افزایش حداقل فونت انگلیسی
-        max_width = 160              # کاهش بیشتر برای فارسی
-        max_height = 160             # کاهش بیشتر برای فارسی
+        max_width = 140              # کاهش بیشتر برای فارسی
+        max_height = 140             # کاهش بیشتر برای فارسی
             
         font = get_font(initial_font_size, language)
         
@@ -758,7 +756,7 @@ def make_text_sticker(text, path, background_file_id=None):
         
         # شکستن متن به چند خط در محدوده
         if language == "persian_arabic":
-            line_spacing = max(int(font_size * 0.1), 2)  # فاصله کم برای فارسی
+            line_spacing = max(int(font_size * 0.05), 1)  # فاصله خیلی کم برای فارسی
         else:
             line_spacing = max(int(font_size * 0.15), 3)  # فاصله متوسط برای انگلیسی
         lines = wrap_text_multiline(draw, text, font, max_width, is_rtl=(language=="persian_arabic"))
@@ -800,8 +798,11 @@ def make_text_sticker(text, path, background_file_id=None):
                 draw.text((line_x, current_y), line, fill="#000000")
             current_y += h_line + line_spacing
 
-        # 🔥 زوم 2x برای هر دو زبان جهت بهبود کیفیت لبه‌ها
-        final_img = img.resize((512, 512), Image.LANCZOS)
+        # 🔥 زوم کمتر برای متن فارسی جهت جلوگیری از خروج از کادر
+        if language == "persian_arabic":
+            final_img = img.resize((400, 400), Image.LANCZOS)  # زوم کمتر برای فارسی
+        else:
+            final_img = img.resize((512, 512), Image.LANCZOS)  # زوم عادی برای انگلیسی
 
         # ذخیره تصویر با بهینه‌سازی برای استیکر
         final_img.save(path, "PNG", optimize=True, compress_level=9)
