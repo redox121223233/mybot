@@ -23,7 +23,7 @@ if not BOT_TOKEN:
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "secret")
 APP_URL = os.environ.get("APP_URL")
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "MyBot")  # یوزرنیم ربات بدون @
-CHANNEL_LINK = os.environ.get("CHANNEL_LINK", "@YourChannel")
+CHANNEL_LINK = os.environ.get("CHANNEL_LINK", "@YourChannel")  # لینک کانال اجباری
 API = f"https://api.telegram.org/bot{BOT_TOKEN}/"
 
 # دیتابیس ساده در حافظه
@@ -35,6 +35,137 @@ DATA_FILE = "user_data.json"
 def load_user_data():
     """بارگذاری داده‌های کاربر از فایل"""
     global user_data
+    @app.post(f"/webhook/{WEBHOOK_SECRET}")
+def webhook():
+    update = request.get_json(force=True, silent=True) or {}
+    msg = update.get("message")
+
+    if not msg:
+        return "ok"
+
+    chat_id = msg["chat"]["id"]
+
+    # 📌 پردازش متن
+    if "text" in msg:
+        text = msg["text"]
+
+        if text == "/start":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+            
+            # اگر کاربر قبلاً وجود دارد، داده‌های مهم را حفظ کن
+            if chat_id in user_data:
+                old_data = user_data[chat_id]
+                user_data[chat_id] = {
+                    "mode": None, 
+                    "count": 0, 
+                    "step": None, 
+                    "pack_name": None, 
+                    "background": None, 
+                    "created_packs": [],
+                    "sticker_usage": old_data.get("sticker_usage", []),  # حفظ محدودیت
+                    "last_reset": old_data.get("last_reset", time.time())  # حفظ زمان reset
+                }
+            else:
+                user_data[chat_id] = {
+                    "mode": None, 
+                    "count": 0, 
+                    "step": None, 
+                    "pack_name": None, 
+                    "background": None, 
+                    "created_packs": [],
+                    "sticker_usage": [],
+                    "last_reset": time.time()
+                }
+            show_main_menu(chat_id)
+            return "ok"
+
+        if text == "🎁 تست رایگان":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+                
+            if chat_id not in user_data:
+                user_data[chat_id] = {
+                    "mode": None, 
+                    "count": 0, 
+                    "step": None, 
+                    "pack_name": None, 
+                    "background": None, 
+                    "created_packs": [],
+                    "sticker_usage": [],
+                    "last_reset": time.time()
+                }
+            else:
+                # اگر کاربر قبلاً وجود دارد، created_packs را حفظ کن
+                if "created_packs" not in user_data[chat_id]:
+                    user_data[chat_id]["created_packs"] = []
+                if "sticker_usage" not in user_data[chat_id]:
+                    user_data[chat_id]["sticker_usage"] = []
+                if "last_reset" not in user_data[chat_id]:
+                    user_data[chat_id]["last_reset"] = time.time()
+            
+            # بررسی محدودیت استیکر
+            remaining, next_reset = check_sticker_limit(chat_id)
+            if remaining <= 0:
+                next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
+                send_message(chat_id, f"⏰ محدودیت روزانه شما تمام شده!\n\n🔄 زمان بعدی: {next_reset_time}\n\n💎 برای ساخت استیکر نامحدود، اشتراک تهیه کنید.")
+                return "ok"
+            
+            user_data[chat_id]["mode"] = "free"
+            # مهم: count, pack_name و background را reset نکن اگر کاربر قبلاً پکی دارد
+            if not user_data[chat_id].get("pack_name"):
+                user_data[chat_id]["count"] = 0
+                user_data[chat_id]["step"] = "ask_pack_choice"
+                user_data[chat_id]["pack_name"] = None
+                user_data[chat_id]["background"] = None
+            else:
+                # اگر کاربر قبلاً پکی دارد، مستقیماً به مرحله text برو
+                user_data[chat_id]["step"] = "text"
+            
+            # نمایش وضعیت محدودیت
+            next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
+            limit_info = f"📊 وضعیت شما: {remaining}/5 استیکر باقی مانده\n🔄 زمان بعدی: {next_reset_time}\n\n"
+            
+            # بررسی پک‌های موجود
+            created_packs = user_data[chat_id].get("created_packs", [])
+            if user_data[chat_id].get("pack_name"):
+                # اگر کاربر قبلاً پکی دارد، مستقیماً به ساخت استیکر ادامه دهد
+                pack_name = user_data[chat_id]["pack_name"]
+                send_message(chat_id, limit_info + f"✅ ادامه ساخت استیکر در پک فعلی\n✍️ متن استیکر بعدی را بفرست:\n\n📷 یا عکس جدید برای تغییر بکگراند بفرست:")
+            elif created_packs:
+                send_message(chat_id, limit_info + "📝 آیا می‌خواهید پک جدید بسازید یا به پک قبلی اضافه کنید؟\n1. ساخت پک جدید\n2. اضافه کردن به پک قبلی")
+            else:
+                send_message(chat_id, limit_info + "📝 شما هنوز پکی ندارید. لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
+                user_data[chat_id]["step"] = "pack_name"
+            return "ok"
+
+        state = user_data.get(chat_id, {})
+        if state.get("mode") == "free":
+            step = state.get("step")
+
+            if step == "ask_pack_choice":
+                if text == "1":  # ساخت پک جدید
+                    send_message(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
+                    user_data[chat_id]["step"] = "pack_name"
+                elif text == "2":  # اضافه کردن به پک قبلی
+                    created_packs = user_data[chat_id].get("created_packs", [])
+                    if created_packs:
+                        # نمایش لیست پک‌های موجود
+                        pack_list = ""
+                        for i, pack in enumerate(created_packs, 1):
+                            pack_list += f"{i}. {pack['title']}\n"
+                        send_message(chat_id, f"📂 پک‌های موجود شما:\n{pack_list}\nلطفاً شماره پک مورد نظر را انتخاب کنید:")
+                        user_data[chat_id]["step"] = "select_pack"
+                    else:
+                        send_message(chat_id, "❌ هنوز پک استیکری نداری. اول باید پک جدید بسازی.")
+                        user_data[chat_id]["step"] = "pack_name"
+                        send_message(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
+                return "ok"
+
     try:
         if os.path.exists(DATA_FILE):
             with open(DATA_FILE, 'r', encoding='utf-8') as f:
@@ -64,16 +195,243 @@ app = Flask(__name__)
 def home():
     return "✅ Bot is running!"
 
-@app.post(f"/webhook/{WEBHOOK_SECRET}")
-def webhook():
-    update = request.get_json(force=True, silent=True) or {}
-    msg = update.get("message")
-    if not msg:
-        return "ok"
-    # … باقی webhook logic …
+# ------------ ادامه (webhook و ...) در بخش بعدی -------------
+            if step == "select_pack":
+                try:
+                    pack_index = int(text) - 1
+                    created_packs = user_data[chat_id].get("created_packs", [])
+                    if 0 <= pack_index < len(created_packs):
+                        selected_pack = created_packs[pack_index]
+                        user_data[chat_id]["pack_name"] = selected_pack["name"]
+                        send_message(chat_id, f"✅ پک '{selected_pack['title']}' انتخاب شد.\n📷 یک عکس برای بکگراند استیکرت بفرست:")
+                        user_data[chat_id]["step"] = "background"
+                    else:
+                        send_message(chat_id, "❌ شماره پک نامعتبر است. لطفاً دوباره انتخاب کنید:")
+                except ValueError:
+                    send_message(chat_id, "❌ لطفاً یک شماره معتبر وارد کنید:")
+                return "ok"
+
+            if step == "pack_name":
+                # تبدیل نام پک به فرمت قابل قبول
+                original_name = text
+                pack_name = sanitize_pack_name(text)
+                full_pack_name = f"{pack_name}_by_{BOT_USERNAME}"
+                
+                # اگر نام تبدیل شده با نام اصلی متفاوت بود، به کاربر اطلاع بده
+                if pack_name != original_name.replace(" ", "_"):
+                    send_message(chat_id, f"ℹ️ نام پک شما از '{original_name}' به '{pack_name}' تبدیل شد تا با قوانین تلگرام سازگار باشد.")
+                
+                # بررسی اینکه پک با این نام وجود دارد یا نه
+                resp = requests.get(API + f"getStickerSet?name={full_pack_name}").json()
+                if resp.get("ok"):
+                    send_message(chat_id, f"❌ پک با نام '{pack_name}' از قبل وجود دارد. لطفاً نام دیگری انتخاب کنید:")
+                    return "ok"
+                
+                user_data[chat_id]["pack_name"] = full_pack_name
+                send_message(chat_id, "📷 یک عکس برای بکگراند استیکرت بفرست:")
+                user_data[chat_id]["step"] = "background"
+                return "ok"
+
+            if step == "text":
+                # بررسی محدودیت قبل از ساخت استیکر
+                remaining, next_reset = check_sticker_limit(chat_id)
+                if remaining <= 0:
+                    next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
+                    send_message(chat_id, f"⏰ محدودیت روزانه شما تمام شده!\n\n🔄 زمان بعدی: {next_reset_time}\n\n💎 برای ساخت استیکر نامحدود، اشتراک تهیه کنید.")
+                    return "ok"
+                
+                text_sticker = text
+                send_message(chat_id, "⚙️ در حال ساخت استیکر...")
+                background_file_id = user_data[chat_id].get("background")
+                
+                # Debug: بررسی pack_name
+                pack_name = user_data[chat_id].get("pack_name")
+                logger.info(f"Creating sticker for pack: {pack_name}")
+                
+                # ارسال استیکر و بررسی موفقیت
+                success = send_as_sticker(chat_id, text_sticker, background_file_id)
+                
+                if success:
+                    user_data[chat_id]["count"] += 1
+                    record_sticker_usage(chat_id)  # ثبت استفاده
+                    
+                    # نمایش وضعیت محدودیت
+                    remaining, next_reset = check_sticker_limit(chat_id)
+                    next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
+                    limit_info = f"\n📊 وضعیت: {remaining}/5 استیکر باقی مانده\n🔄 زمان بعدی: {next_reset_time}"
+                    
+                    send_message(chat_id, f"✅ استیکر شماره {user_data[chat_id]['count']} ساخته شد.{limit_info}\n\n✍️ متن استیکر بعدی را بفرست:\n\n📷 یا عکس جدید برای تغییر بکگراند بفرست:")
+                    
+                return "ok"
+
+        # دکمه‌های منو
+        if text == "⭐ اشتراک":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+            send_message(chat_id, "💳 بخش اشتراک بعداً فعال خواهد شد.")
+        elif text == "ℹ️ درباره":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+            send_message(chat_id, "ℹ️ این ربات برای ساخت استیکر متنی است. نسخه فعلی رایگان است.")
+        elif text == "📞 پشتیبانی":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+            support_id = os.environ.get("SUPPORT_ID", "@YourSupportID")
+            send_message(chat_id, f"📞 برای پشتیبانی با {support_id} در تماس باش.")
+
+    # 📌 پردازش عکس
+    elif "photo" in msg:
+        state = user_data.get(chat_id, {})
+        if state.get("mode") == "free":
+            photos = msg.get("photo", [])
+            if photos:
+                file_id = photos[-1].get("file_id")
+                if file_id:
+                    if state.get("step") == "background":
+                        # عکس اول برای بکگراند
+                        user_data[chat_id]["background"] = file_id
+                        user_data[chat_id]["step"] = "text"
+                        send_message(chat_id, "✍️ حالا متن استیکرت رو بفرست:")
+                    elif state.get("step") == "text":
+                        # تغییر بکگراند در حین ساخت استیکر
+                        user_data[chat_id]["background"] = file_id
+                        send_message(chat_id, "✅ بکگراند تغییر کرد!\n✍️ متن استیکر بعدی را بفرست:")
+
+    return "ok"
+def send_as_sticker(chat_id, text, background_file_id=None):
+    sticker_path = "sticker.png"
+    ok = make_text_sticker(text, sticker_path, background_file_id)
+    if not ok:
+        send_message(chat_id, "❌ خطا در ساخت استیکر")
+        return False
+
+    pack_name = user_data[chat_id].get("pack_name")
+    if not pack_name:
+        send_message(chat_id, "❌ خطا: نام پک تعریف نشده")
+        return False
+        
+    # دریافت نام کاربر
+    user_info = requests.get(API + f"getChat?chat_id={chat_id}").json()
+    username = user_info.get("result", {}).get("username", f"user_{chat_id}")
+    first_name = user_info.get("result", {}).get("first_name", "User")
+
+    pack_title = f"{first_name}'s Stickers"
+
+    resp = requests.get(API + f"getStickerSet?name={pack_name}").json()
+    sticker_created = False
+
+    if not resp.get("ok"):  # اگر پک وجود نداشت، اول باید ساخته بشه
+        with open(sticker_path, "rb") as f:
+            files = {"png_sticker": f}
+            data = {
+                "user_id": chat_id,
+                "name": pack_name,
+                "title": pack_title,
+                "emojis": "🔥"
+            }
+            r = requests.post(API + "createNewStickerSet", data=data, files=files)
+            logger.info(f"Create sticker resp: {r.json()}")
+            if r.json().get("ok"):
+                sticker_created = True
+                # ذخیره پک جدید در لیست
+                if "created_packs" not in user_data[chat_id]:
+                    user_data[chat_id]["created_packs"] = []
+                
+                # بررسی اینکه پک قبلاً در لیست نیست
+                pack_exists = False
+                for existing_pack in user_data[chat_id]["created_packs"]:
+                    if existing_pack["name"] == pack_name:
+                        pack_exists = True
+                        break
+
+                if not pack_exists:
+                    user_data[chat_id]["created_packs"].append({
+                        "name": pack_name,
+                        "title": pack_title
+                    })
+                    logger.info(f"Pack added to created_packs: {pack_name} - {pack_title}")
+                    logger.info(f"User {chat_id} created_packs: {user_data[chat_id]['created_packs']}")
+                    save_user_data()  # ذخیره فوری
+            else:
+                send_message(chat_id, f"❌ خطا در ساخت پک: {r.json().get('description', 'خطای نامشخص')}")
+                return False
+    else:  # پک هست → استیکر جدید اضافه کن
+        with open(sticker_path, "rb") as f:
+            files = {"png_sticker": f}
+            data = {
+                "user_id": chat_id,
+                "name": pack_name,
+                "emojis": "🔥"
+            }
+            r = requests.post(API + "addStickerToSet", data=data, files=files)
+            logger.info(f"Add sticker resp: {r.json()}")
+            if r.json().get("ok"):
+                sticker_created = True
+            else:
+                send_message(chat_id, f"❌ خطا در اضافه کردن استیکر: {r.json().get('description', 'خطای نامشخص')}")
+                return False
+
+    # ارسال استیکر به کاربر - ارسال از پک (تنها روش صحیح)
+    if sticker_created:
+        try:
+            # کمی صبر کنیم تا API پک را به‌روزرسانی کند
+            time.sleep(1)
+            
+            # دریافت پک و ارسال آخرین استیکر
+            final = requests.get(API + f"getStickerSet?name={pack_name}").json()
+            if final.get("ok"):
+                stickers = final["result"]["stickers"]
+                if stickers:
+                    file_id = stickers[-1]["file_id"]
+                    send_resp = requests.post(API + "sendSticker", data={"chat_id": chat_id, "sticker": file_id})
+                    logger.info(f"Send sticker resp: {send_resp.json()}")
+                    
+                    if send_resp.json().get("ok"):
+                        return True
+                    else:
+                        logger.error(f"Failed to send sticker: {send_resp.json()}")
+                        send_message(chat_id, "❌ خطا در ارسال استیکر")
+                        return False
+                else:
+                    send_message(chat_id, "❌ استیکر در پک پیدا نشد")
+                    return False
+            else:
+                send_message(chat_id, "❌ پک پیدا نشد")
+                return False
+        except Exception as e:
+            logger.error(f"Error sending sticker: {e}")
+            send_message(chat_id, "❌ خطا در ارسال استیکر")
+            return False
+    return False
+def get_font(size, language="english"):
+    # فونت مناسب فارسی یا انگلیسی از پوشه پروژه یا مسیرهای رایج
+    if language == "persian_arabic":
+        font_options = [
+            "Vazirmatn-Regular.ttf", "Vazir-Regular.ttf", "IRANSans.ttf", 
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        ]
+    else:
+        font_options = [
+            "arial.ttf", "DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+        ]
+    for font_path in font_options:
+        try:
+            font = ImageFont.truetype(font_path, size)
+            logger.info(f"Font loaded: {font_path}")
+            return font
+        except Exception as e:
+            logger.warning(f"Font load failed ({font_path}): {e}")
+    logger.warning("No proper font found! Using default font (may break RTL letters!)")
+    return ImageFont.load_default()
 
 def reshape_text(text):
-    """اصلاح متن فارسی/عربی با arabic_reshaper و bidi"""
     try:
         reshaped = arabic_reshaper.reshape(text)
         return get_display(reshaped)
@@ -81,316 +439,82 @@ def reshape_text(text):
         logger.error(f"Error reshaping text: {e}")
         return text
 
-def sanitize_pack_name(text):
-    """تبدیل نام پک به فرمت قابل قبول برای Telegram"""
-    import unicodedata
-    sanitized = ""
-    for char in text:
-        if char.isalnum() and ord(char) < 128:
-            sanitized += char
-        elif char.isspace():
-            sanitized += "_"
-        elif '\u0600' <= char <= '\u06FF':
-            persian_to_english = {
-                'ا':'a','ب':'b','پ':'p','ت':'t','ث':'s','ج':'j','چ':'ch',
-                'ح':'h','خ':'kh','د':'d','ذ':'z','ر':'r','ز':'z','ژ':'zh',
-                'س':'s','ش':'sh','ص':'s','ض':'z','ط':'t','ظ':'z','ع':'a',
-                'غ':'gh','ف':'f','ق':'gh','ک':'k','گ':'g','ل':'l','م':'m',
-                'ن':'n','و':'v','ه':'h','ی':'y','ئ':'e','ء':'a'
-            }
-            sanitized += persian_to_english.get(char, 'x')
-        else:
-            continue
-    sanitized = re.sub(r'_+', '_', sanitized).strip('_')
-    if not sanitized or len(sanitized) < 2:
-        sanitized = "pack"
-    return sanitized[:64]
-
-def _measure_text(draw, text, font):
-    """اندازه‌گیری امن متن"""
+def make_text_sticker(text, path, background_file_id=None):
     try:
-        bbox = draw.textbbox((0,0), text, font=font)
-        return bbox[2]-bbox[0], bbox[3]-bbox[1]
-    except:
-        try:
-            return draw.textsize(text, font=font)
-        except:
-            return len(text)*max(font.size//2,1), font.size
-
-def _hard_wrap_word(draw, word, font, max_width):
-    """شکستن کلمات خیلی بلند به بخش‌های کوچکتر"""
-    parts, start = [], 0
-    n = len(word)
-    if n == 0:
-        return [word]
-    while start < n:
-        lo, hi, best = 1, n-start, 1
-        while lo <= hi:
-            mid = (lo+hi)//2
-            seg = word[start:start+mid]
-            w,_ = _measure_text(draw, seg, font)
-            if w <= max_width:
-                best = mid; lo = mid+1
-            else:
-                hi = mid-1
-        parts.append(word[start:start+best])
-        start += best
-        if best == 0:
-            break
-    return parts
-
-def wrap_text_multiline(draw, text, font, max_width, is_rtl=False):
-    """شکستن متن به خطوط متعدد با RTL/LTR"""
-    if not text:
-        return [""]
-    tokens = re.split(r"(\s+)", text)
-    lines, current = [], ""
-    for tk in tokens:
-        if tk.strip() == "":
-            tentative = (tk+current) if is_rtl else (current+tk)
-            w,_ = _measure_text(draw, tentative, font)
-            if w <= max_width:
-                current = tentative
-            else:
-                if current:
-                    lines.append(current.rstrip())
-                    current = ""
-            continue
-        tentative = (tk+current) if is_rtl else (current+tk)
-        w,_ = _measure_text(draw, tentative, font)
-        if w <= max_width:
-            current = tentative
-        else:
-            if current:
-                lines.append(current.rstrip())
-            for part in _hard_wrap_word(draw, tk, font, max_width):
-                pw,_ = _measure_text(draw, part, font)
-                if current == "" and pw <= max_width:
-                    current = part
-                else:
-                    if current:
-                        lines.append(current.rstrip())
-                    current = part
-    if current:
-        lines.append(current.rstrip())
-    # برای RTL پاکسازی اضافات
-    if is_rtl:
-        return [ln.strip() for ln in lines if ln.strip()]
-    return lines or [""]
-
-def measure_multiline_block(draw, lines, font, line_spacing_px):
-    """محاسبه اندازه بلوک چندخطی"""
-    max_w, total_h = 0, 0
-    for i, ln in enumerate(lines):
-        w, h = _measure_text(draw, ln, font)
-        max_w = max(max_w, w)
-        total_h += h + (line_spacing_px if i < len(lines)-1 else 0)
-    return max_w, total_h
-
-def detect_language(text):
-    """تشخیص زبان متن"""
-    pa = len(re.findall(r'[\u0600-\u06FF]', text))
-    en = len(re.findall(r'[a-zA-Z]', text))
-    if pa > en:
-        return "persian_arabic"
-    if en > 0:
-        return "english"
-    return "other"
-
-def get_font(size, language="english"):
-    """بارگذاری فونت بر اساس زبان"""
-    if language == "persian_arabic":
-        font_paths = [
-            "Vazirmatn-Regular.ttf", "IRANSans.ttf", "Vazir.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
-        ]
-    else:
-        font_paths = [
-            "arial.ttf", "DejaVuSans.ttf",
-            "/Windows/Fonts/arial.ttf"
-        ]
-    for p in font_paths:
-        try:
-            return ImageFont.truetype(p, size)
-        except:
-            continue
-    return ImageFont.load_default()
-    def make_text_sticker(text, path, background_file_id=None):
-    try:
-        logger.info(f"Creating sticker with text: {text}")
+        logger.info(f"Creating sticker for text: {text}")
         language = detect_language(text)
-        is_rtl = (language == "persian_arabic")
-        if is_rtl:
-            text = reshape_text(text)
+        is_rtl = language == "persian_arabic"
+        text_display = reshape_text(text) if is_rtl else text
 
         img_size = 256
         img = Image.new("RGBA", (img_size, img_size), (255,255,255,0))
-
         if background_file_id:
             try:
-                info = requests.get(API + f"getFile?file_id={background_file_id}").json()
-                if info.get("ok"):
-                    fp = info["result"]["file_path"]
-                    res = requests.get(f"https://api.telegram.org/file/bot{BOT_TOKEN}/{fp}")
-                    if res.status_code == 200:
-                        bg = Image.open(BytesIO(res.content)).convert("RGBA")
+                file_info = requests.get(API + f"getFile?file_id={background_file_id}").json()
+                if file_info.get("ok"):
+                    file_path = file_info["result"]["file_path"]
+                    file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
+                    resp = requests.get(file_url)
+                    if resp.status_code == 200:
+                        bg = Image.open(BytesIO(resp.content)).convert("RGBA")
                         bg = bg.resize((img_size, img_size))
                         img.paste(bg, (0,0))
+                        logger.info("BG OK")
             except Exception as e:
-                logger.error(f"Error loading background: {e}")
+                logger.error(f"BG load error: {e}")
 
         draw = ImageDraw.Draw(img)
-        initial = 200 if is_rtl else 180
-        minimum =  40 if is_rtl else  50
-        max_w = max_h = img_size - 20
+        min_font_size = 42
+        max_font_size = 170 if language == "english" else 200
+        font_size = max_font_size
+        block_w = block_h = 99999
+        while (block_w > 200 or block_h > 200) and font_size >= min_font_size:
+            font = get_font(font_size, language)
+            lines = wrap_text_multiline(draw, text_display, font, 200, is_rtl)
+            block_w, block_h = measure_multiline_block(draw, lines, font, int(font_size * 0.14))
+            if block_w > 200 or block_h > 200:
+                font_size -= 6
 
-        font_size = initial
-        font = get_font(font_size, language) or ImageFont.load_default()
-
-        while font_size >= minimum:
-            spacing = max(int(font_size * 0.15),4)
-            lines = wrap_text_multiline(draw, text, font, max_w, is_rtl)
-            bw, bh = measure_multiline_block(draw, lines, font, spacing)
-            if bw <= max_w and bh <= max_h:
-                break
-            font_size -= 3
-            font = get_font(font_size, language) or ImageFont.load_default()
-
-        y = 10
+        x = (img_size - block_w) // 2
+        y = (img_size - block_h) // 2
+        line_spacing = max(int(font_size * 0.14), 3)
+        current_y = y
         for line in lines:
-            lw, lh = _measure_text(draw, line, font)
-            x = img_size - lw - 10 if is_rtl else (img_size - lw)//2
-            # white outline
-            for off in (1,):
-                for dx,dy in [(-off,-off),(off,off),(off,-off),(-off,off)]:
-                    draw.text((x+dx, y+dy), line, font=font, fill="white")
-            # main text
-            draw.text((x, y), line, font=font, fill="black")
-            y += lh + spacing
-
-        final = img.resize((512,512), Image.LANCZOS)
-        final.save(path, "PNG", optimize=True, compress_level=9)
-        if os.path.getsize(path) > 512*1024:
-            final.save(path, "PNG", optimize=True, compress_level=9, quality=85)
+            w, h = _measure_text(draw, line, font)
+            line_x = x + (block_w - w) if is_rtl else x + (block_w - w)//2
+            for dx in (-1,0,1):
+                for dy in (-1,0,1):
+                    if dx!=0 or dy!=0:
+                        draw.text((line_x+dx, current_y+dy), line, font=font, fill="white")
+            draw.text((line_x, current_y), line, font=font, fill="black")
+            current_y += h + line_spacing
+        img2 = img.resize((512,512), Image.LANCZOS)
+        img2.save(path, "PNG", optimize=True)
         return True
-
     except Exception as e:
-        logger.error(f"make_text_sticker error: {e}")
+        logger.error(f"Sticker error: {e}")
         return False
+# ... sanitize_pack_name، wrap_text_multiline، measure_multiline_block،
+# detect_language، _measure_text، _hard_wrap_word و...
 
-def show_main_menu(chat_id):
-    keyboard = {
-        "keyboard": [
-            ["🎁 تست رایگان", "⭐ اشتراک"],
-            ["ℹ️ درباره", "📞 پشتیبانی"]
-        ],
-        "resize_keyboard": True
-    }
-    requests.post(API + "sendMessage", json={
-        "chat_id": chat_id,
-        "text": "👋 خوش اومدی! یکی از گزینه‌ها رو انتخاب کن:",
-        "reply_markup": keyboard
-    })
-
-def check_sticker_limit(chat_id):
-    if chat_id not in user_data:
-        return 5, time.time() + 24*3600
-
-    current_time = time.time()
-    user_info = user_data[chat_id]
-    last_reset = user_info.get("last_reset", current_time)
-    next_reset = last_reset + 24*3600
-
-    if current_time >= next_reset:
-        user_info["sticker_usage"] = []
-        user_info["last_reset"] = current_time
-        next_reset = current_time + 24*3600
-        save_user_data()
-
-    used = len(user_info.get("sticker_usage", []))
-    remaining = max(0, 5 - used)
-    return remaining, next_reset
-
-def record_sticker_usage(chat_id):
-    if chat_id not in user_data:
-        user_data[chat_id] = {
-            "mode": None, "count":0, "step":None,
-            "pack_name":None, "background":None,
-            "created_packs":[], "sticker_usage":[],
-            "last_reset": time.time()
-        }
-    current_time = time.time()
-    info = user_data[chat_id]
-    last_reset = info.get("last_reset", current_time)
-    if current_time >= last_reset + 24*3600:
-        info["sticker_usage"] = []
-        info["last_reset"] = current_time
-    info["sticker_usage"].append(current_time)
-    save_user_data()
-
-def get_user_packs_from_api(chat_id):
-    try:
-        resp = requests.get(API + f"getChat?chat_id={chat_id}").json()
-        first = resp.get("result",{}).get("first_name","User")
-        packs = []
-        current = user_data.get(chat_id,{}).get("pack_name")
-        if current:
-            r2 = requests.get(API + f"getStickerSet?name={current}").json()
-            if r2.get("ok"):
-                packs.append({"name":current,"title":f"{first}'s Stickers"})
-        return packs
-    except Exception as e:
-        logger.error(f"Error getting packs: {e}")
-        return []
-
-def check_channel_membership(chat_id):
-    try:
-        if CHANNEL_LINK.startswith("@"):
-            ch = CHANNEL_LINK[1:]
-        elif "t.me/" in CHANNEL_LINK:
-            ch = CHANNEL_LINK.split("t.me/")[-1].lstrip("@")
-        else:
-            ch = CHANNEL_LINK
-        resp = requests.get(API + "getChatMember", params={
-            "chat_id": f"@{ch}",
-            "user_id": chat_id
-        }).json()
-        if resp.get("ok"):
-            status = resp["result"]["status"]
-            return status in ["member","administrator","creator"]
-        return False
-    except Exception as e:
-        logger.error(f"Error in membership check: {e}")
-        return False
-        def send_membership_required_message(chat_id):
-    message = f"""🔒 عضویت در کانال اجباری است!
-
-برای استفاده از ربات، ابتدا باید عضو کانال ما شوید:
-
-📢 {CHANNEL_LINK}
-
-بعد از عضویت، دوباره /start را بزنید."""
-    keyboard = {
-        "inline_keyboard": [[
-            {"text":"📢 عضویت در کانال","url":f"https://t.me/{CHANNEL_LINK.lstrip('@')}"}
-        ]]
-    }
-    requests.post(API + "sendMessage", json={
-        "chat_id": chat_id,
-        "text": message,
-        "reply_markup": keyboard
-    })
-
-def send_message(chat_id, text):
-    requests.post(API + "sendMessage", json={"chat_id":chat_id, "text":text})
+# (بقیه کد دقیقا مطابق کد اولیه خودت کپی کن)
 
 if __name__ == "__main__":
+    # تست مخصوص فونت و reshape
+    imgtest = Image.new("RGBA", (400, 100), (255,255,255,0))
+    d = ImageDraw.Draw(imgtest)
+    fnt = get_font(48, "persian_arabic")
+    sample_txt = reshape_text("سلام دوست من! خوش آمدید 🍐")
+    d.text((10,25), sample_txt, font=fnt, fill="black")
+    imgtest.save("test_reshaped_fa.png")
+
     if APP_URL:
         webhook_url = f"{APP_URL}/webhook/{WEBHOOK_SECRET}"
         resp = requests.get(API + f"setWebhook?url={webhook_url}")
         logger.info(f"setWebhook: {resp.json()}")
     else:
         logger.warning("⚠️ APP_URL is not set. Webhook not registered.")
+
     port = int(os.environ.get("PORT", 8080))
     serve(app, host="0.0.0.0", port=port)
-        
+
