@@ -78,6 +78,10 @@ def webhook():
     if "text" in msg:
         text = msg["text"]
 
+        # ابتدا پردازش حالت کاربر را بررسی کن
+        if process_user_state(chat_id, text):
+            return "ok"
+
         if text == "/start":
             # بررسی عضویت در کانال
             if not check_channel_membership(chat_id):
