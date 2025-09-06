@@ -412,6 +412,10 @@ def process_user_state(chat_id, text):
             user_data[chat_id]["step"] = "background"
             return True
 
+        if step == "background":
+            # این مرحله فقط برای عکس است، متن نباید اینجا پردازش شود
+            return False
+
         if step == "text":
             # بررسی محدودیت قبل از ساخت استیکر
             remaining, next_reset = check_sticker_limit(chat_id)
