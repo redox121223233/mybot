@@ -88,7 +88,7 @@ def webhook():
                 send_membership_required_message(chat_id)
                 return "ok"
             
-            # اگر کاربر قبلاً وجود دارد، داده‌های مهم را حفظ کن
+            # همیشه به منوی اصلی برگرد (حتی اگر در حال ساخت استیکر هستید)
             if chat_id in user_data:
                 old_data = user_data[chat_id]
                 user_data[chat_id] = {
@@ -97,7 +97,7 @@ def webhook():
                     "step": None, 
                     "pack_name": None, 
                     "background": None, 
-                    "created_packs": [],
+                    "created_packs": old_data.get("created_packs", []),  # حفظ پک‌های ساخته شده
                     "sticker_usage": old_data.get("sticker_usage", []),  # حفظ محدودیت
                     "last_reset": old_data.get("last_reset", time.time())  # حفظ زمان reset
                 }
@@ -195,13 +195,38 @@ def webhook():
                         show_advanced_design_menu(chat_id)
                         return "ok"
                 
-                # اگر در حالت free هستیم و در مرحله text هستیم، به منوی اصلی برگرد
-                elif current_mode == "free" and current_step == "text":
-                    user_data[chat_id]["mode"] = None
-                    user_data[chat_id]["step"] = None
-                    # pack_name و background را حفظ کن تا کاربر بتواند ادامه دهد
-                    show_main_menu(chat_id)
-                    return "ok"
+                # اگر در حالت free هستیم
+                elif current_mode == "free":
+                    if current_step == "text":
+                        # از مرحله text به منوی اصلی برگرد
+                        user_data[chat_id]["mode"] = None
+                        user_data[chat_id]["step"] = None
+                        # pack_name و background را حفظ کن تا کاربر بتواند ادامه دهد
+                        show_main_menu(chat_id)
+                        return "ok"
+                    elif current_step == "background":
+                        # از مرحله background به مرحله pack_name برگرد
+                        user_data[chat_id]["step"] = "pack_name"
+                        send_message_with_back_button(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
+                        return "ok"
+                    elif current_step == "pack_name":
+                        # از مرحله pack_name به منوی اصلی برگرد
+                        user_data[chat_id]["mode"] = None
+                        user_data[chat_id]["step"] = None
+                        user_data[chat_id]["pack_name"] = None
+                        show_main_menu(chat_id)
+                        return "ok"
+                    elif current_step == "ask_pack_choice":
+                        # از مرحله ask_pack_choice به منوی اصلی برگرد
+                        user_data[chat_id]["mode"] = None
+                        user_data[chat_id]["step"] = None
+                        show_main_menu(chat_id)
+                        return "ok"
+                    elif current_step == "select_pack":
+                        # از مرحله select_pack به مرحله ask_pack_choice برگرد
+                        user_data[chat_id]["step"] = "ask_pack_choice"
+                        send_message(chat_id, "📝 آیا می‌خواهید پک جدید بسازید یا به پک قبلی اضافه کنید؟\n1. ساخت پک جدید\n2. اضافه کردن به پک قبلی")
+                        return "ok"
                 
                 # در سایر حالات، به منوی اصلی برگرد و همه چیز را reset کن
                 else:
