@@ -22,15 +22,18 @@ if not BOT_TOKEN:
 
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "secret")
 APP_URL = os.environ.get("APP_URL")
-BOT_USERNAME = os.environ.get("BOT_USERNAME", "MyBot")
-CHANNEL_LINK = os.environ.get("CHANNEL_LINK", "@YourChannel")
+BOT_USERNAME = os.environ.get("BOT_USERNAME", "MyBot")  # یوزرنیم ربات بدون @
+CHANNEL_LINK = os.environ.get("CHANNEL_LINK", "@YourChannel")  # لینک کانال اجباری
 API = f"https://api.telegram.org/bot{BOT_TOKEN}/"
 
 # دیتابیس ساده در حافظه
 user_data = {}
+
+# فایل ذخیره‌سازی داده‌ها
 DATA_FILE = "user_data.json"
 
 def load_user_data():
+    """بارگذاری داده‌های کاربر از فایل"""
     global user_data
     try:
         if os.path.exists(DATA_FILE):
@@ -44,6 +47,7 @@ def load_user_data():
         user_data = {}
 
 def save_user_data():
+    """ذخیره داده‌های کاربر در فایل"""
     try:
         with open(DATA_FILE, 'w', encoding='utf-8') as f:
             json.dump(user_data, f, ensure_ascii=False, indent=2)
@@ -51,120 +55,16 @@ def save_user_data():
     except Exception as e:
         logger.error(f"Error saving user data: {e}")
 
+# بارگذاری داده‌ها در شروع
 load_user_data()
+
 app = Flask(__name__)
 
 @app.route("/")
 def home():
     return "✅ Bot is running!"
-    def process_user_state(chat_id, text):
-    """پردازش حالت کاربر"""
-    state = user_data.get(chat_id, {})
-    
-    if state.get("mode") == "free":
-        step = state.get("step")
-        
-        if step == "ask_pack_choice":
-            if text == "1":
-                send_message(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
-                user_data[chat_id]["step"] = "pack_name"
-            elif text == "2":
-                created_packs = user_data[chat_id].get("created_packs", [])
-                if created_packs:
-                    pack_list = ""
-                    for i, pack in enumerate(created_packs, 1):
-                        pack_list += f"{i}. {pack['title']}\n"
-                    send_message(chat_id, f"�� پک‌های موجود شما:\n{pack_list}\nلطفاً شماره پک مورد نظر را انتخاب کنید:")
-                    user_data[chat_id]["step"] = "select_pack"
-                else:
-                    send_message(chat_id, "❌ هنوز پک استیکری نداری. اول باید پک جدید بسازی.")
-                    user_data[chat_id]["step"] = "pack_name"
-                    send_message(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
-            return True
 
-        if step == "select_pack":
-            try:
-                pack_index = int(text) - 1
-                created_packs = user_data[chat_id].get("created_packs", [])
-                if 0 <= pack_index < len(created_packs):
-                    selected_pack = created_packs[pack_index]
-                    user_data[chat_id]["pack_name"] = selected_pack["name"]
-                    send_message_with_back_button(chat_id, f"✅ پک '{selected_pack['title']}' انتخاب شد.\n📷 یک عکس برای بکگراند استیکرت بفرست:")
-                    user_data[chat_id]["step"] = "background"
-                else:
-                    send_message(chat_id, "❌ شماره پک نامعتبر است. لطفاً دوباره انتخاب کنید:")
-            except ValueError:
-                send_message(chat_id, "❌ لطفاً یک شماره معتبر وارد کنید:")
-            return True
-
-        if step == "pack_name":
-            original_name = text
-            pack_name = sanitize_pack_name(text)
-            full_pack_name = f"{pack_name}_by_{BOT_USERNAME}"
-            
-            if pack_name != original_name.replace(" ", "_"):
-                send_message(chat_id, f"ℹ️ نام پک شما از '{original_name}' به '{pack_name}' تبدیل شد تا با قوانین تلگرام سازگار باشد.")
-            
-            resp = requests.get(API + f"getStickerSet?name={full_pack_name}").json()
-            if resp.get("ok"):
-                send_message(chat_id, f"❌ پک با نام '{pack_name}' از قبل وجود دارد. لطفاً نام دیگری انتخاب کنید:")
-                return True
-            
-            user_data[chat_id]["pack_name"] = full_pack_name
-            send_message_with_back_button(chat_id, "📷 یک عکس برای بکگراند استیکرت بفرست:")
-            user_data[chat_id]["step"] = "background"
-            return True
-
-        if step == "text":
-            remaining, next_reset = check_sticker_limit(chat_id)
-            if remaining <= 0:
-                next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
-                send_message(chat_id, f"⏰ محدودیت روزانه شما تمام شده!\n\n🔄 زمان بعدی: {next_reset_time}\n\n💎 برای ساخت استیکر نامحدود، اشتراک تهیه کنید.")
-                return True
-            
-            text_sticker = text
-            send_message(chat_id, "⚙️ در حال ساخت استیکر...")
-            background_file_id = user_data[chat_id].get("background")
-            
-            pack_name = user_data[chat_id].get("pack_name")
-            logger.info(f"Creating sticker for pack: {pack_name}")
-            
-            success = send_as_sticker(chat_id, text_sticker, background_file_id)
-            
-            if success:
-                user_data[chat_id]["count"] += 1
-                record_sticker_usage(chat_id)
-                
-                remaining, next_reset = check_sticker_limit(chat_id)
-                next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
-                limit_info = f"\n📊 وضعیت: {remaining}/5 استیکر باقی مانده\n🔄 زمان بعدی: {next_reset_time}"
-                
-                settings_info = ""
-                if user_data[chat_id].get("text_color"):
-                    settings_info += f"\n🎨 رنگ: {user_data[chat_id]['text_color']}"
-                if user_data[chat_id].get("font_style"):
-                    settings_info += f"\n📝 فونت: {user_data[chat_id]['font_style']}"
-                if user_data[chat_id].get("text_size"):
-                    settings_info += f"\n�� اندازه: {user_data[chat_id]['text_size']}"
-                
-                send_message_with_back_button(chat_id, f"✅ استیکر شماره {user_data[chat_id]['count']} ساخته شد.{limit_info}{settings_info}\n\n✍️ متن استیکر بعدی را بفرست:\n\n📷 یا عکس جدید برای تغییر بکگراند بفرست:")
-            return True
-    
-    elif state.get("mode") == "advanced_design":
-        step = state.get("step")
-        
-        if step in ["color_selection", "font_selection", "size_selection", "position_selection", "background_color_selection", "effect_selection"]:
-            user_data[chat_id]["mode"] = "free"
-            user_data[chat_id]["step"] = "text"
-            if not user_data[chat_id].get("pack_name"):
-                user_data[chat_id]["step"] = "pack_name"
-                send_message(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
-            else:
-                send_message_with_back_button(chat_id, "✍️ حالا متن استیکرت رو بفرست:")
-            return True
-    
-    return False
-    @app.post(f"/webhook/{WEBHOOK_SECRET}")
+@app.post(f"/webhook/{WEBHOOK_SECRET}")
 def webhook():
     update = request.get_json(force=True, silent=True) or {}
     msg = update.get("message")
@@ -174,18 +74,17 @@ def webhook():
 
     chat_id = msg["chat"]["id"]
 
+    # 📌 پردازش متن
     if "text" in msg:
         text = msg["text"]
 
-        # ابتدا پردازش حالت کاربر را بررسی کن
-        if process_user_state(chat_id, text):
-            return "ok"
-
         if text == "/start":
+            # بررسی عضویت در کانال
             if not check_channel_membership(chat_id):
                 send_membership_required_message(chat_id)
                 return "ok"
             
+            # اگر کاربر قبلاً وجود دارد، داده‌های مهم را حفظ کن
             if chat_id in user_data:
                 old_data = user_data[chat_id]
                 user_data[chat_id] = {
@@ -195,8 +94,8 @@ def webhook():
                     "pack_name": None, 
                     "background": None, 
                     "created_packs": [],
-                    "sticker_usage": old_data.get("sticker_usage", []),
-                    "last_reset": old_data.get("last_reset", time.time())
+                    "sticker_usage": old_data.get("sticker_usage", []),  # حفظ محدودیت
+                    "last_reset": old_data.get("last_reset", time.time())  # حفظ زمان reset
                 }
             else:
                 user_data[chat_id] = {
@@ -212,7 +111,9 @@ def webhook():
             show_main_menu(chat_id)
             return "ok"
 
+        # پردازش دکمه‌های اصلی (قبل از پردازش حالت‌ها)
         if text == "🎁 تست رایگان":
+            # بررسی عضویت در کانال
             if not check_channel_membership(chat_id):
                 send_membership_required_message(chat_id)
                 return "ok"
@@ -229,6 +130,7 @@ def webhook():
                     "last_reset": time.time()
                 }
             else:
+                # اگر کاربر قبلاً وجود دارد، created_packs را حفظ کن
                 if "created_packs" not in user_data[chat_id]:
                     user_data[chat_id]["created_packs"] = []
                 if "sticker_usage" not in user_data[chat_id]:
@@ -236,6 +138,7 @@ def webhook():
                 if "last_reset" not in user_data[chat_id]:
                     user_data[chat_id]["last_reset"] = time.time()
             
+            # بررسی محدودیت استیکر
             remaining, next_reset = check_sticker_limit(chat_id)
             if remaining <= 0:
                 next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
@@ -243,19 +146,24 @@ def webhook():
                 return "ok"
             
             user_data[chat_id]["mode"] = "free"
+            # مهم: count, pack_name و background را reset نکن اگر کاربر قبلاً پکی دارد
             if not user_data[chat_id].get("pack_name"):
                 user_data[chat_id]["count"] = 0
                 user_data[chat_id]["step"] = "ask_pack_choice"
                 user_data[chat_id]["pack_name"] = None
                 user_data[chat_id]["background"] = None
             else:
+                # اگر کاربر قبلاً پکی دارد، مستقیماً به مرحله text برو
                 user_data[chat_id]["step"] = "text"
             
+            # نمایش وضعیت محدودیت
             next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
             limit_info = f"📊 وضعیت شما: {remaining}/5 استیکر باقی مانده\n🔄 زمان بعدی: {next_reset_time}\n\n"
             
+            # بررسی پک‌های موجود
             created_packs = user_data[chat_id].get("created_packs", [])
             if user_data[chat_id].get("pack_name"):
+                # اگر کاربر قبلاً پکی دارد، مستقیماً به ساخت استیکر ادامه دهد
                 pack_name = user_data[chat_id]["pack_name"]
                 send_message_with_back_button(chat_id, limit_info + f"✅ ادامه ساخت استیکر در پک فعلی\n✍️ متن استیکر بعدی را بفرست:\n\n📷 یا عکس جدید برای تغییر بکگراند بفرست:")
             elif created_packs:
@@ -264,26 +172,34 @@ def webhook():
                 send_message(chat_id, limit_info + "📝 شما هنوز پکی ندارید. لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
                 user_data[chat_id]["step"] = "pack_name"
             return "ok"
-                    if text == "🔙 بازگشت":
+
+        # دکمه بازگشت
+        if text == "🔙 بازگشت":
+            # بررسی عضویت در کانال
             if not check_channel_membership(chat_id):
                 send_membership_required_message(chat_id)
                 return "ok"
             
+            # بازگشت هوشمند بر اساس حالت فعلی
             if chat_id in user_data:
                 current_mode = user_data[chat_id].get("mode")
                 current_step = user_data[chat_id].get("step")
                 
+                # اگر در حالت طراحی پیشرفته هستیم، به منوی طراحی پیشرفته برگرد
                 if current_mode == "advanced_design":
                     if current_step in ["color_selection", "font_selection", "size_selection", "position_selection", "background_color_selection", "effect_selection"]:
                         show_advanced_design_menu(chat_id)
                         return "ok"
                 
+                # اگر در حالت free هستیم و در مرحله text هستیم، به منوی اصلی برگرد
                 elif current_mode == "free" and current_step == "text":
                     user_data[chat_id]["mode"] = None
                     user_data[chat_id]["step"] = None
+                    # pack_name و background را حفظ کن تا کاربر بتواند ادامه دهد
                     show_main_menu(chat_id)
                     return "ok"
                 
+                # در سایر حالات، به منوی اصلی برگرد و همه چیز را reset کن
                 else:
                     user_data[chat_id]["mode"] = None
                     user_data[chat_id]["step"] = None
@@ -295,7 +211,9 @@ def webhook():
                 show_main_menu(chat_id)
                 return "ok"
 
+        # پردازش دکمه‌های طراحی پیشرفته
         if text == "🎨 انتخاب رنگ متن":
+            # تنظیم حالت طراحی پیشرفته
             if chat_id not in user_data:
                 user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
             user_data[chat_id]["mode"] = "advanced_design"
@@ -337,10 +255,13 @@ def webhook():
             user_data[chat_id]["step"] = "effect_selection"
             show_effects_menu(chat_id)
             return "ok"
-                    if text in ["�� تولد", "💒 عروسی", "🎊 جشن", "�� عاشقانه", "😄 خنده‌دار", "🔥 هیجان‌انگیز", "📚 آموزشی", "💼 کاری", "🏠 خانوادگی"]:
+
+        # پردازش دکمه‌های قالب‌های آماده
+        if text in ["🎉 تولد", "💒 عروسی", "🎊 جشن", "💝 عاشقانه", "😄 خنده‌دار", "🔥 هیجان‌انگیز", "📚 آموزشی", "💼 کاری", "🏠 خانوادگی"]:
             apply_template(chat_id, text)
             return "ok"
 
+        # پردازش دکمه‌های تنظیمات
         if text == "🌙 حالت تاریک":
             set_dark_mode(chat_id, True)
             return "ok"
@@ -350,7 +271,7 @@ def webhook():
         elif text == "🔔 اعلان‌ها":
             toggle_notifications(chat_id)
             return "ok"
-        elif text == "�� زبان":
+        elif text == "🌍 زبان":
             show_language_menu(chat_id)
             return "ok"
         elif text == "💾 ذخیره قالب":
@@ -360,105 +281,56 @@ def webhook():
             share_sticker(chat_id)
             return "ok"
 
+        # دکمه‌های منو
         if text == "🎨 طراحی پیشرفته":
+            # بررسی عضویت در کانال
             if not check_channel_membership(chat_id):
                 send_membership_required_message(chat_id)
                 return "ok"
             show_advanced_design_menu(chat_id)
             return "ok"
         elif text == "📚 قالب‌های آماده":
+            # بررسی عضویت در کانال
             if not check_channel_membership(chat_id):
                 send_membership_required_message(chat_id)
                 return "ok"
             show_template_menu(chat_id)
             return "ok"
         elif text == "📝 تاریخچه":
+            # بررسی عضویت در کانال
             if not check_channel_membership(chat_id):
                 send_membership_required_message(chat_id)
                 return "ok"
             show_history(chat_id)
             return "ok"
         elif text == "⚙️ تنظیمات":
+            # بررسی عضویت در کانال
             if not check_channel_membership(chat_id):
                 send_membership_required_message(chat_id)
                 return "ok"
             show_settings_menu(chat_id)
             return "ok"
         elif text == "⭐ اشتراک":
+            # بررسی عضویت در کانال
             if not check_channel_membership(chat_id):
                 send_membership_required_message(chat_id)
                 return "ok"
             send_message(chat_id, "💳 بخش اشتراک بعداً فعال خواهد شد.")
         elif text == "ℹ️ درباره":
+            # بررسی عضویت در کانال
             if not check_channel_membership(chat_id):
                 send_membership_required_message(chat_id)
                 return "ok"
             send_message(chat_id, "ℹ️ این ربات برای ساخت استیکر متنی است. نسخه فعلی رایگان است.")
         elif text == "📞 پشتیبانی":
+            # بررسی عضویت در کانال
             if not check_channel_membership(chat_id):
                 send_membership_required_message(chat_id)
                 return "ok"
             support_id = os.environ.get("SUPPORT_ID", "@YourSupportID")
-            send_message(chat_id, f"�� برای پشتیبانی با {support_id} در تماس باش.")
-                    if text in ["�� قرمز", "�� آبی", "�� سبز", "⚫ مشکی", "⚪ سفید", "�� زرد", "🟣 بنفش", "�� نارنجی", "🟤 قهوه‌ای"]:
-            color_map = {
-                "🔴 قرمز": "#FF0000", "�� آبی": "#0000FF", "🟢 سبز": "#00FF00",
-                "⚫ مشکی": "#000000", "⚪ سفید": "#FFFFFF", "🟡 زرد": "#FFFF00",
-                "🟣 بنفش": "#800080", "🟠 نارنجی": "#FFA500", "�� قهوه‌ای": "#A52A2A"
-            }
-            if chat_id not in user_data:
-                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
-            user_data[chat_id]["text_color"] = color_map.get(text, "#000000")
-            user_data[chat_id]["mode"] = "free"
-            user_data[chat_id]["step"] = "text"
-            send_message_with_back_button(chat_id, f"✅ رنگ متن به {text} تغییر کرد!\n\nحالا متن خود را بفرستید:")
-            return "ok"
+            send_message(chat_id, f"📞 برای پشتیبانی با {support_id} در تماس باش.")
 
-        if text in ["📝 فونت عادی", "📝 فونت ضخیم", "📝 فونت نازک", "�� فونت کج", "📝 فونت فانتزی", "📝 فونت کلاسیک"]:
-            if chat_id not in user_data:
-                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
-            user_data[chat_id]["font_style"] = text
-            user_data[chat_id]["mode"] = "free"
-            user_data[chat_id]["step"] = "text"
-            send_message_with_back_button(chat_id, f"✅ فونت به {text} تغییر کرد!\n\nحالا متن خود را بفرستید:")
-            return "ok"
-
-        if text in ["�� کوچک", "�� متوسط", "📏 بزرگ", "📏 خیلی کوچک", "📏 خیلی بزرگ"]:
-            if chat_id not in user_data:
-                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
-            user_data[chat_id]["text_size"] = text
-            user_data[chat_id]["mode"] = "free"
-            user_data[chat_id]["step"] = "text"
-            send_message_with_back_button(chat_id, f"✅ اندازه متن به {text} تغییر کرد!\n\nحالا متن خود را بفرستید:")
-            return "ok"
-
-        if text in ["�� بالا", "📍 وسط", "�� پایین", "📍 راست", "�� چپ", "📍 وسط‌چین"]:
-            if chat_id not in user_data:
-                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
-            user_data[chat_id]["text_position"] = text
-            user_data[chat_id]["mode"] = "free"
-            user_data[chat_id]["step"] = "text"
-            send_message_with_back_button(chat_id, f"✅ موقعیت متن به {text} تغییر کرد!\n\nحالا متن خود را بفرستید:")
-            return "ok"
-
-        if text in ["🖼️ شفاف", "🖼️ سفید", "��️ مشکی", "��️ آبی", "��️ قرمز", "🖼️ سبز", "🖼️ گرادیانت", "🖼️ الگو"]:
-            if chat_id not in user_data:
-                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
-            user_data[chat_id]["background_style"] = text
-            user_data[chat_id]["mode"] = "free"
-            user_data[chat_id]["step"] = "text"
-            send_message_with_back_button(chat_id, f"✅ رنگ پس‌زمینه به {text} تغییر کرد!\n\nحالا متن خود را بفرستید:")
-            return "ok"
-
-        if text in ["✨ سایه", "✨ نور", "✨ براق", "✨ مات", "✨ شفاف", "✨ انعکاس", "✨ چرخش", "✨ موج", "✨ پرش"]:
-            if chat_id not in user_data:
-                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
-            user_data[chat_id]["text_effect"] = text
-            user_data[chat_id]["mode"] = "free"
-            user_data[chat_id]["step"] = "text"
-            send_message_with_back_button(chat_id, f"✅ افکت متن به {text} تغییر کرد!\n\nحالا متن خود را بفرستید:")
-            return "ok"
-
+    # 📌 پردازش عکس
     elif "photo" in msg:
         state = user_data.get(chat_id, {})
         if state.get("mode") == "free":
@@ -467,17 +339,146 @@ def webhook():
                 file_id = photos[-1].get("file_id")
                 if file_id:
                     if state.get("step") == "background":
+                        # عکس اول برای بکگراند
                         user_data[chat_id]["background"] = file_id
                         user_data[chat_id]["step"] = "text"
                         send_message_with_back_button(chat_id, "✍️ حالا متن استیکرت رو بفرست:")
                     elif state.get("step") == "text":
+                        # تغییر بکگراند در حین ساخت استیکر
                         user_data[chat_id]["background"] = file_id
                         send_message_with_back_button(chat_id, "✅ بکگراند تغییر کرد!\n✍️ متن استیکر بعدی را بفرست:")
 
     return "ok"
-    def send_as_sticker(chat_id, text, background_file_id=None):
+
+def process_user_state(chat_id, text):
+    """پردازش حالت کاربر - این تابع جداگانه برای پردازش حالت‌ها"""
+    state = user_data.get(chat_id, {})
+    
+    if state.get("mode") == "free":
+        step = state.get("step")
+        
+        if step == "ask_pack_choice":
+            if text == "1":  # ساخت پک جدید
+                send_message(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
+                user_data[chat_id]["step"] = "pack_name"
+            elif text == "2":  # اضافه کردن به پک قبلی
+                created_packs = user_data[chat_id].get("created_packs", [])
+                if created_packs:
+                    # نمایش لیست پک‌های موجود
+                    pack_list = ""
+                    for i, pack in enumerate(created_packs, 1):
+                        pack_list += f"{i}. {pack['title']}\n"
+                    send_message(chat_id, f"📂 پک‌های موجود شما:\n{pack_list}\nلطفاً شماره پک مورد نظر را انتخاب کنید:")
+                    user_data[chat_id]["step"] = "select_pack"
+                else:
+                    send_message(chat_id, "❌ هنوز پک استیکری نداری. اول باید پک جدید بسازی.")
+                    user_data[chat_id]["step"] = "pack_name"
+                    send_message(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
+            return True
+
+        if step == "select_pack":
+            try:
+                pack_index = int(text) - 1
+                created_packs = user_data[chat_id].get("created_packs", [])
+                if 0 <= pack_index < len(created_packs):
+                    selected_pack = created_packs[pack_index]
+                    user_data[chat_id]["pack_name"] = selected_pack["name"]
+                    send_message_with_back_button(chat_id, f"✅ پک '{selected_pack['title']}' انتخاب شد.\n📷 یک عکس برای بکگراند استیکرت بفرست:")
+                    user_data[chat_id]["step"] = "background"
+                else:
+                    send_message(chat_id, "❌ شماره پک نامعتبر است. لطفاً دوباره انتخاب کنید:")
+            except ValueError:
+                send_message(chat_id, "❌ لطفاً یک شماره معتبر وارد کنید:")
+            return True
+
+        if step == "pack_name":
+            # تبدیل نام پک به فرمت قابل قبول
+            original_name = text
+            pack_name = sanitize_pack_name(text)
+            full_pack_name = f"{pack_name}_by_{BOT_USERNAME}"
+            
+            # اگر نام تبدیل شده با نام اصلی متفاوت بود، به کاربر اطلاع بده
+            if pack_name != original_name.replace(" ", "_"):
+                send_message(chat_id, f"ℹ️ نام پک شما از '{original_name}' به '{pack_name}' تبدیل شد تا با قوانین تلگرام سازگار باشد.")
+            
+            # بررسی اینکه پک با این نام وجود دارد یا نه
+            resp = requests.get(API + f"getStickerSet?name={full_pack_name}").json()
+            if resp.get("ok"):
+                send_message(chat_id, f"❌ پک با نام '{pack_name}' از قبل وجود دارد. لطفاً نام دیگری انتخاب کنید:")
+                return True
+            
+            user_data[chat_id]["pack_name"] = full_pack_name
+            send_message_with_back_button(chat_id, "📷 یک عکس برای بکگراند استیکرت بفرست:")
+            user_data[chat_id]["step"] = "background"
+            return True
+
+        if step == "text":
+            # بررسی محدودیت قبل از ساخت استیکر
+            remaining, next_reset = check_sticker_limit(chat_id)
+            if remaining <= 0:
+                next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
+                send_message(chat_id, f"⏰ محدودیت روزانه شما تمام شده!\n\n🔄 زمان بعدی: {next_reset_time}\n\n💎 برای ساخت استیکر نامحدود، اشتراک تهیه کنید.")
+                return True
+            
+            text_sticker = text
+            send_message(chat_id, "⚙️ در حال ساخت استیکر...")
+            background_file_id = user_data[chat_id].get("background")
+            
+            # Debug: بررسی pack_name
+            pack_name = user_data[chat_id].get("pack_name")
+            logger.info(f"Creating sticker for pack: {pack_name}")
+            
+            # ارسال استیکر و بررسی موفقیت
+            success = send_as_sticker(chat_id, text_sticker, background_file_id)
+            
+            if success:
+                user_data[chat_id]["count"] += 1
+                record_sticker_usage(chat_id)  # ثبت استفاده
+                
+                # نمایش وضعیت محدودیت
+                remaining, next_reset = check_sticker_limit(chat_id)
+                next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
+                limit_info = f"\n📊 وضعیت: {remaining}/5 استیکر باقی مانده\n🔄 زمان بعدی: {next_reset_time}"
+                
+                # نمایش تنظیمات فعلی
+                settings_info = ""
+                if user_data[chat_id].get("text_color"):
+                    settings_info += f"\n🎨 رنگ: {user_data[chat_id]['text_color']}"
+                if user_data[chat_id].get("font_style"):
+                    settings_info += f"\n📝 فونت: {user_data[chat_id]['font_style']}"
+                if user_data[chat_id].get("text_size"):
+                    settings_info += f"\n📏 اندازه: {user_data[chat_id]['text_size']}"
+                
+                send_message_with_back_button(chat_id, f"✅ استیکر شماره {user_data[chat_id]['count']} ساخته شد.{limit_info}{settings_info}\n\n✍️ متن استیکر بعدی را بفرست:\n\n📷 یا عکس جدید برای تغییر بکگراند بفرست:")
+                
+                # مهم: pack_name و background را حفظ کن تا استیکر بعدی در همان پک قرار بگیرد
+                # step همچنان "text" باقی می‌ماند تا کاربر بتواند استیکر بعدی بسازد
+            return True
+    
+    elif state.get("mode") == "advanced_design":
+        step = state.get("step")
+        
+        # اگر کاربر در حالت طراحی پیشرفته است و متن فرستاده، به حالت free برو
+        if step in ["color_selection", "font_selection", "size_selection", "position_selection", "background_color_selection", "effect_selection"]:
+            # تنظیمات را ذخیره کن و به حالت free برو
+            user_data[chat_id]["mode"] = "free"
+            user_data[chat_id]["step"] = "text"
+            # اگر pack_name نداریم، باید از کاربر بپرسیم
+            if not user_data[chat_id].get("pack_name"):
+                user_data[chat_id]["step"] = "pack_name"
+                send_message(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
+            else:
+                # اگر pack_name داریم، مستقیماً به ساخت استیکر برو
+                send_message_with_back_button(chat_id, "✍️ حالا متن استیکرت رو بفرست:")
+            return True
+    
+    return False
+
+
+def send_as_sticker(chat_id, text, background_file_id=None):
     sticker_path = "sticker.png"
     
+    # دریافت تنظیمات کاربر
     user_settings = {}
     if chat_id in user_data:
         user_settings = {
@@ -499,6 +500,7 @@ def webhook():
         send_message(chat_id, "❌ خطا: نام پک تعریف نشده")
         return False
         
+    # دریافت نام کاربر
     user_info = requests.get(API + f"getChat?chat_id={chat_id}").json()
     username = user_info.get("result", {}).get("username", f"user_{chat_id}")
     first_name = user_info.get("result", {}).get("first_name", "User")
@@ -508,7 +510,7 @@ def webhook():
     resp = requests.get(API + f"getStickerSet?name={pack_name}").json()
     sticker_created = False
 
-    if not resp.get("ok"):
+    if not resp.get("ok"):  # اگر پک وجود نداشت، اول باید ساخته بشه
         with open(sticker_path, "rb") as f:
             files = {"png_sticker": f}
             data = {
@@ -521,9 +523,11 @@ def webhook():
             logger.info(f"Create sticker resp: {r.json()}")
             if r.json().get("ok"):
                 sticker_created = True
+                # ذخیره پک جدید در لیست
                 if "created_packs" not in user_data[chat_id]:
                     user_data[chat_id]["created_packs"] = []
                 
+                # بررسی اینکه پک قبلاً در لیست نیست
                 pack_exists = False
                 for existing_pack in user_data[chat_id]["created_packs"]:
                     if existing_pack["name"] == pack_name:
@@ -536,11 +540,12 @@ def webhook():
                         "title": pack_title
                     })
                     logger.info(f"Pack added to created_packs: {pack_name} - {pack_title}")
-                    save_user_data()
+                    logger.info(f"User {chat_id} created_packs: {user_data[chat_id]['created_packs']}")
+                    save_user_data()  # ذخیره فوری
             else:
                 send_message(chat_id, f"❌ خطا در ساخت پک: {r.json().get('description', 'خطای نامشخص')}")
                 return False
-    else:
+    else:  # پک هست → استیکر جدید اضافه کن
         with open(sticker_path, "rb") as f:
             files = {"png_sticker": f}
             data = {
@@ -556,10 +561,13 @@ def webhook():
                 send_message(chat_id, f"❌ خطا در اضافه کردن استیکر: {r.json().get('description', 'خطای نامشخص')}")
                 return False
 
+    # ارسال استیکر به کاربر - ارسال از پک (تنها روش صحیح)
     if sticker_created:
         try:
+            # کمی صبر کنیم تا API پک را به‌روزرسانی کند
             time.sleep(1)
             
+            # دریافت پک و ارسال آخرین استیکر
             final = requests.get(API + f"getStickerSet?name={pack_name}").json()
             if final.get("ok"):
                 stickers = final["result"]["stickers"]
@@ -586,24 +594,34 @@ def webhook():
             return False
     
     return False
-    def reshape_text(text):
+
+def reshape_text(text):
+    """اصلاح متن فارسی/عربی با حفظ ترتیب طبیعی حروف"""
     try:
+        # استفاده از arabic_reshaper برای چسباندن حروف
         reshaped = arabic_reshaper.reshape(text)
+        # برعکس کردن ترتیب برای حفظ ترتیب طبیعی
         return reshaped[::-1]
     except Exception as e:
         logger.error(f"Error reshaping text: {e}")
         return text
 
 def sanitize_pack_name(text):
+    """تبدیل نام پک به فرمت قابل قبول برای Telegram API"""
     import unicodedata
     
+    # حذف کاراکترهای غیرمجاز و تبدیل به ASCII
     sanitized = ""
     for char in text:
+        # اگر کاراکتر ASCII حرف یا عدد باشد
         if char.isalnum() and ord(char) < 128:
             sanitized += char
+        # اگر فاصله باشد
         elif char.isspace():
             sanitized += "_"
-        elif '\u0600' <= char <= '\u06FF':
+        # اگر کاراکتر فارسی باشد، به انگلیسی تبدیل کن
+        elif '\u0600' <= char <= '\u06FF':  # محدوده کاراکترهای فارسی/عربی
+            # تبدیل ساده فارسی به انگلیسی (می‌تونید کامل‌تر کنید)
             persian_to_english = {
                 'ا': 'a', 'ب': 'b', 'پ': 'p', 'ت': 't', 'ث': 's', 'ج': 'j', 'چ': 'ch',
                 'ح': 'h', 'خ': 'kh', 'د': 'd', 'ذ': 'z', 'ر': 'r', 'ز': 'z', 'ژ': 'zh',
@@ -612,6 +630,7 @@ def sanitize_pack_name(text):
                 'ن': 'n', 'و': 'v', 'ه': 'h', 'ی': 'y', 'ئ': 'e', 'ء': 'a'
             }
             sanitized += persian_to_english.get(char, 'x')
+        # اگر ایموجی باشد، حذف کن (ایموجی‌ها معمولاً در محدوده 0x1F600-0x1F64F و سایر محدوده‌ها هستند)
         elif (ord(char) >= 0x1F600 and ord(char) <= 0x1F64F) or \
              (ord(char) >= 0x1F300 and ord(char) <= 0x1F5FF) or \
              (ord(char) >= 0x1F680 and ord(char) <= 0x1F6FF) or \
@@ -621,151 +640,27 @@ def sanitize_pack_name(text):
              (ord(char) >= 0xFE00 and ord(char) <= 0xFE0F) or \
              (ord(char) >= 0x1F900 and ord(char) <= 0x1F9FF) or \
              (ord(char) >= 0x1F018 and ord(char) <= 0x1F270):
+            # ایموجی رو حذف کن (هیچ کاراکتری اضافه نکن)
             continue
+        # سایر کاراکترها رو حذف کن
         else:
             sanitized += "x"
     
+    # حذف کاراکترهای تکراری _ و محدود کردن طول
     sanitized = re.sub(r'_+', '_', sanitized)
     sanitized = sanitized.strip('_')
     
+    # اگر خالی شد یا خیلی کوتاه بود
     if not sanitized or len(sanitized) < 2:
         sanitized = "pack"
     
+    # محدود کردن طول به 64 کاراکتر (محدودیت Telegram)
     if len(sanitized) > 64:
         sanitized = sanitized[:64]
     
     return sanitized
-    def show_main_menu(chat_id):
-    keyboard = {
-        "keyboard": [
-            ["�� تست رایگان", "⭐ اشتراک"],
-            ["🎨 طراحی پیشرفته", "�� قالب‌های آماده"],
-            ["📝 تاریخچه", "⚙️ تنظیمات"],
-            ["ℹ️ درباره", "�� پشتیبانی"]
-        ],
-        "resize_keyboard": True
-    }
-    requests.post(API + "sendMessage", json={
-        "chat_id": chat_id,
-        "text": "👋 خوش اومدی! یکی از گزینه‌ها رو انتخاب کن:",
-        "reply_markup": keyboard
-    })
 
-def send_message(chat_id, text):
-    requests.post(API + "sendMessage", json={"chat_id": chat_id, "text": text})
-
-def send_message_with_back_button(chat_id, text):
-    keyboard = {
-        "keyboard": [
-            ["🔙 بازگشت"]
-        ],
-        "resize_keyboard": True
-    }
-    requests.post(API + "sendMessage", json={
-        "chat_id": chat_id,
-        "text": text,
-        "reply_markup": keyboard
-    })
-
-def check_sticker_limit(chat_id):
-    if chat_id not in user_data:
-        return 5, time.time() + 24 * 3600
-    
-    current_time = time.time()
-    user_info = user_data[chat_id]
-    
-    last_reset = user_info.get("last_reset", current_time)
-    next_reset = last_reset + 24 * 3600
-    
-    if current_time >= next_reset:
-        user_info["sticker_usage"] = []
-        user_info["last_reset"] = current_time
-        next_reset = current_time + 24 * 3600
-        save_user_data()
-        logger.info(f"Reset limit for user {chat_id} at {current_time}")
-    
-    used_stickers = len(user_info.get("sticker_usage", []))
-    remaining = 5 - used_stickers
-    
-    return max(0, remaining), next_reset
-
-def record_sticker_usage(chat_id):
-    if chat_id not in user_data:
-        user_data[chat_id] = {
-            "mode": None, 
-            "count": 0, 
-            "step": None, 
-            "pack_name": None, 
-            "background": None, 
-            "created_packs": [],
-            "sticker_usage": [],
-            "last_reset": time.time()
-        }
-    
-    current_time = time.time()
-    user_info = user_data[chat_id]
-    
-    last_reset = user_info.get("last_reset", current_time)
-    next_reset = last_reset + 24 * 3600
-    
-    if current_time >= next_reset:
-        user_info["sticker_usage"] = []
-        user_info["last_reset"] = current_time
-        logger.info(f"Reset limit for user {chat_id} at {current_time}")
-    
-    user_info["sticker_usage"].append(current_time)
-    save_user_data()
-
-def check_channel_membership(chat_id):
-    try:
-        if CHANNEL_LINK.startswith("@"):
-            channel_username = CHANNEL_LINK[1:]
-        elif "t.me/" in CHANNEL_LINK:
-            channel_username = CHANNEL_LINK.split("t.me/")[-1]
-            if channel_username.startswith("@"):
-                channel_username = channel_username[1:]
-        else:
-            channel_username = CHANNEL_LINK
-        
-        response = requests.get(API + f"getChatMember", params={
-            "chat_id": f"@{channel_username}",
-            "user_id": chat_id
-        }).json()
-        
-        if response.get("ok"):
-            status = response["result"]["status"]
-            return status in ["member", "administrator", "creator"]
-        else:
-            logger.error(f"Error checking membership: {response}")
-            return False
-            
-    except Exception as e:
-        logger.error(f"Error in check_channel_membership: {e}")
-        return False
-
-def send_membership_required_message(chat_id):
-    message = f"""�� عضویت در کانال اجباری است!
-
-برای استفاده از ربات، ابتدا باید عضو کانال ما شوید:
-
-📢 {CHANNEL_LINK}
-
-بعد از عضویت، دوباره /start را بزنید."""
-    
-    keyboard = {
-        "inline_keyboard": [[
-            {
-                "text": "📢 عضویت در کانال",
-                "url": f"https://t.me/{CHANNEL_LINK.replace('@', '')}"
-            }
-        ]]
-    }
-    
-    requests.post(API + "sendMessage", json={
-        "chat_id": chat_id,
-        "text": message,
-        "reply_markup": keyboard
-        def _measure_text(draw, text, font):
+def _measure_text(draw, text, font):
     """اندازه‌گیری امن متن (پهنای یک خط)"""
     try:
         bbox = draw.textbbox((0, 0), text, font=font)
@@ -803,30 +698,41 @@ def _hard_wrap_word(draw, word, font, max_width):
     return parts
 
 def wrap_text_multiline(draw, text, font, max_width, is_rtl=False):
-    """شکستن متن به خطوط متعدد با در نظر گرفتن فاصله‌ها و کلمات خیلی بلند."""
+    """شکستن متن به خطوط متعدد با در نظر گرفتن فاصله‌ها و کلمات خیلی بلند.
+    برای حفظ ترتیب طبیعی حروف، از روش ساده استفاده می‌کنیم.
+    """
     if not text:
         return [""]
     
+    # برای متن فارسی، از روش ساده‌تر استفاده می‌کنیم
     if is_rtl:
+        # اگر متن کوتاه است، کل متن را در یک خط قرار بده
         w, _ = _measure_text(draw, text, font)
         if w <= max_width:
             return [text]
         
+        # اگر متن طولانی است، بر اساس فاصله شکست بده
         words = text.split()
         if len(words) == 1:
+            # اگر فقط یک کلمه است، آن را در وسط استیکر نگه دار
             return [text]
         
+        # برای متن‌های طولانی فارسی، کلمات را از بالا به پایین مرتب کن
         lines = []
         for word in words:
+            # هر کلمه را در یک خط جداگانه قرار بده
             lines.append(word)
         
+         # برعکس کردن ترتیب کلمات تا کلمه اول بالا باشه
         return lines[::-1] if lines else [""]
     
+    # برای متن انگلیسی، از روش قبلی استفاده می‌کنیم
     tokens = re.split(r"(\s+)", text)
     lines = []
     current = ""
     for token in tokens:
         if token.strip() == "":
+            # فضای خالی: فقط اگر چیزی در خط داریم اضافه شود
             tentative = current + token
             w, _ = _measure_text(draw, tentative, font)
             if w <= max_width:
@@ -836,16 +742,17 @@ def wrap_text_multiline(draw, text, font, max_width, is_rtl=False):
                     lines.append(current.rstrip())
                     current = ""
             continue
-        
+        # کلمه غیرسفید
         tentative = current + token
         w, _ = _measure_text(draw, tentative, font)
         if w <= max_width:
             current = tentative
         else:
+            # اگر خود کلمه جا نشود باید کلمه را خرد کنیم
             if current:
                 lines.append(current.rstrip())
                 current = ""
-            
+            # خرد کردن کلمه طولانی
             for part in _hard_wrap_word(draw, token, font, max_width):
                 w_part, _ = _measure_text(draw, part, font)
                 if current == "" and w_part <= max_width:
@@ -873,9 +780,11 @@ def measure_multiline_block(draw, lines, font, line_spacing_px):
 
 def detect_language(text):
     """تشخیص زبان متن"""
+    # الگوی فارسی/عربی
     persian_arabic_pattern = re.compile(r'[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]')
     persian_arabic_chars = len(persian_arabic_pattern.findall(text))
     
+    # الگوی انگلیسی
     english_pattern = re.compile(r'[a-zA-Z]')
     english_chars = len(english_pattern.findall(text))
     
@@ -889,6 +798,7 @@ def detect_language(text):
 def get_font(size, language="english"):
     """بارگذاری فونت بر اساس زبان"""
     if language == "persian_arabic":
+        # فونت‌های فارسی/عربی
         font_paths = [
             "Vazirmatn-Regular.ttf",
             "IRANSans.ttf", 
@@ -906,6 +816,7 @@ def get_font(size, language="english"):
             "/Windows/Fonts/arial.ttf"
         ]
     else:
+        # فونت‌های انگلیسی
         font_paths = [
             "arial.ttf",
             "DejaVuSans.ttf",
@@ -933,15 +844,19 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
     try:
         logger.info(f"Creating sticker with text: {text}")
         
+        # تشخیص زبان
         language = detect_language(text)
         logger.info(f"Detected language: {language}")
         
+        # اصلاح متن فارسی/عربی
         if language == "persian_arabic":
             text = reshape_text(text)
         
+        # 🔥 رندر روی 256×256 و در پایان زوم 2x برای هر دو زبان
         img_size = 256
         img = Image.new("RGBA", (img_size, img_size), (255, 255, 255, 0))
 
+        # 📌 اگر بکگراند هست → جایگزین کن
         if background_file_id:
             try:
                 file_info = requests.get(API + f"getFile?file_id={background_file_id}").json()
@@ -959,14 +874,15 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
 
         draw = ImageDraw.Draw(img)
         
+        # 📌 تنظیمات فونت و باکس متن (بهینه‌سازی برای متن فارسی)
         if language == "persian_arabic":
-            initial_font_size = 50
-            min_font_size = 12
+            initial_font_size = 50   # کاهش بیشتر برای فارسی
+            min_font_size = 12       # کاهش بیشتر برای فارسی
         else:
-            initial_font_size = 440
-            min_font_size = 120
-        max_width = 110
-        max_height = 110
+            initial_font_size = 440  # افزایش 2x فونت انگلیسی (220 * 2)
+            min_font_size = 120      # افزایش 2x حداقل فونت انگلیسی (60 * 2)
+        max_width = 110              # کاهش بیشتر برای فارسی
+        max_height = 110             # کاهش بیشتر برای فارسی
             
         font = get_font(initial_font_size, language)
         
@@ -974,6 +890,7 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
             logger.error("No font could be loaded, using basic text rendering")
             font = ImageFont.load_default()
 
+        # محاسبه اندازه متن اولیه برای تنظیم فونت
         try:
             bbox = draw.textbbox((0, 0), text, font=font)
             w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
@@ -983,9 +900,11 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
             except:
                 w, h = len(text) * (initial_font_size // 20), initial_font_size // 2
 
+        # تنظیم خودکار سایز فونت
         font_size = initial_font_size
         
         while True:
+            # بازشکستن با فونت جاری و اندازه‌گیری بلوک چندخطی
             line_spacing = max(int(font_size * 0.15), 4)
             wrapped_lines = wrap_text_multiline(draw, text, font, max_width, is_rtl=(language=="persian_arabic"))
             block_w, block_h = measure_multiline_block(draw, wrapped_lines, font, line_spacing)
@@ -993,9 +912,10 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
                 lines = wrapped_lines
                 break
             if font_size <= min_font_size:
+                # حداقل ممکن؛ جلوگیری از حلقه بی‌نهایت
                 lines = wrapped_lines
                 break
-            font_size -= 3
+            font_size -= 3  # کاهش کمتر برای تنظیم دقیق‌تر
             font = get_font(font_size, language)
             if font is None:
                 font = ImageFont.load_default()
@@ -1010,29 +930,36 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
                 except:
                     w, h = len(text) * (font_size // 20), font_size // 2
         
+        # شکستن متن به چند خط در محدوده
         if language == "persian_arabic":
-            line_spacing = max(int(font_size * 0.1), 2)
+            line_spacing = max(int(font_size * 0.1), 2)  # فاصله متوسط برای فارسی (کلمات از بالا به پایین)
         else:
-            line_spacing = max(int(font_size * 0.15), 3)
+            line_spacing = max(int(font_size * 0.15), 3)  # فاصله متوسط برای انگلیسی
         lines = wrap_text_multiline(draw, text, font, max_width, is_rtl=(language=="persian_arabic"))
         block_w, block_h = measure_multiline_block(draw, lines, font, line_spacing)
         x = (img_size - block_w) / 2
+        # وسط‌چین عمودی برای هر دو زبان
         is_rtl = (language == "persian_arabic")
         y = (img_size - block_h) / 2
 
+        # 📌 حاشیه بر اساس زبان (کاهش برای متن کوچک‌تر)
         if language == "persian_arabic":
-            outline_thickness = 2
+            outline_thickness = 2  # فارسی: حاشیه نازک
         else:
-            outline_thickness = 1
+            outline_thickness = 1  # انگلیسی: حاشیه خیلی نازک
         
-        text_color = "#000000"
+        # رنگ متن از تنظیمات کاربر
+        text_color = "#000000"  # پیش‌فرض
         if user_settings and "text_color" in user_settings:
             text_color = user_settings["text_color"]
         
+        # رسم هر خط با حاشیه و متن
         current_y = y
         for line in lines:
             w_line, h_line = _measure_text(draw, line, font)
+            # وسط‌چین برای هر دو زبان
             line_x = x + (block_w - w_line) / 2
+            # حاشیه
             for offset in range(1, outline_thickness + 1):
                 directions = [
                     (-offset, -offset), (0, -offset), (offset, -offset),
@@ -1044,6 +971,7 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
                         draw.text((line_x + dx, current_y + dy), line, font=font, fill="white")
                     except Exception:
                         pass
+            # متن اصلی
             try:
                 draw.text((line_x, current_y), line, fill=text_color, font=font)
             except Exception as e:
@@ -1051,13 +979,17 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
                 draw.text((line_x, current_y), line, fill=text_color)
             current_y += h_line + line_spacing
 
+        # 🔥 زوم 2x برای هر دو زبان جهت بهبود کیفیت لبه‌ها (Telegram فقط 512x512 قبول می‌کنه)
         final_img = img.resize((512, 512), Image.LANCZOS)
 
+        # ذخیره تصویر با بهینه‌سازی برای استیکر
         final_img.save(path, "PNG", optimize=True, compress_level=9)
         
+        # بررسی حجم فایل
         file_size = os.path.getsize(path)
-        if file_size > 512 * 1024:
+        if file_size > 512 * 1024:  # اگر بیشتر از 512KB باشد
             logger.warning(f"Sticker file too large: {file_size} bytes, compressing...")
+            # کاهش کیفیت
             final_img.save(path, "PNG", optimize=True, compress_level=9, quality=85)
         
         logger.info(f"Sticker saved successfully to {path} with font size: {font_size} for {language}, size: {os.path.getsize(path)} bytes")
@@ -1066,29 +998,256 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
     except Exception as e:
         logger.error(f"make_text_sticker error: {e}")
         return False
-    })
-    def show_advanced_design_menu(chat_id):
+
+def show_main_menu(chat_id):
     keyboard = {
         "keyboard": [
-            ["�� انتخاب رنگ متن", "📝 انتخاب فونت"],
-            ["📏 اندازه متن", "📍 موقعیت متن"],
-            ["��️ رنگ پس‌زمینه", "✨ افکت‌های ویژه"],
+            ["🎁 تست رایگان", "⭐ اشتراک"],
+            ["🎨 طراحی پیشرفته", "📚 قالب‌های آماده"],
+            ["📝 تاریخچه", "⚙️ تنظیمات"],
+            ["ℹ️ درباره", "📞 پشتیبانی"]
+        ],
+        "resize_keyboard": True
+    }
+    requests.post(API + "sendMessage", json={
+        "chat_id": chat_id,
+        "text": "👋 خوش اومدی! یکی از گزینه‌ها رو انتخاب کن:",
+        "reply_markup": keyboard
+    })
+
+def check_sticker_limit(chat_id):
+    """بررسی محدودیت استیکر برای کاربر"""
+    if chat_id not in user_data:
+        return 5, time.time() + 24 * 3600  # 5 استیکر، 24 ساعت بعد
+    
+    current_time = time.time()
+    user_info = user_data[chat_id]
+    
+    # دریافت زمان آخرین reset (اگر وجود نداشت، از الان شروع کن)
+    last_reset = user_info.get("last_reset", current_time)
+    
+    # محاسبه زمان reset بعدی (بر اساس آخرین reset)
+    next_reset = last_reset + 24 * 3600
+    
+    # اگر زمان reset گذشته، reset کن
+    if current_time >= next_reset:
+        user_info["sticker_usage"] = []
+        user_info["last_reset"] = current_time
+        next_reset = current_time + 24 * 3600
+        save_user_data()  # ذخیره تغییرات
+        logger.info(f"Reset limit for user {chat_id} at {current_time}")
+    
+    # شمارش استیکرهای استفاده شده در 24 ساعت گذشته
+    used_stickers = len(user_info.get("sticker_usage", []))
+    remaining = 5 - used_stickers
+    
+    return max(0, remaining), next_reset
+
+def record_sticker_usage(chat_id):
+    """ثبت استفاده از استیکر"""
+    if chat_id not in user_data:
+        user_data[chat_id] = {
+            "mode": None, 
+            "count": 0, 
+            "step": None, 
+            "pack_name": None, 
+            "background": None, 
+            "created_packs": [],
+            "sticker_usage": [],
+            "last_reset": time.time()
+        }
+    
+    current_time = time.time()
+    user_info = user_data[chat_id]
+    
+    # دریافت زمان آخرین reset (اگر وجود نداشت، از الان شروع کن)
+    last_reset = user_info.get("last_reset", current_time)
+    
+    # محاسبه زمان reset بعدی
+    next_reset = last_reset + 24 * 3600
+    
+    # اگر زمان reset گذشته، reset کن
+    if current_time >= next_reset:
+        user_info["sticker_usage"] = []
+        user_info["last_reset"] = current_time
+        logger.info(f"Reset limit for user {chat_id} at {current_time}")
+    
+    # اضافه کردن زمان استفاده
+    user_info["sticker_usage"].append(current_time)
+    save_user_data()  # ذخیره فوری
+
+def get_user_packs_from_api(chat_id):
+    """دریافت پک‌های کاربر از API تلگرام"""
+    try:
+        # دریافت اطلاعات کاربر
+        user_info = requests.get(API + f"getChat?chat_id={chat_id}").json()
+        first_name = user_info.get("result", {}).get("first_name", "User")
+        
+        # جستجو برای پک‌هایی که با نام کاربر شروع می‌شوند
+        # این روش کامل نیست اما می‌تواند کمک کند
+        packs = []
+        
+        # اگر pack_name فعلی وجود دارد، آن را بررسی کن
+        current_pack = user_data.get(chat_id, {}).get("pack_name")
+        if current_pack:
+            resp = requests.get(API + f"getStickerSet?name={current_pack}").json()
+            if resp.get("ok"):
+                packs.append({
+                    "name": current_pack,
+                    "title": f"{first_name}'s Stickers"
+                })
+        
+        return packs
+    except Exception as e:
+        logger.error(f"Error getting user packs from API: {e}")
+        return []
+
+def check_channel_membership(chat_id):
+    """بررسی عضویت کاربر در کانال اجباری"""
+    try:
+        # استخراج channel_id از لینک
+        if CHANNEL_LINK.startswith("@"):
+            channel_username = CHANNEL_LINK[1:]  # حذف @
+        elif "t.me/" in CHANNEL_LINK:
+            channel_username = CHANNEL_LINK.split("t.me/")[-1]
+            if channel_username.startswith("@"):
+                channel_username = channel_username[1:]
+        else:
+            channel_username = CHANNEL_LINK
+        
+        # بررسی عضویت
+        response = requests.get(API + f"getChatMember", params={
+            "chat_id": f"@{channel_username}",
+            "user_id": chat_id
+        }).json()
+        
+        if response.get("ok"):
+            status = response["result"]["status"]
+            # اگر عضو است (member, administrator, creator)
+            return status in ["member", "administrator", "creator"]
+        else:
+            logger.error(f"Error checking membership: {response}")
+            return False
+            
+    except Exception as e:
+        logger.error(f"Error in check_channel_membership: {e}")
+        return False
+
+def send_membership_required_message(chat_id):
+    """ارسال پیام عضویت اجباری"""
+    message = f"""🔒 عضویت در کانال اجباری است!
+
+برای استفاده از ربات، ابتدا باید عضو کانال ما شوید:
+
+📢 {CHANNEL_LINK}
+
+بعد از عضویت، دوباره /start را بزنید."""
+    
+    # ایجاد دکمه عضویت
+    keyboard = {
+        "inline_keyboard": [[
+            {
+                "text": "📢 عضویت در کانال",
+                "url": f"https://t.me/{CHANNEL_LINK.replace('@', '')}"
+            }
+        ]]
+    }
+    
+    requests.post(API + "sendMessage", json={
+        "chat_id": chat_id,
+        "text": message,
+        "reply_markup": keyboard
+    })
+
+def send_message(chat_id, text):
+    requests.post(API + "sendMessage", json={"chat_id": chat_id, "text": text})
+
+def send_message_with_back_button(chat_id, text):
+    """ارسال پیام با دکمه بازگشت"""
+    keyboard = {
+        "keyboard": [
             ["🔙 بازگشت"]
         ],
         "resize_keyboard": True
     }
     requests.post(API + "sendMessage", json={
         "chat_id": chat_id,
-        "text": "�� منوی طراحی پیشرفته:\n\nانتخاب کنید:",
+        "text": text,
+        "reply_markup": keyboard
+    })
+
+def show_advanced_design_menu(chat_id):
+    """نمایش منوی طراحی پیشرفته"""
+    keyboard = {
+        "keyboard": [
+            ["🎨 انتخاب رنگ متن", "📝 انتخاب فونت"],
+            ["📏 اندازه متن", "📍 موقعیت متن"],
+            ["🖼️ رنگ پس‌زمینه", "✨ افکت‌های ویژه"],
+            ["🔙 بازگشت"]
+        ],
+        "resize_keyboard": True
+    }
+    requests.post(API + "sendMessage", json={
+        "chat_id": chat_id,
+        "text": "🎨 منوی طراحی پیشرفته:\n\nانتخاب کنید:",
+        "reply_markup": keyboard
+    })
+
+def show_template_menu(chat_id):
+    """نمایش منوی قالب‌های آماده"""
+    keyboard = {
+        "keyboard": [
+            ["🎉 تولد", "💒 عروسی", "🎊 جشن"],
+            ["💝 عاشقانه", "😄 خنده‌دار", "🔥 هیجان‌انگیز"],
+            ["📚 آموزشی", "💼 کاری", "🏠 خانوادگی"],
+            ["🔙 بازگشت"]
+        ],
+        "resize_keyboard": True
+    }
+    requests.post(API + "sendMessage", json={
+        "chat_id": chat_id,
+        "text": "📚 قالب‌های آماده:\n\nانتخاب کنید:",
+        "reply_markup": keyboard
+    })
+
+def show_history(chat_id):
+    """نمایش تاریخچه استیکرها"""
+    if chat_id not in user_data or not user_data[chat_id].get("created_packs"):
+        send_message_with_back_button(chat_id, "📝 شما هنوز استیکری نساخته‌اید.")
+        return
+    
+    packs = user_data[chat_id]["created_packs"]
+    message = "📝 تاریخچه استیکرهای شما:\n\n"
+    
+    for i, pack in enumerate(packs, 1):
+        message += f"{i}. {pack['title']}\n"
+    
+    send_message_with_back_button(chat_id, message)
+
+def show_settings_menu(chat_id):
+    """نمایش منوی تنظیمات"""
+    keyboard = {
+        "keyboard": [
+            ["🌙 حالت تاریک", "☀️ حالت روشن"],
+            ["🔔 اعلان‌ها", "🌍 زبان"],
+            ["💾 ذخیره قالب", "📤 اشتراک‌گذاری"],
+            ["🔙 بازگشت"]
+        ],
+        "resize_keyboard": True
+    }
+    requests.post(API + "sendMessage", json={
+        "chat_id": chat_id,
+        "text": "⚙️ تنظیمات:\n\nانتخاب کنید:",
         "reply_markup": keyboard
     })
 
 def show_color_menu(chat_id):
+    """نمایش منوی انتخاب رنگ متن"""
     keyboard = {
         "keyboard": [
-            ["�� قرمز", "🔵 آبی", "�� سبز"],
-            ["⚫ مشکی", "⚪ سفید", "�� زرد"],
-            ["🟣 بنفش", "�� نارنجی", "🟤 قهوه‌ای"],
+            ["🔴 قرمز", "🔵 آبی", "🟢 سبز"],
+            ["⚫ مشکی", "⚪ سفید", "🟡 زرد"],
+            ["🟣 بنفش", "🟠 نارنجی", "🟤 قهوه‌ای"],
             ["🔙 بازگشت"]
         ],
         "resize_keyboard": True
@@ -1100,6 +1259,7 @@ def show_color_menu(chat_id):
     })
 
 def show_font_menu(chat_id):
+    """نمایش منوی انتخاب فونت"""
     keyboard = {
         "keyboard": [
             ["📝 فونت عادی", "📝 فونت ضخیم"],
@@ -1116,9 +1276,10 @@ def show_font_menu(chat_id):
     })
 
 def show_size_menu(chat_id):
+    """نمایش منوی اندازه متن"""
     keyboard = {
         "keyboard": [
-            ["�� کوچک", "📏 متوسط", "📏 بزرگ"],
+            ["📏 کوچک", "📏 متوسط", "📏 بزرگ"],
             ["📏 خیلی کوچک", "📏 خیلی بزرگ"],
             ["🔙 بازگشت"]
         ],
@@ -1131,9 +1292,10 @@ def show_size_menu(chat_id):
     })
 
 def show_position_menu(chat_id):
+    """نمایش منوی موقعیت متن"""
     keyboard = {
         "keyboard": [
-            ["�� بالا", "📍 وسط", "📍 پایین"],
+            ["📍 بالا", "📍 وسط", "📍 پایین"],
             ["📍 راست", "📍 چپ", "📍 وسط‌چین"],
             ["🔙 بازگشت"]
         ],
@@ -1146,10 +1308,11 @@ def show_position_menu(chat_id):
     })
 
 def show_background_color_menu(chat_id):
+    """نمایش منوی رنگ پس‌زمینه"""
     keyboard = {
         "keyboard": [
             ["🖼️ شفاف", "🖼️ سفید", "🖼️ مشکی"],
-            ["��️ آبی", "🖼️ قرمز", "🖼️ سبز"],
+            ["🖼️ آبی", "🖼️ قرمز", "🖼️ سبز"],
             ["🖼️ گرادیانت", "🖼️ الگو"],
             ["🔙 بازگشت"]
         ],
@@ -1162,6 +1325,7 @@ def show_background_color_menu(chat_id):
     })
 
 def show_effects_menu(chat_id):
+    """نمایش منوی افکت‌های ویژه"""
     keyboard = {
         "keyboard": [
             ["✨ سایه", "✨ نور", "✨ براق"],
@@ -1177,67 +1341,24 @@ def show_effects_menu(chat_id):
         "reply_markup": keyboard
     })
 
-def show_template_menu(chat_id):
-    keyboard = {
-        "keyboard": [
-            ["�� تولد", "💒 عروسی", "�� جشن"],
-            ["�� عاشقانه", "😄 خنده‌دار", "🔥 هیجان‌انگیز"],
-            ["📚 آموزشی", "💼 کاری", "🏠 خانوادگی"],
-            ["🔙 بازگشت"]
-        ],
-        "resize_keyboard": True
-    }
-    requests.post(API + "sendMessage", json={
-        "chat_id": chat_id,
-        "text": "📚 قالب‌های آماده:\n\nانتخاب کنید:",
-        "reply_markup": keyboard
-    })
-
-def show_history(chat_id):
-    if chat_id not in user_data or not user_data[chat_id].get("created_packs"):
-        send_message_with_back_button(chat_id, "📝 شما هنوز استیکری نساخته‌اید.")
-        return
-    
-    packs = user_data[chat_id]["created_packs"]
-    message = "📝 تاریخچه استیکرهای شما:\n\n"
-    
-    for i, pack in enumerate(packs, 1):
-        message += f"{i}. {pack['title']}\n"
-    
-    send_message_with_back_button(chat_id, message)
-
-def show_settings_menu(chat_id):
-    keyboard = {
-        "keyboard": [
-            ["🌙 حالت تاریک", "☀️ حالت روشن"],
-            ["🔔 اعلان‌ها", "🌍 زبان"],
-            ["💾 ذخیره قالب", "📤 اشتراک‌گذاری"],
-            ["🔙 بازگشت"]
-        ],
-        "resize_keyboard": True
-    }
-    requests.post(API + "sendMessage", json={
-        "chat_id": chat_id,
-        "text": "⚙️ تنظیمات:\n\nانتخاب کنید:",
-        "reply_markup": keyboard
-    })
-
 def apply_template(chat_id, template_name):
+    """اعمال قالب آماده"""
     templates = {
         "🎉 تولد": {"color": "#FFFF00", "bg": "🖼️ شفاف", "font": "📝 فونت فانتزی", "size": "📏 بزرگ"},
-        "💒 عروسی": {"color": "#FFFFFF", "bg": "🖼️ سفید", "font": "📝 فونت کلاسیک", "size": "�� متوسط"},
-        "�� جشن": {"color": "#800080", "bg": "🖼️ شفاف", "font": "📝 فونت ضخیم", "size": "📏 بزرگ"},
-        "💝 عاشقانه": {"color": "#FF0000", "bg": "🖼️ شفاف", "font": "📝 فونت کج", "size": "�� متوسط"},
-        "�� خنده‌دار": {"color": "#FFA500", "bg": "🖼️ شفاف", "font": "📝 فونت فانتزی", "size": "📏 بزرگ"},
+        "💒 عروسی": {"color": "#FFFFFF", "bg": "🖼️ سفید", "font": "📝 فونت کلاسیک", "size": "📏 متوسط"},
+        "🎊 جشن": {"color": "#800080", "bg": "🖼️ شفاف", "font": "📝 فونت ضخیم", "size": "📏 بزرگ"},
+        "💝 عاشقانه": {"color": "#FF0000", "bg": "🖼️ شفاف", "font": "📝 فونت کج", "size": "📏 متوسط"},
+        "😄 خنده‌دار": {"color": "#FFA500", "bg": "🖼️ شفاف", "font": "📝 فونت فانتزی", "size": "📏 بزرگ"},
         "🔥 هیجان‌انگیز": {"color": "#FF0000", "bg": "🖼️ شفاف", "font": "📝 فونت ضخیم", "size": "📏 خیلی بزرگ"},
-        "�� آموزشی": {"color": "#0000FF", "bg": "🖼️ سفید", "font": "📝 فونت عادی", "size": "�� متوسط"},
-        "💼 کاری": {"color": "#000000", "bg": "🖼️ سفید", "font": "📝 فونت کلاسیک", "size": "�� متوسط"},
-        "�� خانوادگی": {"color": "#00FF00", "bg": "🖼️ شفاف", "font": "📝 فونت عادی", "size": "📏 متوسط"}
+        "📚 آموزشی": {"color": "#0000FF", "bg": "🖼️ سفید", "font": "📝 فونت عادی", "size": "📏 متوسط"},
+        "💼 کاری": {"color": "#000000", "bg": "🖼️ سفید", "font": "📝 فونت کلاسیک", "size": "📏 متوسط"},
+        "🏠 خانوادگی": {"color": "#00FF00", "bg": "🖼️ شفاف", "font": "📝 فونت عادی", "size": "📏 متوسط"}
     }
     
     if template_name in templates:
         template = templates[template_name]
         
+        # تنظیم تنظیمات کاربر
         if chat_id not in user_data:
             user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
         
@@ -1253,13 +1374,16 @@ def apply_template(chat_id, template_name):
         send_message_with_back_button(chat_id, "❌ قالب پیدا نشد!")
 
 def set_dark_mode(chat_id, is_dark):
+    """تنظیم حالت تاریک/روشن"""
     mode = "تاریک" if is_dark else "روشن"
     send_message_with_back_button(chat_id, f"✅ حالت {mode} فعال شد!")
 
 def toggle_notifications(chat_id):
+    """تغییر وضعیت اعلان‌ها"""
     send_message_with_back_button(chat_id, "✅ وضعیت اعلان‌ها تغییر کرد!")
 
 def show_language_menu(chat_id):
+    """نمایش منوی زبان"""
     keyboard = {
         "keyboard": [
             ["🇮🇷 فارسی", "🇺🇸 انگلیسی"],
@@ -1275,9 +1399,11 @@ def show_language_menu(chat_id):
     })
 
 def save_template(chat_id):
+    """ذخیره قالب"""
     send_message_with_back_button(chat_id, "✅ قالب ذخیره شد!")
 
 def share_sticker(chat_id):
+    """اشتراک‌گذاری استیکر"""
     send_message_with_back_button(chat_id, "📤 لینک اشتراک‌گذاری:\n\n🔗 https://t.me/your_bot")
 
 if __name__ == "__main__":
