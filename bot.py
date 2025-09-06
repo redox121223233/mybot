@@ -175,6 +175,23 @@ def webhook():
         state = user_data.get(chat_id, {})
         if state.get("mode") == "free":
             step = state.get("step")
+        elif state.get("mode") == "advanced_design":
+            step = state.get("step")
+            
+            # اگر کاربر در حالت طراحی پیشرفته است و متن فرستاده، به حالت free برو
+            if step in ["color_selection", "font_selection", "size_selection", "position_selection", "background_color_selection", "effect_selection"]:
+                # تنظیمات را ذخیره کن و به حالت free برو
+                user_data[chat_id]["mode"] = "free"
+                user_data[chat_id]["step"] = "text"
+                # اگر pack_name نداریم، باید از کاربر بپرسیم
+                if not user_data[chat_id].get("pack_name"):
+                    user_data[chat_id]["step"] = "pack_name"
+                    send_message(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
+                    return "ok"
+                else:
+                    # اگر pack_name داریم، مستقیماً به ساخت استیکر برو
+                    send_message_with_back_button(chat_id, "✍️ حالا متن استیکرت رو بفرست:")
+                    return "ok"
 
             if step == "ask_pack_choice":
                 if text == "1":  # ساخت پک جدید
@@ -281,32 +298,79 @@ def webhook():
                 send_membership_required_message(chat_id)
                 return "ok"
             
-            # بازگشت به منوی اصلی
+            # بازگشت هوشمند بر اساس حالت فعلی
             if chat_id in user_data:
-                user_data[chat_id]["mode"] = None
-                user_data[chat_id]["step"] = None
-                user_data[chat_id]["pack_name"] = None
-                user_data[chat_id]["background"] = None
-            show_main_menu(chat_id)
-            return "ok"
+                current_mode = user_data[chat_id].get("mode")
+                current_step = user_data[chat_id].get("step")
+                
+                # اگر در حالت طراحی پیشرفته هستیم، به منوی طراحی پیشرفته برگرد
+                if current_mode == "advanced_design":
+                    if current_step in ["color_selection", "font_selection", "size_selection", "position_selection", "background_color_selection", "effect_selection"]:
+                        show_advanced_design_menu(chat_id)
+                        return "ok"
+                
+                # اگر در حالت free هستیم و در مرحله text هستیم، به منوی اصلی برگرد
+                elif current_mode == "free" and current_step == "text":
+                    user_data[chat_id]["mode"] = None
+                    user_data[chat_id]["step"] = None
+                    # pack_name و background را حفظ کن تا کاربر بتواند ادامه دهد
+                    show_main_menu(chat_id)
+                    return "ok"
+                
+                # در سایر حالات، به منوی اصلی برگرد و همه چیز را reset کن
+                else:
+                    user_data[chat_id]["mode"] = None
+                    user_data[chat_id]["step"] = None
+                    user_data[chat_id]["pack_name"] = None
+                    user_data[chat_id]["background"] = None
+                    show_main_menu(chat_id)
+                    return "ok"
+            else:
+                show_main_menu(chat_id)
+                return "ok"
 
         # پردازش دکمه‌های طراحی پیشرفته
         if text == "🎨 انتخاب رنگ متن":
+            # تنظیم حالت طراحی پیشرفته
+            if chat_id not in user_data:
+                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+            user_data[chat_id]["mode"] = "advanced_design"
+            user_data[chat_id]["step"] = "color_selection"
             show_color_menu(chat_id)
             return "ok"
         elif text == "📝 انتخاب فونت":
+            if chat_id not in user_data:
+                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+            user_data[chat_id]["mode"] = "advanced_design"
+            user_data[chat_id]["step"] = "font_selection"
             show_font_menu(chat_id)
             return "ok"
         elif text == "📏 اندازه متن":
+            if chat_id not in user_data:
+                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+            user_data[chat_id]["mode"] = "advanced_design"
+            user_data[chat_id]["step"] = "size_selection"
             show_size_menu(chat_id)
             return "ok"
         elif text == "📍 موقعیت متن":
+            if chat_id not in user_data:
+                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+            user_data[chat_id]["mode"] = "advanced_design"
+            user_data[chat_id]["step"] = "position_selection"
             show_position_menu(chat_id)
             return "ok"
         elif text == "🖼️ رنگ پس‌زمینه":
+            if chat_id not in user_data:
+                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+            user_data[chat_id]["mode"] = "advanced_design"
+            user_data[chat_id]["step"] = "background_color_selection"
             show_background_color_menu(chat_id)
             return "ok"
         elif text == "✨ افکت‌های ویژه":
+            if chat_id not in user_data:
+                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+            user_data[chat_id]["mode"] = "advanced_design"
+            user_data[chat_id]["step"] = "effect_selection"
             show_effects_menu(chat_id)
             return "ok"
 
@@ -345,6 +409,9 @@ def webhook():
             if chat_id not in user_data:
                 user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
             user_data[chat_id]["text_color"] = color_map.get(text, "#000000")
+            # تغییر به حالت free و مرحله text
+            user_data[chat_id]["mode"] = "free"
+            user_data[chat_id]["step"] = "text"
             send_message_with_back_button(chat_id, f"✅ رنگ متن به {text} تغییر کرد!\n\nحالا متن خود را بفرستید:")
             return "ok"
 
@@ -353,6 +420,9 @@ def webhook():
             if chat_id not in user_data:
                 user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
             user_data[chat_id]["font_style"] = text
+            # تغییر به حالت free و مرحله text
+            user_data[chat_id]["mode"] = "free"
+            user_data[chat_id]["step"] = "text"
             send_message_with_back_button(chat_id, f"✅ فونت به {text} تغییر کرد!\n\nحالا متن خود را بفرستید:")
             return "ok"
 
@@ -361,6 +431,9 @@ def webhook():
             if chat_id not in user_data:
                 user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
             user_data[chat_id]["text_size"] = text
+            # تغییر به حالت free و مرحله text
+            user_data[chat_id]["mode"] = "free"
+            user_data[chat_id]["step"] = "text"
             send_message_with_back_button(chat_id, f"✅ اندازه متن به {text} تغییر کرد!\n\nحالا متن خود را بفرستید:")
             return "ok"
 
@@ -369,6 +442,9 @@ def webhook():
             if chat_id not in user_data:
                 user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
             user_data[chat_id]["text_position"] = text
+            # تغییر به حالت free و مرحله text
+            user_data[chat_id]["mode"] = "free"
+            user_data[chat_id]["step"] = "text"
             send_message_with_back_button(chat_id, f"✅ موقعیت متن به {text} تغییر کرد!\n\nحالا متن خود را بفرستید:")
             return "ok"
 
@@ -377,6 +453,9 @@ def webhook():
             if chat_id not in user_data:
                 user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
             user_data[chat_id]["background_style"] = text
+            # تغییر به حالت free و مرحله text
+            user_data[chat_id]["mode"] = "free"
+            user_data[chat_id]["step"] = "text"
             send_message_with_back_button(chat_id, f"✅ رنگ پس‌زمینه به {text} تغییر کرد!\n\nحالا متن خود را بفرستید:")
             return "ok"
 
@@ -385,6 +464,9 @@ def webhook():
             if chat_id not in user_data:
                 user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
             user_data[chat_id]["text_effect"] = text
+            # تغییر به حالت free و مرحله text
+            user_data[chat_id]["mode"] = "free"
+            user_data[chat_id]["step"] = "text"
             send_message_with_back_button(chat_id, f"✅ افکت متن به {text} تغییر کرد!\n\nحالا متن خود را بفرستید:")
             return "ok"
 
