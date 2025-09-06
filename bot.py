@@ -414,9 +414,14 @@ def send_as_sticker(chat_id, text, background_file_id=None):
     return False
 
 def reshape_text(text):
-    """متن فارسی رو بدون تغییر برمی‌گردونه تا ترتیب طبیعی حفظ بشه"""
-    # غیرفعال کردن reshape برای حفظ ترتیب طبیعی حروف
-    return text
+    """اصلاح متن فارسی/عربی با حفظ ترتیب طبیعی حروف"""
+    try:
+        # استفاده از arabic_reshaper برای چسباندن حروف (بدون bidi)
+        reshaped = arabic_reshaper.reshape(text)
+        return reshaped
+    except Exception as e:
+        logger.error(f"Error reshaping text: {e}")
+        return text
 
 def sanitize_pack_name(text):
     """تبدیل نام پک به فرمت قابل قبول برای Telegram API"""
@@ -620,7 +625,11 @@ def get_font(size, language="english"):
             "Tanha.ttf",
             "NotoSansArabic-Regular.ttf",
             "NotoNaskhArabic-Regular.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
+            "NotoColorEmoji.ttf",
+            "NotoEmoji.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/System/Library/Fonts/Helvetica.ttc",
+            "/Windows/Fonts/arial.ttf"
         ]
     else:
         # فونت‌های انگلیسی
