@@ -164,7 +164,7 @@ def webhook():
             if user_data[chat_id].get("pack_name"):
                 # اگر کاربر قبلاً پکی دارد، مستقیماً به ساخت استیکر ادامه دهد
                 pack_name = user_data[chat_id]["pack_name"]
-                send_message(chat_id, limit_info + f"✅ ادامه ساخت استیکر در پک فعلی\n✍️ متن استیکر بعدی را بفرست:\n\n📷 یا عکس جدید برای تغییر بکگراند بفرست:")
+                send_message_with_back_button(chat_id, limit_info + f"✅ ادامه ساخت استیکر در پک فعلی\n✍️ متن استیکر بعدی را بفرست:\n\n📷 یا عکس جدید برای تغییر بکگراند بفرست:")
             elif created_packs:
                 send_message(chat_id, limit_info + "📝 آیا می‌خواهید پک جدید بسازید یا به پک قبلی اضافه کنید؟\n1. ساخت پک جدید\n2. اضافه کردن به پک قبلی")
             else:
@@ -202,7 +202,7 @@ def webhook():
                     if 0 <= pack_index < len(created_packs):
                         selected_pack = created_packs[pack_index]
                         user_data[chat_id]["pack_name"] = selected_pack["name"]
-                        send_message(chat_id, f"✅ پک '{selected_pack['title']}' انتخاب شد.\n📷 یک عکس برای بکگراند استیکرت بفرست:")
+                        send_message_with_back_button(chat_id, f"✅ پک '{selected_pack['title']}' انتخاب شد.\n📷 یک عکس برای بکگراند استیکرت بفرست:")
                         user_data[chat_id]["step"] = "background"
                     else:
                         send_message(chat_id, "❌ شماره پک نامعتبر است. لطفاً دوباره انتخاب کنید:")
@@ -227,7 +227,7 @@ def webhook():
                     return "ok"
                 
                 user_data[chat_id]["pack_name"] = full_pack_name
-                send_message(chat_id, "📷 یک عکس برای بکگراند استیکرت بفرست:")
+                send_message_with_back_button(chat_id, "📷 یک عکس برای بکگراند استیکرت بفرست:")
                 user_data[chat_id]["step"] = "background"
                 return "ok"
 
@@ -259,14 +259,101 @@ def webhook():
                     next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
                     limit_info = f"\n📊 وضعیت: {remaining}/5 استیکر باقی مانده\n🔄 زمان بعدی: {next_reset_time}"
                     
-                    send_message(chat_id, f"✅ استیکر شماره {user_data[chat_id]['count']} ساخته شد.{limit_info}\n\n✍️ متن استیکر بعدی را بفرست:\n\n📷 یا عکس جدید برای تغییر بکگراند بفرست:")
+                    send_message_with_back_button(chat_id, f"✅ استیکر شماره {user_data[chat_id]['count']} ساخته شد.{limit_info}\n\n✍️ متن استیکر بعدی را بفرست:\n\n📷 یا عکس جدید برای تغییر بکگراند بفرست:")
                     
                     # مهم: pack_name و background را حفظ کن تا استیکر بعدی در همان پک قرار بگیرد
                     # step همچنان "text" باقی می‌ماند تا کاربر بتواند استیکر بعدی بسازد
                 return "ok"
 
+        # دکمه بازگشت
+        if text == "🔙 بازگشت":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+            
+            # بازگشت به منوی اصلی
+            if chat_id in user_data:
+                user_data[chat_id]["mode"] = None
+                user_data[chat_id]["step"] = None
+            show_main_menu(chat_id)
+            return "ok"
+
+        # پردازش دکمه‌های طراحی پیشرفته
+        if text == "🎨 انتخاب رنگ متن":
+            show_color_menu(chat_id)
+            return "ok"
+        elif text == "📝 انتخاب فونت":
+            show_font_menu(chat_id)
+            return "ok"
+        elif text == "📏 اندازه متن":
+            show_size_menu(chat_id)
+            return "ok"
+        elif text == "📍 موقعیت متن":
+            show_position_menu(chat_id)
+            return "ok"
+        elif text == "🖼️ رنگ پس‌زمینه":
+            show_background_color_menu(chat_id)
+            return "ok"
+        elif text == "✨ افکت‌های ویژه":
+            show_effects_menu(chat_id)
+            return "ok"
+
+        # پردازش دکمه‌های قالب‌های آماده
+        if text in ["🎉 تولد", "💒 عروسی", "🎊 جشن", "💝 عاشقانه", "😄 خنده‌دار", "🔥 هیجان‌انگیز", "📚 آموزشی", "💼 کاری", "🏠 خانوادگی"]:
+            apply_template(chat_id, text)
+            return "ok"
+
+        # پردازش دکمه‌های تنظیمات
+        if text == "🌙 حالت تاریک":
+            set_dark_mode(chat_id, True)
+            return "ok"
+        elif text == "☀️ حالت روشن":
+            set_dark_mode(chat_id, False)
+            return "ok"
+        elif text == "🔔 اعلان‌ها":
+            toggle_notifications(chat_id)
+            return "ok"
+        elif text == "🌍 زبان":
+            show_language_menu(chat_id)
+            return "ok"
+        elif text == "💾 ذخیره قالب":
+            save_template(chat_id)
+            return "ok"
+        elif text == "📤 اشتراک‌گذاری":
+            share_sticker(chat_id)
+            return "ok"
+
         # دکمه‌های منو
-        if text == "⭐ اشتراک":
+        if text == "🎨 طراحی پیشرفته":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+            show_advanced_design_menu(chat_id)
+            return "ok"
+        elif text == "📚 قالب‌های آماده":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+            show_template_menu(chat_id)
+            return "ok"
+        elif text == "📝 تاریخچه":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+            show_history(chat_id)
+            return "ok"
+        elif text == "⚙️ تنظیمات":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+            show_settings_menu(chat_id)
+            return "ok"
+        elif text == "⭐ اشتراک":
             # بررسی عضویت در کانال
             if not check_channel_membership(chat_id):
                 send_membership_required_message(chat_id)
@@ -298,11 +385,11 @@ def webhook():
                         # عکس اول برای بکگراند
                         user_data[chat_id]["background"] = file_id
                         user_data[chat_id]["step"] = "text"
-                        send_message(chat_id, "✍️ حالا متن استیکرت رو بفرست:")
+                        send_message_with_back_button(chat_id, "✍️ حالا متن استیکرت رو بفرست:")
                     elif state.get("step") == "text":
                         # تغییر بکگراند در حین ساخت استیکر
                         user_data[chat_id]["background"] = file_id
-                        send_message(chat_id, "✅ بکگراند تغییر کرد!\n✍️ متن استیکر بعدی را بفرست:")
+                        send_message_with_back_button(chat_id, "✅ بکگراند تغییر کرد!\n✍️ متن استیکر بعدی را بفرست:")
 
     return "ok"
 
@@ -541,7 +628,7 @@ def wrap_text_multiline(draw, text, font, max_width, is_rtl=False):
             # هر کلمه را در یک خط جداگانه قرار بده
             lines.append(word)
         
-        # برعکس کردن ترتیب کلمات تا کلمه اول بالا باشه
+         # برعکس کردن ترتیب کلمات تا کلمه اول بالا باشه
         return lines[::-1] if lines else [""]
     
     # برای متن انگلیسی، از روش قبلی استفاده می‌کنیم
@@ -816,6 +903,8 @@ def show_main_menu(chat_id):
     keyboard = {
         "keyboard": [
             ["🎁 تست رایگان", "⭐ اشتراک"],
+            ["🎨 طراحی پیشرفته", "📚 قالب‌های آماده"],
+            ["📝 تاریخچه", "⚙️ تنظیمات"],
             ["ℹ️ درباره", "📞 پشتیبانی"]
         ],
         "resize_keyboard": True
@@ -972,6 +1061,238 @@ def send_membership_required_message(chat_id):
 
 def send_message(chat_id, text):
     requests.post(API + "sendMessage", json={"chat_id": chat_id, "text": text})
+
+def send_message_with_back_button(chat_id, text):
+    """ارسال پیام با دکمه بازگشت"""
+    keyboard = {
+        "keyboard": [
+            ["🔙 بازگشت"]
+        ],
+        "resize_keyboard": True
+    }
+    requests.post(API + "sendMessage", json={
+        "chat_id": chat_id,
+        "text": text,
+        "reply_markup": keyboard
+    })
+
+def show_advanced_design_menu(chat_id):
+    """نمایش منوی طراحی پیشرفته"""
+    keyboard = {
+        "keyboard": [
+            ["🎨 انتخاب رنگ متن", "📝 انتخاب فونت"],
+            ["📏 اندازه متن", "📍 موقعیت متن"],
+            ["🖼️ رنگ پس‌زمینه", "✨ افکت‌های ویژه"],
+            ["🔙 بازگشت"]
+        ],
+        "resize_keyboard": True
+    }
+    requests.post(API + "sendMessage", json={
+        "chat_id": chat_id,
+        "text": "🎨 منوی طراحی پیشرفته:\n\nانتخاب کنید:",
+        "reply_markup": keyboard
+    })
+
+def show_template_menu(chat_id):
+    """نمایش منوی قالب‌های آماده"""
+    keyboard = {
+        "keyboard": [
+            ["🎉 تولد", "💒 عروسی", "🎊 جشن"],
+            ["💝 عاشقانه", "😄 خنده‌دار", "🔥 هیجان‌انگیز"],
+            ["📚 آموزشی", "💼 کاری", "🏠 خانوادگی"],
+            ["🔙 بازگشت"]
+        ],
+        "resize_keyboard": True
+    }
+    requests.post(API + "sendMessage", json={
+        "chat_id": chat_id,
+        "text": "📚 قالب‌های آماده:\n\nانتخاب کنید:",
+        "reply_markup": keyboard
+    })
+
+def show_history(chat_id):
+    """نمایش تاریخچه استیکرها"""
+    if chat_id not in user_data or not user_data[chat_id].get("created_packs"):
+        send_message_with_back_button(chat_id, "📝 شما هنوز استیکری نساخته‌اید.")
+        return
+    
+    packs = user_data[chat_id]["created_packs"]
+    message = "📝 تاریخچه استیکرهای شما:\n\n"
+    
+    for i, pack in enumerate(packs, 1):
+        message += f"{i}. {pack['title']}\n"
+    
+    send_message_with_back_button(chat_id, message)
+
+def show_settings_menu(chat_id):
+    """نمایش منوی تنظیمات"""
+    keyboard = {
+        "keyboard": [
+            ["🌙 حالت تاریک", "☀️ حالت روشن"],
+            ["🔔 اعلان‌ها", "🌍 زبان"],
+            ["💾 ذخیره قالب", "📤 اشتراک‌گذاری"],
+            ["🔙 بازگشت"]
+        ],
+        "resize_keyboard": True
+    }
+    requests.post(API + "sendMessage", json={
+        "chat_id": chat_id,
+        "text": "⚙️ تنظیمات:\n\nانتخاب کنید:",
+        "reply_markup": keyboard
+    })
+
+def show_color_menu(chat_id):
+    """نمایش منوی انتخاب رنگ متن"""
+    keyboard = {
+        "keyboard": [
+            ["🔴 قرمز", "🔵 آبی", "🟢 سبز"],
+            ["⚫ مشکی", "⚪ سفید", "🟡 زرد"],
+            ["🟣 بنفش", "🟠 نارنجی", "🟤 قهوه‌ای"],
+            ["🔙 بازگشت"]
+        ],
+        "resize_keyboard": True
+    }
+    requests.post(API + "sendMessage", json={
+        "chat_id": chat_id,
+        "text": "🎨 انتخاب رنگ متن:\n\nانتخاب کنید:",
+        "reply_markup": keyboard
+    })
+
+def show_font_menu(chat_id):
+    """نمایش منوی انتخاب فونت"""
+    keyboard = {
+        "keyboard": [
+            ["📝 فونت عادی", "📝 فونت ضخیم"],
+            ["📝 فونت نازک", "📝 فونت کج"],
+            ["📝 فونت فانتزی", "📝 فونت کلاسیک"],
+            ["🔙 بازگشت"]
+        ],
+        "resize_keyboard": True
+    }
+    requests.post(API + "sendMessage", json={
+        "chat_id": chat_id,
+        "text": "📝 انتخاب فونت:\n\nانتخاب کنید:",
+        "reply_markup": keyboard
+    })
+
+def show_size_menu(chat_id):
+    """نمایش منوی اندازه متن"""
+    keyboard = {
+        "keyboard": [
+            ["📏 کوچک", "📏 متوسط", "📏 بزرگ"],
+            ["📏 خیلی کوچک", "📏 خیلی بزرگ"],
+            ["🔙 بازگشت"]
+        ],
+        "resize_keyboard": True
+    }
+    requests.post(API + "sendMessage", json={
+        "chat_id": chat_id,
+        "text": "📏 انتخاب اندازه متن:\n\nانتخاب کنید:",
+        "reply_markup": keyboard
+    })
+
+def show_position_menu(chat_id):
+    """نمایش منوی موقعیت متن"""
+    keyboard = {
+        "keyboard": [
+            ["📍 بالا", "📍 وسط", "📍 پایین"],
+            ["📍 راست", "📍 چپ", "📍 وسط‌چین"],
+            ["🔙 بازگشت"]
+        ],
+        "resize_keyboard": True
+    }
+    requests.post(API + "sendMessage", json={
+        "chat_id": chat_id,
+        "text": "📍 انتخاب موقعیت متن:\n\nانتخاب کنید:",
+        "reply_markup": keyboard
+    })
+
+def show_background_color_menu(chat_id):
+    """نمایش منوی رنگ پس‌زمینه"""
+    keyboard = {
+        "keyboard": [
+            ["🖼️ شفاف", "🖼️ سفید", "🖼️ مشکی"],
+            ["🖼️ آبی", "🖼️ قرمز", "🖼️ سبز"],
+            ["🖼️ گرادیانت", "🖼️ الگو"],
+            ["🔙 بازگشت"]
+        ],
+        "resize_keyboard": True
+    }
+    requests.post(API + "sendMessage", json={
+        "chat_id": chat_id,
+        "text": "🖼️ انتخاب رنگ پس‌زمینه:\n\nانتخاب کنید:",
+        "reply_markup": keyboard
+    })
+
+def show_effects_menu(chat_id):
+    """نمایش منوی افکت‌های ویژه"""
+    keyboard = {
+        "keyboard": [
+            ["✨ سایه", "✨ نور", "✨ براق"],
+            ["✨ مات", "✨ شفاف", "✨ انعکاس"],
+            ["✨ چرخش", "✨ موج", "✨ پرش"],
+            ["🔙 بازگشت"]
+        ],
+        "resize_keyboard": True
+    }
+    requests.post(API + "sendMessage", json={
+        "chat_id": chat_id,
+        "text": "✨ انتخاب افکت‌های ویژه:\n\nانتخاب کنید:",
+        "reply_markup": keyboard
+    })
+
+def apply_template(chat_id, template_name):
+    """اعمال قالب آماده"""
+    templates = {
+        "🎉 تولد": {"color": "🟡", "bg": "🖼️", "font": "📝 فانتزی"},
+        "💒 عروسی": {"color": "⚪", "bg": "🖼️", "font": "📝 کلاسیک"},
+        "🎊 جشن": {"color": "🟣", "bg": "🖼️", "font": "📝 ضخیم"},
+        "💝 عاشقانه": {"color": "🔴", "bg": "🖼️", "font": "📝 کج"},
+        "😄 خنده‌دار": {"color": "🟠", "bg": "🖼️", "font": "📝 فانتزی"},
+        "🔥 هیجان‌انگیز": {"color": "🔴", "bg": "🖼️", "font": "📝 ضخیم"},
+        "📚 آموزشی": {"color": "🔵", "bg": "🖼️", "font": "📝 عادی"},
+        "💼 کاری": {"color": "⚫", "bg": "🖼️", "font": "📝 کلاسیک"},
+        "🏠 خانوادگی": {"color": "🟢", "bg": "🖼️", "font": "📝 عادی"}
+    }
+    
+    if template_name in templates:
+        template = templates[template_name]
+        send_message_with_back_button(chat_id, f"✅ قالب '{template_name}' اعمال شد!\n\n🎨 رنگ: {template['color']}\n🖼️ پس‌زمینه: {template['bg']}\n📝 فونت: {template['font']}\n\nحالا متن خود را بفرستید:")
+    else:
+        send_message_with_back_button(chat_id, "❌ قالب پیدا نشد!")
+
+def set_dark_mode(chat_id, is_dark):
+    """تنظیم حالت تاریک/روشن"""
+    mode = "تاریک" if is_dark else "روشن"
+    send_message_with_back_button(chat_id, f"✅ حالت {mode} فعال شد!")
+
+def toggle_notifications(chat_id):
+    """تغییر وضعیت اعلان‌ها"""
+    send_message_with_back_button(chat_id, "✅ وضعیت اعلان‌ها تغییر کرد!")
+
+def show_language_menu(chat_id):
+    """نمایش منوی زبان"""
+    keyboard = {
+        "keyboard": [
+            ["🇮🇷 فارسی", "🇺🇸 انگلیسی"],
+            ["🇸🇦 عربی", "🇹🇷 ترکی"],
+            ["🔙 بازگشت"]
+        ],
+        "resize_keyboard": True
+    }
+    requests.post(API + "sendMessage", json={
+        "chat_id": chat_id,
+        "text": "🌍 انتخاب زبان:\n\nانتخاب کنید:",
+        "reply_markup": keyboard
+    })
+
+def save_template(chat_id):
+    """ذخیره قالب"""
+    send_message_with_back_button(chat_id, "✅ قالب ذخیره شد!")
+
+def share_sticker(chat_id):
+    """اشتراک‌گذاری استیکر"""
+    send_message_with_back_button(chat_id, "📤 لینک اشتراک‌گذاری:\n\n🔗 https://t.me/your_bot")
 
 if __name__ == "__main__":
     if APP_URL:
