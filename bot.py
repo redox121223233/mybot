@@ -414,14 +414,9 @@ def send_as_sticker(chat_id, text, background_file_id=None):
     return False
 
 def reshape_text(text):
-    """اصلاح متن فارسی/عربی با حفظ ترتیب طبیعی حروف"""
-    try:
-        # فقط از arabic_reshaper استفاده کن (بدون bidi)
-        reshaped = arabic_reshaper.reshape(text)
-        return reshaped
-    except Exception as e:
-        logger.error(f"Error reshaping text: {e}")
-        return text
+    """متن فارسی رو بدون تغییر برمی‌گردونه تا ترتیب طبیعی حفظ بشه"""
+    # غیرفعال کردن reshape برای حفظ ترتیب طبیعی حروف
+    return text
 
 def sanitize_pack_name(text):
     """تبدیل نام پک به فرمت قابل قبول برای Telegram API"""
@@ -531,7 +526,7 @@ def wrap_text_multiline(draw, text, font, max_width, is_rtl=False):
         # اگر متن طولانی است، بر اساس فاصله شکست بده
         words = text.split()
         if len(words) == 1:
-            # اگر فقط یک کلمه است، آن را در یک خط نگه دار (حتی اگر از کادر خارج بشه)
+            # اگر فقط یک کلمه است، آن را در وسط استیکر نگه دار
             return [text]
         
         # برای متن‌های طولانی فارسی، کلمات را از بالا به پایین مرتب کن
