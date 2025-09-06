@@ -541,7 +541,8 @@ def wrap_text_multiline(draw, text, font, max_width, is_rtl=False):
             # هر کلمه را در یک خط جداگانه قرار بده
             lines.append(word)
         
-        return lines or [""]
+        # برعکس کردن ترتیب کلمات تا کلمه اول بالا باشه
+        return lines[::-1] if lines else [""]
     
     # برای متن انگلیسی، از روش قبلی استفاده می‌کنیم
     tokens = re.split(r"(\s+)", text)
