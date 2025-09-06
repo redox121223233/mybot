@@ -259,7 +259,16 @@ def webhook():
                     next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
                     limit_info = f"\n📊 وضعیت: {remaining}/5 استیکر باقی مانده\n🔄 زمان بعدی: {next_reset_time}"
                     
-                    send_message_with_back_button(chat_id, f"✅ استیکر شماره {user_data[chat_id]['count']} ساخته شد.{limit_info}\n\n✍️ متن استیکر بعدی را بفرست:\n\n📷 یا عکس جدید برای تغییر بکگراند بفرست:")
+                    # نمایش تنظیمات فعلی
+                    settings_info = ""
+                    if user_data[chat_id].get("text_color"):
+                        settings_info += f"\n🎨 رنگ: {user_data[chat_id]['text_color']}"
+                    if user_data[chat_id].get("font_style"):
+                        settings_info += f"\n📝 فونت: {user_data[chat_id]['font_style']}"
+                    if user_data[chat_id].get("text_size"):
+                        settings_info += f"\n📏 اندازه: {user_data[chat_id]['text_size']}"
+                    
+                    send_message_with_back_button(chat_id, f"✅ استیکر شماره {user_data[chat_id]['count']} ساخته شد.{limit_info}{settings_info}\n\n✍️ متن استیکر بعدی را بفرست:\n\n📷 یا عکس جدید برای تغییر بکگراند بفرست:")
                     
                     # مهم: pack_name و background را حفظ کن تا استیکر بعدی در همان پک قرار بگیرد
                     # step همچنان "text" باقی می‌ماند تا کاربر بتواند استیکر بعدی بسازد
@@ -276,6 +285,8 @@ def webhook():
             if chat_id in user_data:
                 user_data[chat_id]["mode"] = None
                 user_data[chat_id]["step"] = None
+                user_data[chat_id]["pack_name"] = None
+                user_data[chat_id]["background"] = None
             show_main_menu(chat_id)
             return "ok"
 
@@ -322,6 +333,59 @@ def webhook():
             return "ok"
         elif text == "📤 اشتراک‌گذاری":
             share_sticker(chat_id)
+            return "ok"
+
+        # پردازش دکمه‌های رنگ متن
+        if text in ["🔴 قرمز", "🔵 آبی", "🟢 سبز", "⚫ مشکی", "⚪ سفید", "🟡 زرد", "🟣 بنفش", "🟠 نارنجی", "🟤 قهوه‌ای"]:
+            color_map = {
+                "🔴 قرمز": "#FF0000", "🔵 آبی": "#0000FF", "🟢 سبز": "#00FF00",
+                "⚫ مشکی": "#000000", "⚪ سفید": "#FFFFFF", "🟡 زرد": "#FFFF00",
+                "🟣 بنفش": "#800080", "🟠 نارنجی": "#FFA500", "🟤 قهوه‌ای": "#A52A2A"
+            }
+            if chat_id not in user_data:
+                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+            user_data[chat_id]["text_color"] = color_map.get(text, "#000000")
+            send_message_with_back_button(chat_id, f"✅ رنگ متن به {text} تغییر کرد!\n\nحالا متن خود را بفرستید:")
+            return "ok"
+
+        # پردازش دکمه‌های فونت
+        if text in ["📝 فونت عادی", "📝 فونت ضخیم", "📝 فونت نازک", "📝 فونت کج", "📝 فونت فانتزی", "📝 فونت کلاسیک"]:
+            if chat_id not in user_data:
+                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+            user_data[chat_id]["font_style"] = text
+            send_message_with_back_button(chat_id, f"✅ فونت به {text} تغییر کرد!\n\nحالا متن خود را بفرستید:")
+            return "ok"
+
+        # پردازش دکمه‌های اندازه متن
+        if text in ["📏 کوچک", "📏 متوسط", "📏 بزرگ", "📏 خیلی کوچک", "📏 خیلی بزرگ"]:
+            if chat_id not in user_data:
+                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+            user_data[chat_id]["text_size"] = text
+            send_message_with_back_button(chat_id, f"✅ اندازه متن به {text} تغییر کرد!\n\nحالا متن خود را بفرستید:")
+            return "ok"
+
+        # پردازش دکمه‌های موقعیت متن
+        if text in ["📍 بالا", "📍 وسط", "📍 پایین", "📍 راست", "📍 چپ", "📍 وسط‌چین"]:
+            if chat_id not in user_data:
+                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+            user_data[chat_id]["text_position"] = text
+            send_message_with_back_button(chat_id, f"✅ موقعیت متن به {text} تغییر کرد!\n\nحالا متن خود را بفرستید:")
+            return "ok"
+
+        # پردازش دکمه‌های رنگ پس‌زمینه
+        if text in ["🖼️ شفاف", "🖼️ سفید", "🖼️ مشکی", "🖼️ آبی", "🖼️ قرمز", "🖼️ سبز", "🖼️ گرادیانت", "🖼️ الگو"]:
+            if chat_id not in user_data:
+                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+            user_data[chat_id]["background_style"] = text
+            send_message_with_back_button(chat_id, f"✅ رنگ پس‌زمینه به {text} تغییر کرد!\n\nحالا متن خود را بفرستید:")
+            return "ok"
+
+        # پردازش دکمه‌های افکت‌های ویژه
+        if text in ["✨ سایه", "✨ نور", "✨ براق", "✨ مات", "✨ شفاف", "✨ انعکاس", "✨ چرخش", "✨ موج", "✨ پرش"]:
+            if chat_id not in user_data:
+                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+            user_data[chat_id]["text_effect"] = text
+            send_message_with_back_button(chat_id, f"✅ افکت متن به {text} تغییر کرد!\n\nحالا متن خود را بفرستید:")
             return "ok"
 
         # دکمه‌های منو
@@ -395,7 +459,20 @@ def webhook():
 
 def send_as_sticker(chat_id, text, background_file_id=None):
     sticker_path = "sticker.png"
-    ok = make_text_sticker(text, sticker_path, background_file_id)
+    
+    # دریافت تنظیمات کاربر
+    user_settings = {}
+    if chat_id in user_data:
+        user_settings = {
+            "text_color": user_data[chat_id].get("text_color"),
+            "background_style": user_data[chat_id].get("background_style"),
+            "font_style": user_data[chat_id].get("font_style"),
+            "text_size": user_data[chat_id].get("text_size"),
+            "text_position": user_data[chat_id].get("text_position"),
+            "text_effect": user_data[chat_id].get("text_effect")
+        }
+    
+    ok = make_text_sticker(text, sticker_path, background_file_id, user_settings)
     if not ok:
         send_message(chat_id, "❌ خطا در ساخت استیکر")
         return False
@@ -745,7 +822,7 @@ def get_font(size, language="english"):
     except:
         return None
 
-def make_text_sticker(text, path, background_file_id=None):
+def make_text_sticker(text, path, background_file_id=None, user_settings=None):
     try:
         logger.info(f"Creating sticker with text: {text}")
         
@@ -853,6 +930,11 @@ def make_text_sticker(text, path, background_file_id=None):
         else:
             outline_thickness = 1  # انگلیسی: حاشیه خیلی نازک
         
+        # رنگ متن از تنظیمات کاربر
+        text_color = "#000000"  # پیش‌فرض
+        if user_settings and "text_color" in user_settings:
+            text_color = user_settings["text_color"]
+        
         # رسم هر خط با حاشیه و متن
         current_y = y
         for line in lines:
@@ -873,10 +955,10 @@ def make_text_sticker(text, path, background_file_id=None):
                         pass
             # متن اصلی
             try:
-                draw.text((line_x, current_y), line, fill="#000000", font=font)
+                draw.text((line_x, current_y), line, fill=text_color, font=font)
             except Exception as e:
                 logger.error(f"Error drawing line: {e}")
-                draw.text((line_x, current_y), line, fill="#000000")
+                draw.text((line_x, current_y), line, fill=text_color)
             current_y += h_line + line_spacing
 
         # 🔥 زوم 2x برای هر دو زبان جهت بهبود کیفیت لبه‌ها (Telegram فقط 512x512 قبول می‌کنه)
@@ -1244,20 +1326,32 @@ def show_effects_menu(chat_id):
 def apply_template(chat_id, template_name):
     """اعمال قالب آماده"""
     templates = {
-        "🎉 تولد": {"color": "🟡", "bg": "🖼️", "font": "📝 فانتزی"},
-        "💒 عروسی": {"color": "⚪", "bg": "🖼️", "font": "📝 کلاسیک"},
-        "🎊 جشن": {"color": "🟣", "bg": "🖼️", "font": "📝 ضخیم"},
-        "💝 عاشقانه": {"color": "🔴", "bg": "🖼️", "font": "📝 کج"},
-        "😄 خنده‌دار": {"color": "🟠", "bg": "🖼️", "font": "📝 فانتزی"},
-        "🔥 هیجان‌انگیز": {"color": "🔴", "bg": "🖼️", "font": "📝 ضخیم"},
-        "📚 آموزشی": {"color": "🔵", "bg": "🖼️", "font": "📝 عادی"},
-        "💼 کاری": {"color": "⚫", "bg": "🖼️", "font": "📝 کلاسیک"},
-        "🏠 خانوادگی": {"color": "🟢", "bg": "🖼️", "font": "📝 عادی"}
+        "🎉 تولد": {"color": "#FFFF00", "bg": "🖼️ شفاف", "font": "📝 فونت فانتزی", "size": "📏 بزرگ"},
+        "💒 عروسی": {"color": "#FFFFFF", "bg": "🖼️ سفید", "font": "📝 فونت کلاسیک", "size": "📏 متوسط"},
+        "🎊 جشن": {"color": "#800080", "bg": "🖼️ شفاف", "font": "📝 فونت ضخیم", "size": "📏 بزرگ"},
+        "💝 عاشقانه": {"color": "#FF0000", "bg": "🖼️ شفاف", "font": "📝 فونت کج", "size": "📏 متوسط"},
+        "😄 خنده‌دار": {"color": "#FFA500", "bg": "🖼️ شفاف", "font": "📝 فونت فانتزی", "size": "📏 بزرگ"},
+        "🔥 هیجان‌انگیز": {"color": "#FF0000", "bg": "🖼️ شفاف", "font": "📝 فونت ضخیم", "size": "📏 خیلی بزرگ"},
+        "📚 آموزشی": {"color": "#0000FF", "bg": "🖼️ سفید", "font": "📝 فونت عادی", "size": "📏 متوسط"},
+        "💼 کاری": {"color": "#000000", "bg": "🖼️ سفید", "font": "📝 فونت کلاسیک", "size": "📏 متوسط"},
+        "🏠 خانوادگی": {"color": "#00FF00", "bg": "🖼️ شفاف", "font": "📝 فونت عادی", "size": "📏 متوسط"}
     }
     
     if template_name in templates:
         template = templates[template_name]
-        send_message_with_back_button(chat_id, f"✅ قالب '{template_name}' اعمال شد!\n\n🎨 رنگ: {template['color']}\n🖼️ پس‌زمینه: {template['bg']}\n📝 فونت: {template['font']}\n\nحالا متن خود را بفرستید:")
+        
+        # تنظیم تنظیمات کاربر
+        if chat_id not in user_data:
+            user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+        
+        user_data[chat_id]["text_color"] = template["color"]
+        user_data[chat_id]["background_style"] = template["bg"]
+        user_data[chat_id]["font_style"] = template["font"]
+        user_data[chat_id]["text_size"] = template["size"]
+        user_data[chat_id]["text_position"] = "📍 وسط"
+        user_data[chat_id]["text_effect"] = "✨ سایه"
+        
+        send_message_with_back_button(chat_id, f"✅ قالب '{template_name}' اعمال شد!\n\n🎨 رنگ: {template['color']}\n🖼️ پس‌زمینه: {template['bg']}\n📝 فونت: {template['font']}\n📏 اندازه: {template['size']}\n\nحالا متن خود را بفرستید:")
     else:
         send_message_with_back_button(chat_id, "❌ قالب پیدا نشد!")
 
