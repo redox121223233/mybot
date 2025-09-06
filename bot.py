@@ -805,17 +805,21 @@ def get_font(size, language="english"):
     if language == "persian_arabic":
         # فونت‌های فارسی/عربی
         font_paths = [
+            "fonts/Vazirmatn-Regular.ttf",
+            "fonts/IRANSans.ttf", 
+            "fonts/Vazir.ttf",
+            "fonts/Vazir-Regular.ttf",
+            "fonts/Sahel.ttf",
+            "fonts/Samim.ttf",
+            "fonts/Tanha.ttf",
             "Vazirmatn-Regular.ttf",
             "IRANSans.ttf", 
             "Vazir.ttf",
-            "Vazir-Regular.ttf",
             "Sahel.ttf",
             "Samim.ttf",
             "Tanha.ttf",
             "NotoSansArabic-Regular.ttf",
             "NotoNaskhArabic-Regular.ttf",
-            "NotoColorEmoji.ttf",
-            "NotoEmoji.ttf",
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
             "/System/Library/Fonts/Helvetica.ttc",
             "/Windows/Fonts/arial.ttf"
@@ -823,6 +827,7 @@ def get_font(size, language="english"):
     else:
         # فونت‌های انگلیسی
         font_paths = [
+            "fonts/arial.ttf",
             "arial.ttf",
             "DejaVuSans.ttf",
             "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
@@ -841,8 +846,12 @@ def get_font(size, language="english"):
             continue
     
     try:
-        return ImageFont.load_default()
-    except:
+        # تلاش برای بارگذاری فونت پیش‌فرض
+        default_font = ImageFont.load_default()
+        logger.warning(f"No custom font found, using default font for {language}")
+        return default_font
+    except Exception as e:
+        logger.error(f"Failed to load default font: {e}")
         return None
 
 def make_text_sticker(text, path, background_file_id=None, user_settings=None):
@@ -887,6 +896,8 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
                         bg = bg.resize((img_size, img_size))
                         img.paste(bg, (0, 0))
                         logger.info(f"Template background loaded: {template_bg}")
+                    else:
+                        logger.warning(f"Template background not found: {template_bg}")
                 except Exception as e:
                     logger.error(f"Error loading template background: {e}")
 
