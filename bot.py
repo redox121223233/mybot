@@ -419,7 +419,9 @@ def reshape_text(text):
         # استفاده از arabic_reshaper برای چسباندن حروف
         reshaped = arabic_reshaper.reshape(text)
         # استفاده از bidi برای ترتیب درست
-        return get_display(reshaped)
+        display_text = get_display(reshaped)
+        # برعکس کردن ترتیب برای حفظ ترتیب طبیعی (مثل استیکر موجود)
+        return display_text[::-1]
     except Exception as e:
         logger.error(f"Error reshaping text: {e}")
         return text
@@ -535,22 +537,11 @@ def wrap_text_multiline(draw, text, font, max_width, is_rtl=False):
             # اگر فقط یک کلمه است، آن را در یک خط نگه دار (حتی اگر از کادر خارج بشه)
             return [text]
         
+        # برای متن‌های طولانی فارسی، کلمات را از بالا به پایین مرتب کن
         lines = []
-        current_line = ""
-        
         for word in words:
-            test_line = current_line + " " + word if current_line else word
-            w, _ = _measure_text(draw, test_line, font)
-            
-            if w <= max_width:
-                current_line = test_line
-            else:
-                if current_line:
-                    lines.append(current_line)
-                current_line = word
-        
-        if current_line:
-            lines.append(current_line)
+            # هر کلمه را در یک خط جداگانه قرار بده
+            lines.append(word)
         
         return lines or [""]
     
@@ -756,7 +747,7 @@ def make_text_sticker(text, path, background_file_id=None):
         
         # شکستن متن به چند خط در محدوده
         if language == "persian_arabic":
-            line_spacing = max(int(font_size * 0.05), 1)  # فاصله خیلی کم برای فارسی
+            line_spacing = max(int(font_size * 0.1), 2)  # فاصله متوسط برای فارسی (کلمات از بالا به پایین)
         else:
             line_spacing = max(int(font_size * 0.15), 3)  # فاصله متوسط برای انگلیسی
         lines = wrap_text_multiline(draw, text, font, max_width, is_rtl=(language=="persian_arabic"))
