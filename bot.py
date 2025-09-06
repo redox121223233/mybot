@@ -111,6 +111,7 @@ def webhook():
             show_main_menu(chat_id)
             return "ok"
 
+        # پردازش دکمه‌های اصلی (قبل از پردازش حالت‌ها)
         if text == "🎁 تست رایگان":
             # بررسی عضویت در کانال
             if not check_channel_membership(chat_id):
@@ -172,6 +173,164 @@ def webhook():
                 user_data[chat_id]["step"] = "pack_name"
             return "ok"
 
+        # دکمه بازگشت
+        if text == "🔙 بازگشت":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+            
+            # بازگشت هوشمند بر اساس حالت فعلی
+            if chat_id in user_data:
+                current_mode = user_data[chat_id].get("mode")
+                current_step = user_data[chat_id].get("step")
+                
+                # اگر در حالت طراحی پیشرفته هستیم، به منوی طراحی پیشرفته برگرد
+                if current_mode == "advanced_design":
+                    if current_step in ["color_selection", "font_selection", "size_selection", "position_selection", "background_color_selection", "effect_selection"]:
+                        show_advanced_design_menu(chat_id)
+                        return "ok"
+                
+                # اگر در حالت free هستیم و در مرحله text هستیم، به منوی اصلی برگرد
+                elif current_mode == "free" and current_step == "text":
+                    user_data[chat_id]["mode"] = None
+                    user_data[chat_id]["step"] = None
+                    # pack_name و background را حفظ کن تا کاربر بتواند ادامه دهد
+                    show_main_menu(chat_id)
+                    return "ok"
+                
+                # در سایر حالات، به منوی اصلی برگرد و همه چیز را reset کن
+                else:
+                    user_data[chat_id]["mode"] = None
+                    user_data[chat_id]["step"] = None
+                    user_data[chat_id]["pack_name"] = None
+                    user_data[chat_id]["background"] = None
+                    show_main_menu(chat_id)
+                    return "ok"
+            else:
+                show_main_menu(chat_id)
+                return "ok"
+
+        # پردازش دکمه‌های طراحی پیشرفته
+        if text == "🎨 انتخاب رنگ متن":
+            # تنظیم حالت طراحی پیشرفته
+            if chat_id not in user_data:
+                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+            user_data[chat_id]["mode"] = "advanced_design"
+            user_data[chat_id]["step"] = "color_selection"
+            show_color_menu(chat_id)
+            return "ok"
+        elif text == "📝 انتخاب فونت":
+            if chat_id not in user_data:
+                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+            user_data[chat_id]["mode"] = "advanced_design"
+            user_data[chat_id]["step"] = "font_selection"
+            show_font_menu(chat_id)
+            return "ok"
+        elif text == "📏 اندازه متن":
+            if chat_id not in user_data:
+                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+            user_data[chat_id]["mode"] = "advanced_design"
+            user_data[chat_id]["step"] = "size_selection"
+            show_size_menu(chat_id)
+            return "ok"
+        elif text == "📍 موقعیت متن":
+            if chat_id not in user_data:
+                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+            user_data[chat_id]["mode"] = "advanced_design"
+            user_data[chat_id]["step"] = "position_selection"
+            show_position_menu(chat_id)
+            return "ok"
+        elif text == "🖼️ رنگ پس‌زمینه":
+            if chat_id not in user_data:
+                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+            user_data[chat_id]["mode"] = "advanced_design"
+            user_data[chat_id]["step"] = "background_color_selection"
+            show_background_color_menu(chat_id)
+            return "ok"
+        elif text == "✨ افکت‌های ویژه":
+            if chat_id not in user_data:
+                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+            user_data[chat_id]["mode"] = "advanced_design"
+            user_data[chat_id]["step"] = "effect_selection"
+            show_effects_menu(chat_id)
+            return "ok"
+
+        # پردازش دکمه‌های قالب‌های آماده
+        if text in ["🎉 تولد", "💒 عروسی", "🎊 جشن", "💝 عاشقانه", "😄 خنده‌دار", "🔥 هیجان‌انگیز", "📚 آموزشی", "💼 کاری", "🏠 خانوادگی"]:
+            apply_template(chat_id, text)
+            return "ok"
+
+        # پردازش دکمه‌های تنظیمات
+        if text == "🌙 حالت تاریک":
+            set_dark_mode(chat_id, True)
+            return "ok"
+        elif text == "☀️ حالت روشن":
+            set_dark_mode(chat_id, False)
+            return "ok"
+        elif text == "🔔 اعلان‌ها":
+            toggle_notifications(chat_id)
+            return "ok"
+        elif text == "🌍 زبان":
+            show_language_menu(chat_id)
+            return "ok"
+        elif text == "💾 ذخیره قالب":
+            save_template(chat_id)
+            return "ok"
+        elif text == "📤 اشتراک‌گذاری":
+            share_sticker(chat_id)
+            return "ok"
+
+        # دکمه‌های منو
+        if text == "🎨 طراحی پیشرفته":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+            show_advanced_design_menu(chat_id)
+            return "ok"
+        elif text == "📚 قالب‌های آماده":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+            show_template_menu(chat_id)
+            return "ok"
+        elif text == "📝 تاریخچه":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+            show_history(chat_id)
+            return "ok"
+        elif text == "⚙️ تنظیمات":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+            show_settings_menu(chat_id)
+            return "ok"
+        elif text == "⭐ اشتراک":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+            send_message(chat_id, "💳 بخش اشتراک بعداً فعال خواهد شد.")
+        elif text == "ℹ️ درباره":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+            send_message(chat_id, "ℹ️ این ربات برای ساخت استیکر متنی است. نسخه فعلی رایگان است.")
+        elif text == "📞 پشتیبانی":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+            support_id = os.environ.get("SUPPORT_ID", "@YourSupportID")
+            send_message(chat_id, f"📞 برای پشتیبانی با {support_id} در تماس باش.")
+
+        # پردازش حالت‌ها (بعد از پردازش دکمه‌های اصلی)
         state = user_data.get(chat_id, {})
         if state.get("mode") == "free":
             step = state.get("step")
@@ -192,7 +351,10 @@ def webhook():
                     # اگر pack_name داریم، مستقیماً به ساخت استیکر برو
                     send_message_with_back_button(chat_id, "✍️ حالا متن استیکرت رو بفرست:")
                     return "ok"
-
+            
+        elif state.get("mode") == "free":
+            step = state.get("step")
+            
             if step == "ask_pack_choice":
                 if text == "1":  # ساخت پک جدید
                     send_message(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
