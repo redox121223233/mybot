@@ -416,12 +416,9 @@ def send_as_sticker(chat_id, text, background_file_id=None):
 def reshape_text(text):
     """اصلاح متن فارسی/عربی با حفظ ترتیب طبیعی حروف"""
     try:
-        # استفاده از arabic_reshaper برای چسباندن حروف
+        # فقط از arabic_reshaper استفاده کن (بدون bidi)
         reshaped = arabic_reshaper.reshape(text)
-        # استفاده از bidi برای ترتیب درست
-        display_text = get_display(reshaped)
-        # برعکس کردن ترتیب برای حفظ ترتیب طبیعی (مثل استیکر موجود)
-        return display_text[::-1]
+        return reshaped
     except Exception as e:
         logger.error(f"Error reshaping text: {e}")
         return text
