@@ -78,10 +78,7 @@ def webhook():
     if "text" in msg:
         text = msg["text"]
 
-        # ابتدا پردازش حالت کاربر را بررسی کن
-        if process_user_state(chat_id, text):
-            return "ok"
-
+        # ابتدا دستورات خاص را بررسی کن (قبل از پردازش حالت)
         if text == "/start":
             # بررسی عضویت در کانال
             if not check_channel_membership(chat_id):
@@ -89,6 +86,40 @@ def webhook():
                 return "ok"
             
             # همیشه به منوی اصلی برگرد (حتی اگر در حال ساخت استیکر هستید)
+            if chat_id in user_data:
+                old_data = user_data[chat_id]
+                user_data[chat_id] = {
+                    "mode": None, 
+                    "count": 0, 
+                    "step": None, 
+                    "pack_name": None, 
+                    "background": None, 
+                    "created_packs": old_data.get("created_packs", []),  # حفظ پک‌های ساخته شده
+                    "sticker_usage": old_data.get("sticker_usage", []),  # حفظ محدودیت
+                    "last_reset": old_data.get("last_reset", time.time())  # حفظ زمان reset
+                }
+            else:
+                user_data[chat_id] = {
+                    "mode": None, 
+                    "count": 0, 
+                    "step": None, 
+                    "pack_name": None, 
+                    "background": None, 
+                    "created_packs": [],
+                    "sticker_usage": [],
+                    "last_reset": time.time()
+                }
+            show_main_menu(chat_id)
+            return "ok"
+
+        # دکمه بازگشت - همیشه به منوی اصلی برگرد و reset کن
+        if text == "🔙 بازگشت":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+            
+            # همیشه reset کن (جز محدودیت و پک‌های ساخته شده)
             if chat_id in user_data:
                 old_data = user_data[chat_id]
                 user_data[chat_id] = {
@@ -175,40 +206,6 @@ def webhook():
             else:
                 send_message(chat_id, limit_info + "📝 شما هنوز پکی ندارید. لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
                 user_data[chat_id]["step"] = "pack_name"
-            return "ok"
-
-        # دکمه بازگشت - همیشه به منوی اصلی برگرد و reset کن
-        if text == "🔙 بازگشت":
-            # بررسی عضویت در کانال
-            if not check_channel_membership(chat_id):
-                send_membership_required_message(chat_id)
-                return "ok"
-            
-            # همیشه reset کن (جز محدودیت و پک‌های ساخته شده)
-            if chat_id in user_data:
-                old_data = user_data[chat_id]
-                user_data[chat_id] = {
-                    "mode": None, 
-                    "count": 0, 
-                    "step": None, 
-                    "pack_name": None, 
-                    "background": None, 
-                    "created_packs": old_data.get("created_packs", []),  # حفظ پک‌های ساخته شده
-                    "sticker_usage": old_data.get("sticker_usage", []),  # حفظ محدودیت
-                    "last_reset": old_data.get("last_reset", time.time())  # حفظ زمان reset
-                }
-            else:
-                user_data[chat_id] = {
-                    "mode": None, 
-                    "count": 0, 
-                    "step": None, 
-                    "pack_name": None, 
-                    "background": None, 
-                    "created_packs": [],
-                    "sticker_usage": [],
-                    "last_reset": time.time()
-                }
-            show_main_menu(chat_id)
             return "ok"
 
         # پردازش دکمه‌های طراحی پیشرفته
@@ -329,6 +326,10 @@ def webhook():
                 return "ok"
             support_id = os.environ.get("SUPPORT_ID", "@YourSupportID")
             send_message(chat_id, f"📞 برای پشتیبانی با {support_id} در تماس باش.")
+
+        # پردازش حالت کاربر (بعد از دکمه‌ها)
+        if process_user_state(chat_id, text):
+            return "ok"
 
     # 📌 پردازش عکس
     elif "photo" in msg:
