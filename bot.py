@@ -253,6 +253,48 @@ def webhook():
             show_effects_menu(chat_id)
             return "ok"
 
+        # پردازش دکمه‌های رنگ
+        if text in ["🔴 قرمز", "🔵 آبی", "🟢 سبز", "🟡 زرد", "🟣 بنفش", "🟠 نارنجی", "🩷 صورتی", "⚫ مشکی", "⚪ سفید", "🔘 خاکستری"]:
+            if chat_id not in user_data:
+                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+            user_data[chat_id]["text_color"] = text.split(" ")[1]  # استخراج نام رنگ
+            user_data[chat_id]["mode"] = "free"
+            if not user_data[chat_id].get("pack_name"):
+                user_data[chat_id]["step"] = "pack_name"
+                send_message(chat_id, f"✅ رنگ {text.split(' ')[1]} انتخاب شد!\n\n📝 حالا یک نام برای پک استیکر خود انتخاب کن:")
+            else:
+                user_data[chat_id]["step"] = "text"
+                send_message_with_back_button(chat_id, f"✅ رنگ {text.split(' ')[1]} انتخاب شد!\n\n✍️ حالا متن استیکرت رو بفرست:")
+            return "ok"
+
+        # پردازش دکمه‌های فونت
+        if text in ["📝 فونت عادی", "📝 فونت ضخیم", "📝 فونت نازک", "📝 فونت کج", "📝 فونت فانتزی", "📝 فونت کلاسیک"]:
+            if chat_id not in user_data:
+                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+            user_data[chat_id]["font_style"] = text
+            user_data[chat_id]["mode"] = "free"
+            if not user_data[chat_id].get("pack_name"):
+                user_data[chat_id]["step"] = "pack_name"
+                send_message(chat_id, f"✅ {text} انتخاب شد!\n\n📝 حالا یک نام برای پک استیکر خود انتخاب کن:")
+            else:
+                user_data[chat_id]["step"] = "text"
+                send_message_with_back_button(chat_id, f"✅ {text} انتخاب شد!\n\n✍️ حالا متن استیکرت رو بفرست:")
+            return "ok"
+
+        # پردازش دکمه‌های اندازه
+        if text in ["📏 کوچک", "📏 متوسط", "📏 بزرگ", "📏 خیلی کوچک", "📏 خیلی بزرگ"]:
+            if chat_id not in user_data:
+                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+            user_data[chat_id]["text_size"] = text
+            user_data[chat_id]["mode"] = "free"
+            if not user_data[chat_id].get("pack_name"):
+                user_data[chat_id]["step"] = "pack_name"
+                send_message(chat_id, f"✅ اندازه {text.split(' ')[1]} انتخاب شد!\n\n📝 حالا یک نام برای پک استیکر خود انتخاب کن:")
+            else:
+                user_data[chat_id]["step"] = "text"
+                send_message_with_back_button(chat_id, f"✅ اندازه {text.split(' ')[1]} انتخاب شد!\n\n✍️ حالا متن استیکرت رو بفرست:")
+            return "ok"
+
         # پردازش دکمه‌های قالب‌های آماده
         if text in ["🎉 تولد", "💒 عروسی", "🎊 جشن", "💝 عاشقانه", "😄 خنده‌دار", "🔥 هیجان‌انگیز", "📚 آموزشی", "💼 کاری", "🏠 خانوادگی"]:
             apply_template(chat_id, text)
