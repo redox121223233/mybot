@@ -60,6 +60,19 @@ def load_locales():
                 logger.info(f"Loaded locale: {code} from {path}")
             except Exception as e:
                 logger.error(f"Failed to load locale {path}: {e}")
+        # همچنین فایل‌های تخت در ریشه پروژه را بارگذاری کن
+        flat_files = {
+            "fa": "localesfa.json",
+            "en": "localesen.json"
+        }
+        for code, fname in flat_files.items():
+            try:
+                if os.path.exists(fname):
+                    with open(fname, "r", encoding="utf-8") as f:
+                        LOCALES[code] = json.load(f)
+                    logger.info(f"Loaded flat locale: {code} from {fname}")
+            except Exception as e:
+                logger.error(f"Failed to load flat locale {fname}: {e}")
     except Exception as e:
         logger.error(f"Error scanning locales: {e}")
 
@@ -1034,12 +1047,24 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
             # اگر مسیر فایل قالب است
             if isinstance(template_bg, str) and template_bg.startswith("templates/"):
                 try:
-                    if os.path.exists(template_bg):
-                        bg = Image.open(template_bg).convert("RGBA")
+                    path_try = template_bg
+                    # اگر پسوند png موجود نبود، jpg را امتحان کن و برعکس
+                    if not os.path.exists(path_try):
+                        if path_try.lower().endswith(".png"):
+                            alt = path_try[:-4] + ".jpg"
+                        elif path_try.lower().endswith(".jpg") or path_try.lower().endswith(".jpeg"):
+                            alt = os.path.splitext(path_try)[0] + ".png"
+                        else:
+                            alt = path_try + ".jpg"
+                        if os.path.exists(alt):
+                            logger.info(f"Template alt background found: {alt}")
+                            path_try = alt
+                    if os.path.exists(path_try):
+                        bg = Image.open(path_try).convert("RGBA")
                         bg = bg.resize((img_size, img_size))
                         img.paste(bg, (0, 0))
                         background_applied = True
-                        logger.info(f"Template background loaded: {template_bg}")
+                        logger.info(f"Template background loaded: {path_try}")
                     else:
                         logger.warning(f"Template background not found: {template_bg}")
                 except Exception as e:
