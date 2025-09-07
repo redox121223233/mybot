@@ -865,6 +865,12 @@ def detect_language(text):
 
 def get_font(size, language="english", font_style="عادی"):
     """بارگذاری فونت بر اساس زبان و استایل"""
+    # بررسی font_style
+    if not font_style:
+        font_style = "عادی"
+    
+    logger.info(f"✅ Getting font: size={size}, language={language}, style={font_style}")
+    
     if language == "persian_arabic":
         # فونت‌های فارسی/عربی
         # برای فارسی، ابتدا فونت‌های موجود را امتحان کن
@@ -955,16 +961,25 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
         
         # بررسی متن خالی
         if not text or not text.strip():
-            logger.error("Empty text provided")
+            logger.error("❌ ERROR: Empty text provided")
             return False
         
         # تشخیص زبان
-        language = detect_language(text)
-        logger.info(f"Detected language: {language}")
+        try:
+            language = detect_language(text)
+            logger.info(f"✅ Language detected: {language}")
+        except Exception as e:
+            logger.error(f"❌ ERROR in language detection: {e}")
+            language = "english"  # fallback
         
         # اصلاح متن فارسی/عربی
-        if language == "persian_arabic":
-            text = reshape_text(text)
+        try:
+            if language == "persian_arabic":
+                text = reshape_text(text)
+                logger.info(f"✅ Persian text reshaped: {text}")
+        except Exception as e:
+            logger.error(f"❌ ERROR in text reshaping: {e}")
+            # ادامه با متن اصلی
         
         # 🔥 رندر روی 256×256 و در پایان زوم 2x برای هر دو زبان
         img_size = 256
@@ -1037,9 +1052,10 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
         
         # تنظیم فونت از تنظیمات کاربر
         font_style = "عادی"
-        if user_settings and "font_style" in user_settings:
+        if user_settings and "font_style" in user_settings and user_settings["font_style"]:
             font_style = user_settings["font_style"]
         
+        logger.info(f"✅ Font style: {font_style}")
         font = get_font(initial_font_size, language, font_style)
         
         if font is None:
@@ -1113,7 +1129,7 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
         
         # رنگ متن از تنظیمات کاربر
         text_color = "#000000"  # پیش‌فرض
-        if user_settings and "text_color" in user_settings:
+        if user_settings and "text_color" in user_settings and user_settings["text_color"]:
             color_text = user_settings["text_color"]
             # تبدیل نام رنگ به کد hex
             color_map = {
@@ -1129,6 +1145,9 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
                 "خاکستری": "#808080"
             }
             text_color = color_map.get(color_text, "#000000")
+            logger.info(f"✅ Text color: {color_text} -> {text_color}")
+        else:
+            logger.info(f"✅ Using default text color: {text_color}")
         
         # رسم هر خط با حاشیه و متن
         current_y = y
