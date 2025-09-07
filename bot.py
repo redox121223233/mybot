@@ -30,7 +30,8 @@ API = f"https://api.telegram.org/bot{BOT_TOKEN}/"
 user_data = {}
 
 # فایل ذخیره‌سازی داده‌ها
-DATA_FILE = "user_data.json"
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+DATA_FILE = os.path.join(BASE_DIR, "user_data.json")
 
 # --- Simple i18n ---
 LOCALES = {
@@ -52,7 +53,9 @@ def load_locales():
     """Optionally override LOCALES with files in locales/*.json"""
     try:
         import glob
-        for path in glob.glob(os.path.join("locales", "*.json")):
+        # مسیر locales نسبی به فایل bot.py
+        locales_dir = os.path.join(BASE_DIR, "locales")
+        for path in glob.glob(os.path.join(locales_dir, "*.json")):
             try:
                 code = os.path.splitext(os.path.basename(path))[0]
                 with open(path, "r", encoding="utf-8") as f:
@@ -67,10 +70,18 @@ def load_locales():
         }
         for code, fname in flat_files.items():
             try:
-                if os.path.exists(fname):
-                    with open(fname, "r", encoding="utf-8") as f:
+                # ابتدا کنار bot.py سپس یک پوشه بالاتر (ریشه پروژه)
+                cand1 = os.path.join(BASE_DIR, fname)
+                cand2 = os.path.join(BASE_DIR, "..", fname)
+                use_path = None
+                if os.path.exists(cand1):
+                    use_path = cand1
+                elif os.path.exists(cand2):
+                    use_path = cand2
+                if use_path:
+                    with open(use_path, "r", encoding="utf-8") as f:
                         LOCALES[code] = json.load(f)
-                    logger.info(f"Loaded flat locale: {code} from {fname}")
+                    logger.info(f"Loaded flat locale: {code} from {use_path}")
             except Exception as e:
                 logger.error(f"Failed to load flat locale {fname}: {e}")
     except Exception as e:
@@ -1047,7 +1058,7 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
             # اگر مسیر فایل قالب است
             if isinstance(template_bg, str) and template_bg.startswith("templates/"):
                 try:
-                    path_try = template_bg
+                    path_try = os.path.join(BASE_DIR, template_bg)
                     # اگر پسوند png موجود نبود، jpg را امتحان کن و برعکس
                     if not os.path.exists(path_try):
                         if path_try.lower().endswith(".png"):
@@ -1785,7 +1796,6 @@ def show_language_menu(chat_id):
     keyboard = {
         "keyboard": [
             ["🇮🇷 فارسی", "🇺🇸 انگلیسی"],
-            ["🇸🇦 عربی", "🇹🇷 ترکی"],
             ["🔙 بازگشت"]
         ],
         "resize_keyboard": True
@@ -1802,7 +1812,16 @@ def save_template(chat_id):
 
 def share_sticker(chat_id):
     """اشتراک‌گذاری استیکر"""
-    send_message_with_back_button(chat_id, "📤 لینک اشتراک‌گذاری:\n\n🔗 https://t.me/your_bot")
+    try:
+        bot_username = BOT_USERNAME
+        if not bot_username.startswith("@"):
+            deep = f"https://t.me/{bot_username}?start={chat_id}"
+        else:
+            deep = f"https://t.me/{bot_username[1:]}?start={chat_id}"
+        send_message_with_back_button(chat_id, f"📤 لینک اشتراک‌گذاری:\n\n🔗 {deep}")
+    except Exception as e:
+        logger.error(f"Error generating share link: {e}")
+        send_message_with_back_button(chat_id, "📤 لینک اشتراک‌گذاری:\n\n🔗 https://t.me/your_bot")
 
 if __name__ == "__main__":
     load_locales()
