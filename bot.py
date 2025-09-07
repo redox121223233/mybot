@@ -32,6 +32,44 @@ user_data = {}
 # فایل ذخیره‌سازی داده‌ها
 DATA_FILE = "user_data.json"
 
+# --- Simple i18n ---
+LOCALES = {
+    "fa": {
+        "main_menu": "👋 خوش اومدی! یکی از گزینه‌ها رو انتخاب کن:",
+        "lang_set_fa": "✅ زبان به فارسی تغییر کرد.",
+        "lang_set_en": "✅ Language set to English.",
+        "choose_lang": "🌍 انتخاب زبان:\n\nانتخاب کنید:",
+    },
+    "en": {
+        "main_menu": "👋 Welcome! Choose an option:",
+        "lang_set_fa": "✅ زبان به فارسی تغییر کرد.",
+        "lang_set_en": "✅ Language set to English.",
+        "choose_lang": "🌍 Choose language:\n\nSelect:",
+    }
+}
+
+def load_locales():
+    """Optionally override LOCALES with files in locales/*.json"""
+    try:
+        import glob
+        for path in glob.glob(os.path.join("locales", "*.json")):
+            try:
+                code = os.path.splitext(os.path.basename(path))[0]
+                with open(path, "r", encoding="utf-8") as f:
+                    LOCALES[code] = json.load(f)
+                logger.info(f"Loaded locale: {code} from {path}")
+            except Exception as e:
+                logger.error(f"Failed to load locale {path}: {e}")
+    except Exception as e:
+        logger.error(f"Error scanning locales: {e}")
+
+def get_lang(chat_id):
+    return user_data.get(chat_id, {}).get("lang", "fa")
+
+def tr(chat_id, key, fallback_text):
+    lang = get_lang(chat_id)
+    return LOCALES.get(lang, {}).get(key, fallback_text)
+
 def load_user_data():
     """بارگذاری داده‌های کاربر از فایل"""
     global user_data
@@ -304,14 +342,16 @@ def webhook():
         if text == "🌙 حالت تاریک":
             set_dark_mode(chat_id, True)
             return "ok"
-        elif text == "☀️ حالت روشن":
-            set_dark_mode(chat_id, False)
-            return "ok"
-        elif text == "🔔 اعلان‌ها":
-            toggle_notifications(chat_id)
-            return "ok"
         elif text == "🌍 زبان":
             show_language_menu(chat_id)
+            return "ok"
+        elif text in ["🇮🇷 فارسی", "🇺🇸 انگلیسی"]:
+            if chat_id not in user_data:
+                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+            user_data[chat_id]["lang"] = "fa" if "🇮🇷" in text else "en"
+            save_user_data()
+            msg = tr(chat_id, "lang_set_fa", "✅ زبان به فارسی تغییر کرد.") if user_data[chat_id]["lang"] == "fa" else tr(chat_id, "lang_set_en", "✅ Language set to English.")
+            send_message_with_back_button(chat_id, msg)
             return "ok"
         elif text == "💾 ذخیره قالب":
             save_template(chat_id)
@@ -1051,6 +1091,7 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
 
         # اگر هنوز پس‌زمینه اعمال نشده، از عکس کاربر استفاده کن
         if not background_applied and background_file_id:
+            logger.info(f"Trying user photo background: file_id={background_file_id}")
             try:
                 file_info = requests.get(API + f"getFile?file_id={background_file_id}").json()
                 if file_info.get("ok"):
@@ -1063,8 +1104,15 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
                         img.paste(bg, (0, 0))
                         background_applied = True
                         logger.info("Background image loaded successfully")
+                    else:
+                        logger.error(f"Failed to download user background: status={resp.status_code}")
+                else:
+                    logger.error(f"getFile not ok for background_file_id: {file_info}")
             except Exception as e:
                 logger.error(f"Error loading background: {e}")
+
+        if not background_applied:
+            logger.info("No background applied (template/user). Using transparent background.")
 
         draw = ImageDraw.Draw(img)
         
@@ -1196,13 +1244,45 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
         else:
             logger.info(f"✅ Using default text color: {text_color}")
         
+        # موقعیت متن از تنظیمات کاربر
+        align_h = "center"
+        align_v = "middle"
+        if user_settings and user_settings.get("text_position"):
+            pos = user_settings["text_position"]
+            if "بالا" in pos: align_v = "top"
+            if "پایین" in pos: align_v = "bottom"
+            if "راست" in pos: align_h = "right"
+            if "چپ" in pos: align_h = "left"
+        
+        # محاسبه X,Y شروع بر اساس تراز انتخابی
+        if align_h == "left":
+            x = 10
+        elif align_h == "right":
+            x = img_size - block_w - 10
+        # center پیش‌فرض
+        if align_v == "top":
+            y = 10
+        elif align_v == "bottom":
+            y = img_size - block_h - 10
+        # middle پیش‌فرض
+        
+        # افکت‌های متن
+        effect = None
+        if user_settings and user_settings.get("text_effect"):
+            effect = user_settings["text_effect"]
+        
         # رسم هر خط با حاشیه و متن
         current_y = y
         for line in lines:
             try:
                 w_line, h_line = _measure_text(draw, line, font)
-                # وسط‌چین برای هر دو زبان
-                line_x = x + (block_w - w_line) / 2
+                # محاسبه X برای هر خط با توجه به تراز افقی
+                if align_h == "left":
+                    line_x = x
+                elif align_h == "right":
+                    line_x = x + (block_w - w_line)
+                else:
+                    line_x = x + (block_w - w_line) / 2
                 # حاشیه
                 for offset in range(1, outline_thickness + 1):
                     directions = [
@@ -1212,12 +1292,25 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
                     ]
                     for dx, dy in directions:
                         try:
-                            draw.text((line_x + dx, current_y + dy), line, font=font, fill="white")
+                            # سایه/هاله: قبل از متن اصلی اجرا می‌شود
+                            if effect == "✨ سایه":
+                                draw.text((line_x + dx, current_y + dy), line, font=font, fill=(0,0,0,180))
+                            elif effect == "✨ نور":
+                                draw.text((line_x + dx, current_y + dy), line, font=font, fill=(255,255,255,120))
+                            else:
+                                draw.text((line_x + dx, current_y + dy), line, font=font, fill="white")
                         except Exception:
                             pass
                 # متن اصلی
                 try:
-                    draw.text((line_x, current_y), line, fill=text_color, font=font)
+                    if effect == "✨ شفاف":
+                        # کمی شفاف‌تر
+                        rgba = Image.new("RGBA", (img_size, img_size))
+                        d2 = ImageDraw.Draw(rgba)
+                        d2.text((line_x, current_y), line, fill=text_color, font=font)
+                        img.alpha_composite(rgba, (0,0))
+                    else:
+                        draw.text((line_x, current_y), line, fill=text_color, font=font)
                 except Exception as e:
                     logger.error(f"Error drawing line with font: {e}")
                     try:
@@ -1263,7 +1356,7 @@ def show_main_menu(chat_id):
     }
     requests.post(API + "sendMessage", json={
         "chat_id": chat_id,
-        "text": "👋 خوش اومدی! یکی از گزینه‌ها رو انتخاب کن:",
+        "text": tr(chat_id, "main_menu", "👋 خوش اومدی! یکی از گزینه‌ها رو انتخاب کن:"),
         "reply_markup": keyboard
     })
 
@@ -1480,8 +1573,7 @@ def show_settings_menu(chat_id):
     """نمایش منوی تنظیمات"""
     keyboard = {
         "keyboard": [
-            ["🌙 حالت تاریک", "☀️ حالت روشن"],
-            ["🔔 اعلان‌ها", "🌍 زبان"],
+            ["🌍 زبان"],
             ["💾 ذخیره قالب", "📤 اشتراک‌گذاری"],
             ["🔙 بازگشت"]
         ],
@@ -1675,7 +1767,7 @@ def show_language_menu(chat_id):
     }
     requests.post(API + "sendMessage", json={
         "chat_id": chat_id,
-        "text": "🌍 انتخاب زبان:\n\nانتخاب کنید:",
+        "text": tr(chat_id, "choose_lang", "🌍 انتخاب زبان:\n\nانتخاب کنید:"),
         "reply_markup": keyboard
     })
 
@@ -1688,6 +1780,7 @@ def share_sticker(chat_id):
     send_message_with_back_button(chat_id, "📤 لینک اشتراک‌گذاری:\n\n🔗 https://t.me/your_bot")
 
 if __name__ == "__main__":
+    load_locales()
     if APP_URL:
         webhook_url = f"{APP_URL}/webhook/{WEBHOOK_SECRET}"
         resp = requests.get(API + f"setWebhook?url={webhook_url}")
