@@ -409,8 +409,14 @@ def process_user_state(chat_id, text):
                 return True
             
             user_data[chat_id]["pack_name"] = full_pack_name
-            send_message_with_back_button(chat_id, "📷 یک عکس برای بکگراند استیکرت بفرست:")
-            user_data[chat_id]["step"] = "background"
+            
+            # اگر کاربر از قالب استفاده کرده، مستقیماً به ساخت استیکر برو
+            if user_data[chat_id].get("background_style"):
+                user_data[chat_id]["step"] = "text"
+                send_message_with_back_button(chat_id, "✍️ حالا متن استیکرت رو بفرست:")
+            else:
+                send_message_with_back_button(chat_id, "📷 یک عکس برای بکگراند استیکرت بفرست:")
+                user_data[chat_id]["step"] = "background"
             return True
 
         if step == "background":
@@ -818,33 +824,29 @@ def get_font(size, language="english", font_style="عادی"):
     """بارگذاری فونت بر اساس زبان و استایل"""
     if language == "persian_arabic":
         # فونت‌های فارسی/عربی
+        # برای فارسی، ابتدا فونت‌های موجود را امتحان کن
+        font_paths = [
+            "fonts/Vazirmatn-Regular.ttf",
+            "fonts/IRANSans.ttf", 
+            "fonts/Vazir.ttf",
+            "fonts/Sahel.ttf",
+            "fonts/Samim.ttf",
+            "fonts/Tanha.ttf"
+        ]
+        
+        # اگر فونت ضخیم یا نازک انتخاب شده، ابتدا آن‌ها را امتحان کن
         if "ضخیم" in font_style or "بولد" in font_style:
             font_paths = [
                 "fonts/Vazirmatn-Bold.ttf",
                 "fonts/IRANSans-Bold.ttf",
-                "fonts/Vazir-Bold.ttf",
-                "fonts/Vazirmatn-Regular.ttf",
-                "fonts/IRANSans.ttf", 
-                "fonts/Vazir.ttf"
-            ]
+                "fonts/Vazir-Bold.ttf"
+            ] + font_paths
         elif "نازک" in font_style or "لایت" in font_style:
             font_paths = [
                 "fonts/Vazirmatn-Light.ttf",
                 "fonts/IRANSans-Light.ttf",
-                "fonts/Vazir-Light.ttf",
-                "fonts/Vazirmatn-Regular.ttf",
-                "fonts/IRANSans.ttf", 
-                "fonts/Vazir.ttf"
-            ]
-        else:
-            font_paths = [
-                "fonts/Vazirmatn-Regular.ttf",
-                "fonts/IRANSans.ttf", 
-                "fonts/Vazir.ttf",
-                "fonts/Sahel.ttf",
-                "fonts/Samim.ttf",
-                "fonts/Tanha.ttf"
-            ]
+                "fonts/Vazir-Light.ttf"
+            ] + font_paths
         
         # اضافه کردن fallback ها
         font_paths.extend([
@@ -861,22 +863,22 @@ def get_font(size, language="english", font_style="عادی"):
         ])
     else:
         # فونت‌های انگلیسی
+        font_paths = [
+            "fonts/arial.ttf",
+            "arial.ttf",
+            "DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/System/Library/Fonts/Arial.ttf",
+            "/Windows/Fonts/arial.ttf"
+        ]
+        
+        # اگر فونت ضخیم انتخاب شده، ابتدا آن‌ها را امتحان کن
         if "ضخیم" in font_style or "بولد" in font_style:
             font_paths = [
                 "fonts/arial-bold.ttf",
                 "arial-bold.ttf",
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-                "/System/Library/Fonts/Arial.ttf"
-            ]
-        else:
-            font_paths = [
-                "fonts/arial.ttf",
-                "arial.ttf",
-                "DejaVuSans.ttf",
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-                "/System/Library/Fonts/Arial.ttf",
-                "/Windows/Fonts/arial.ttf"
-            ]
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+            ] + font_paths
         
         font_paths.extend([
             "NotoSans-Regular.ttf"
@@ -893,15 +895,20 @@ def get_font(size, language="english", font_style="عادی"):
     try:
         # تلاش برای بارگذاری فونت پیش‌فرض
         default_font = ImageFont.load_default()
-        logger.warning(f"No custom font found, using default font for {language}")
+        logger.warning(f"No custom font found, using default font for {language} with style {font_style}")
         return default_font
     except Exception as e:
         logger.error(f"Failed to load default font: {e}")
-        return None
+        # آخرین تلاش: فونت بدون استایل
+        try:
+            return ImageFont.load_default()
+        except:
+            return None
 
 def make_text_sticker(text, path, background_file_id=None, user_settings=None):
     try:
         logger.info(f"Creating sticker with text: {text}")
+        logger.info(f"User settings: {user_settings}")
         
         # تشخیص زبان
         language = detect_language(text)
