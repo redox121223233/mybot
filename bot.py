@@ -1380,10 +1380,10 @@ def _hard_wrap_word(draw, word, font, max_width):
         if best == 0:
             break
     return parts
-
-def wrap_text_multiline(draw, text, font, max_width, is_rtl=False):
+شماره کارت: {CARD_NUMBER}
+نام صاحب کارت: {CARD_HOLDER_NAME}
     """شکستن متن به خطوط متعدد با در نظر گرفتن فاصله‌ها و کلمات خیلی بلند.
-    برای حفظ ترتیب طبیعی حروف، از روش ساده استفاده می‌کنیم.
+لطفاً پس از پرداخت، رسید را به {TELEGRAM_ID} ارسال کنید.
     """
     if not text:
         return [""]
