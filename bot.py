@@ -791,7 +791,7 @@ def wrap_text_multiline(draw, text, font, max_width, is_rtl=False):
             # هر کلمه را در یک خط جداگانه قرار بده
             lines.append(word)
         
-         # برعکس کردن ترتیب کلمات تا کلمه اول بالا باشه
+        # برعکس کردن ترتیب کلمات تا کلمه اول بالا باشه
         return lines[::-1] if lines else [""]
     
     # برای متن انگلیسی، از روش قبلی استفاده می‌کنیم
@@ -953,6 +953,11 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
         logger.info(f"Creating sticker with text: {text}")
         logger.info(f"User settings: {user_settings}")
         
+        # بررسی متن خالی
+        if not text or not text.strip():
+            logger.error("Empty text provided")
+            return False
+        
         # تشخیص زبان
         language = detect_language(text)
         logger.info(f"Detected language: {language}")
@@ -1086,8 +1091,15 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
             line_spacing = max(int(font_size * 0.1), 2)  # فاصله متوسط برای فارسی (کلمات از بالا به پایین)
         else:
             line_spacing = max(int(font_size * 0.15), 3)  # فاصله متوسط برای انگلیسی
-        lines = wrap_text_multiline(draw, text, font, max_width, is_rtl=(language=="persian_arabic"))
-        block_w, block_h = measure_multiline_block(draw, lines, font, line_spacing)
+        
+        try:
+            lines = wrap_text_multiline(draw, text, font, max_width, is_rtl=(language=="persian_arabic"))
+            block_w, block_h = measure_multiline_block(draw, lines, font, line_spacing)
+        except Exception as e:
+            logger.error(f"Error in text wrapping: {e}")
+            # fallback: متن را در یک خط قرار بده
+            lines = [text]
+            block_w, block_h = _measure_text(draw, text, font)
         x = (img_size - block_w) / 2
         # وسط‌چین عمودی برای هر دو زبان
         is_rtl = (language == "persian_arabic")
@@ -1121,28 +1133,37 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
         # رسم هر خط با حاشیه و متن
         current_y = y
         for line in lines:
-            w_line, h_line = _measure_text(draw, line, font)
-            # وسط‌چین برای هر دو زبان
-            line_x = x + (block_w - w_line) / 2
-            # حاشیه
-            for offset in range(1, outline_thickness + 1):
-                directions = [
-                    (-offset, -offset), (0, -offset), (offset, -offset),
-                    (-offset, 0),                     (offset, 0),
-                    (-offset, offset),  (0, offset),  (offset, offset)
-                ]
-                for dx, dy in directions:
-                    try:
-                        draw.text((line_x + dx, current_y + dy), line, font=font, fill="white")
-                    except Exception:
-                        pass
-            # متن اصلی
             try:
-                draw.text((line_x, current_y), line, fill=text_color, font=font)
+                w_line, h_line = _measure_text(draw, line, font)
+                # وسط‌چین برای هر دو زبان
+                line_x = x + (block_w - w_line) / 2
+                # حاشیه
+                for offset in range(1, outline_thickness + 1):
+                    directions = [
+                        (-offset, -offset), (0, -offset), (offset, -offset),
+                        (-offset, 0),                     (offset, 0),
+                        (-offset, offset),  (0, offset),  (offset, offset)
+                    ]
+                    for dx, dy in directions:
+                        try:
+                            draw.text((line_x + dx, current_y + dy), line, font=font, fill="white")
+                        except Exception:
+                            pass
+                # متن اصلی
+                try:
+                    draw.text((line_x, current_y), line, fill=text_color, font=font)
+                except Exception as e:
+                    logger.error(f"Error drawing line with font: {e}")
+                    try:
+                        draw.text((line_x, current_y), line, fill=text_color)
+                    except Exception as e2:
+                        logger.error(f"Error drawing line without font: {e2}")
+                        # آخرین تلاش: متن ساده
+                        draw.text((line_x, current_y), "ERROR", fill=text_color)
+                current_y += h_line + line_spacing
             except Exception as e:
-                logger.error(f"Error drawing line: {e}")
-                draw.text((line_x, current_y), line, fill=text_color)
-            current_y += h_line + line_spacing
+                logger.error(f"Error processing line '{line}': {e}")
+                continue
 
         # 🔥 زوم 2x برای هر دو زبان جهت بهبود کیفیت لبه‌ها (Telegram فقط 512x512 قبول می‌کنه)
         final_img = img.resize((512, 512), Image.LANCZOS)
