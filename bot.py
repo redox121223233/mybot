@@ -952,12 +952,16 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
         # تنظیم اندازه فونت از تنظیمات کاربر
         if user_settings and "text_size" in user_settings:
             size_text = user_settings["text_size"]
-            if "کوچک" in size_text:
+            if "خیلی کوچک" in size_text:
+                initial_font_size = 20 if language == "persian_arabic" else 150
+            elif "کوچک" in size_text:
                 initial_font_size = 30 if language == "persian_arabic" else 200
             elif "متوسط" in size_text:
                 initial_font_size = 50 if language == "persian_arabic" else 300
             elif "بزرگ" in size_text:
                 initial_font_size = 70 if language == "persian_arabic" else 400
+            elif "خیلی بزرگ" in size_text:
+                initial_font_size = 90 if language == "persian_arabic" else 500
             else:
                 initial_font_size = 50 if language == "persian_arabic" else 300
         else:
@@ -1470,7 +1474,27 @@ def apply_template(chat_id, template_name):
         if chat_id not in user_data:
             user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
         
-        user_data[chat_id]["text_color"] = template["color"]
+        # تبدیل hex کد به نام رنگ فارسی
+        color_hex = template["color"]
+        color_name = "مشکی"  # پیش‌فرض
+        if color_hex == "#FFFF00":
+            color_name = "زرد"
+        elif color_hex == "#FFFFFF":
+            color_name = "سفید"
+        elif color_hex == "#800080":
+            color_name = "بنفش"
+        elif color_hex == "#FF0000":
+            color_name = "قرمز"
+        elif color_hex == "#FFA500":
+            color_name = "نارنجی"
+        elif color_hex == "#0000FF":
+            color_name = "آبی"
+        elif color_hex == "#000000":
+            color_name = "مشکی"
+        elif color_hex == "#00FF00":
+            color_name = "سبز"
+        
+        user_data[chat_id]["text_color"] = color_name
         user_data[chat_id]["background_style"] = template["bg"]
         user_data[chat_id]["font_style"] = template["font"]
         user_data[chat_id]["text_size"] = template["size"]
@@ -1483,10 +1507,10 @@ def apply_template(chat_id, template_name):
         # اگر pack_name نداریم، ابتدا آن را بپرس
         if not user_data[chat_id].get("pack_name"):
             user_data[chat_id]["step"] = "pack_name"
-            send_message(chat_id, f"✅ قالب '{template_name}' اعمال شد!\n\n🎨 رنگ: {template['color']}\n🖼️ پس‌زمینه: {template['bg']}\n📝 فونت: {template['font']}\n📏 اندازه: {template['size']}\n\n📝 حالا یک نام برای پک استیکر خود انتخاب کن:")
+            send_message(chat_id, f"✅ قالب '{template_name}' اعمال شد!\n\n🎨 رنگ: {color_name}\n🖼️ پس‌زمینه: {template['bg']}\n📝 فونت: {template['font']}\n📏 اندازه: {template['size']}\n\n📝 حالا یک نام برای پک استیکر خود انتخاب کن:")
         else:
             user_data[chat_id]["step"] = "text"
-            send_message_with_back_button(chat_id, f"✅ قالب '{template_name}' اعمال شد!\n\n🎨 رنگ: {template['color']}\n🖼️ پس‌زمینه: {template['bg']}\n📝 فونت: {template['font']}\n📏 اندازه: {template['size']}\n\nحالا متن خود را بفرستید:")
+            send_message_with_back_button(chat_id, f"✅ قالب '{template_name}' اعمال شد!\n\n🎨 رنگ: {color_name}\n🖼️ پس‌زمینه: {template['bg']}\n📝 فونت: {template['font']}\n📏 اندازه: {template['size']}\n\nحالا متن خود را بفرستید:")
     else:
         send_message_with_back_button(chat_id, "❌ قالب پیدا نشد!")
 
