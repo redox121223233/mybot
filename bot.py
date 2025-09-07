@@ -985,26 +985,72 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
         img_size = 256
         img = Image.new("RGBA", (img_size, img_size), (255, 255, 255, 0))
 
-        # 📌 اولویت 1: اگر عکس قالب آماده هست → استفاده کن
+        # 📌 پس‌زمینه: ابتدا تلاش برای قالب یا رنگ انتخابی، سپس عکس کاربر
+        background_applied = False
+        template_bg = None
         if user_settings and "background_style" in user_settings:
-            template_bg = user_settings["background_style"]
+            template_bg = user_settings.get("background_style")
             logger.info(f"Checking template background: {template_bg}")
-            if template_bg and template_bg.startswith("templates/"):
+            # اگر مسیر فایل قالب است
+            if isinstance(template_bg, str) and template_bg.startswith("templates/"):
                 try:
                     if os.path.exists(template_bg):
                         bg = Image.open(template_bg).convert("RGBA")
                         bg = bg.resize((img_size, img_size))
                         img.paste(bg, (0, 0))
+                        background_applied = True
                         logger.info(f"Template background loaded: {template_bg}")
                     else:
                         logger.warning(f"Template background not found: {template_bg}")
                 except Exception as e:
                     logger.error(f"Error loading template background: {e}")
+            # اگر یکی از گزینه‌های رنگی منو باشد
+            elif isinstance(template_bg, str) and (template_bg.startswith("🖼️") or template_bg in ["سفید","مشکی","آبی","قرمز","سبز","شفاف"]):
+                color_map_bg = {
+                    "🖼️ سفید": (255,255,255,255),
+                    "🖼️ مشکی": (0,0,0,255),
+                    "🖼️ آبی": (0,0,255,255),
+                    "🖼️ قرمز": (255,0,0,255),
+                    "🖼️ سبز": (0,255,0,255),
+                    "🖼️ شفاف": (255,255,255,0),
+                    "سفید": (255,255,255,255),
+                    "مشکی": (0,0,0,255),
+                    "آبی": (0,0,255,255),
+                    "قرمز": (255,0,0,255),
+                    "سبز": (0,255,0,255),
+                    "شفاف": (255,255,255,0)
+                }
+                if template_bg in color_map_bg:
+                    img = Image.new("RGBA", (img_size, img_size), color_map_bg[template_bg])
+                    background_applied = True
+                    logger.info(f"Color background applied: {template_bg}")
+                elif template_bg == "🖼️ گرادیانت":
+                    # گرادیانت ساده عمودی سفید→خاکستری
+                    grad = Image.new("RGBA", (img_size, img_size))
+                    for y_px in range(img_size):
+                        shade = int(255 * (y_px / (img_size-1)))
+                        for x_px in range(img_size):
+                            grad.putpixel((x_px, y_px), (shade, shade, shade, 255))
+                    img.paste(grad, (0,0))
+                    background_applied = True
+                    logger.info("Gradient background applied")
+                elif template_bg == "🖼️ الگو":
+                    # الگوی ساده شطرنجی خاکستری
+                    tile = 32
+                    pattern = Image.new("RGBA", (img_size, img_size), (220,220,220,255))
+                    draw_pat = ImageDraw.Draw(pattern)
+                    for yy in range(0, img_size, tile):
+                        for xx in range(0, img_size, tile):
+                            if (xx//tile + yy//tile) % 2 == 0:
+                                draw_pat.rectangle([xx, yy, xx+tile, yy+tile], fill=(200,200,200,255))
+                    img.paste(pattern, (0,0))
+                    background_applied = True
+                    logger.info("Pattern background applied")
             else:
-                logger.info(f"Template background path doesn't start with templates/: {template_bg}")
-        
-        # 📌 اولویت 2: اگر بکگراند از کاربر آپلود شده → استفاده کن
-        elif background_file_id:
+                logger.info(f"Template background not applicable: {template_bg}")
+
+        # اگر هنوز پس‌زمینه اعمال نشده، از عکس کاربر استفاده کن
+        if not background_applied and background_file_id:
             try:
                 file_info = requests.get(API + f"getFile?file_id={background_file_id}").json()
                 if file_info.get("ok"):
@@ -1015,6 +1061,7 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
                         bg = Image.open(BytesIO(resp.content)).convert("RGBA")
                         bg = bg.resize((img_size, img_size))
                         img.paste(bg, (0, 0))
+                        background_applied = True
                         logger.info("Background image loaded successfully")
             except Exception as e:
                 logger.error(f"Error loading background: {e}")
