@@ -487,13 +487,14 @@ def process_user_state(chat_id, text):
             
             # به حالت free برو
             user_data[chat_id]["mode"] = "free"
-            user_data[chat_id]["step"] = "text"
-            # اگر pack_name نداریم، باید از کاربر بپرسیم
+            
+            # اگر pack_name نداریم، ابتدا آن را بپرس
             if not user_data[chat_id].get("pack_name"):
                 user_data[chat_id]["step"] = "pack_name"
-                send_message(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
+                send_message(chat_id, f"✅ تنظیمات ذخیره شد!\n\n📝 حالا یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
             else:
                 # اگر pack_name داریم، مستقیماً به ساخت استیکر برو
+                user_data[chat_id]["step"] = "text"
                 send_message_with_back_button(chat_id, "✍️ حالا متن استیکرت رو بفرست:")
             return True
     
@@ -922,8 +923,26 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
         img_size = 256
         img = Image.new("RGBA", (img_size, img_size), (255, 255, 255, 0))
 
-        # 📌 اگر بکگراند هست → جایگزین کن
-        if background_file_id:
+        # 📌 اولویت 1: اگر عکس قالب آماده هست → استفاده کن
+        if user_settings and "background_style" in user_settings:
+            template_bg = user_settings["background_style"]
+            logger.info(f"Checking template background: {template_bg}")
+            if template_bg and template_bg.startswith("templates/"):
+                try:
+                    if os.path.exists(template_bg):
+                        bg = Image.open(template_bg).convert("RGBA")
+                        bg = bg.resize((img_size, img_size))
+                        img.paste(bg, (0, 0))
+                        logger.info(f"Template background loaded: {template_bg}")
+                    else:
+                        logger.warning(f"Template background not found: {template_bg}")
+                except Exception as e:
+                    logger.error(f"Error loading template background: {e}")
+            else:
+                logger.info(f"Template background path doesn't start with templates/: {template_bg}")
+        
+        # 📌 اولویت 2: اگر بکگراند از کاربر آپلود شده → استفاده کن
+        elif background_file_id:
             try:
                 file_info = requests.get(API + f"getFile?file_id={background_file_id}").json()
                 if file_info.get("ok"):
@@ -937,21 +956,6 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
                         logger.info("Background image loaded successfully")
             except Exception as e:
                 logger.error(f"Error loading background: {e}")
-        
-        # 📌 اگر عکس قالب آماده هست → استفاده کن
-        elif user_settings and "background_style" in user_settings:
-            template_bg = user_settings["background_style"]
-            if template_bg and template_bg.startswith("templates/"):
-                try:
-                    if os.path.exists(template_bg):
-                        bg = Image.open(template_bg).convert("RGBA")
-                        bg = bg.resize((img_size, img_size))
-                        img.paste(bg, (0, 0))
-                        logger.info(f"Template background loaded: {template_bg}")
-                    else:
-                        logger.warning(f"Template background not found: {template_bg}")
-                except Exception as e:
-                    logger.error(f"Error loading template background: {e}")
 
         draw = ImageDraw.Draw(img)
         
