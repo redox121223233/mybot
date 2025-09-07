@@ -26,12 +26,24 @@ BOT_USERNAME = os.environ.get("BOT_USERNAME", "MyBot")  # یوزرنیم ربا�
 CHANNEL_LINK = os.environ.get("CHANNEL_LINK", "@YourChannel")  # لینک کانال اجباری
 API = f"https://api.telegram.org/bot{BOT_TOKEN}/"
 
+# --- Admin Config ---
+ADMIN_ID = 6053579919  # ایدی ادمین اصلی
+SUPPORT_ID = os.environ.get("SUPPORT_ID", "@YourSupportID")  # ایدی پشتیبانی
+
+# --- Payment Config ---
+CARD_NUMBER = os.environ.get("CARD_NUMBER", "1234-5678-9012-3456")  # شماره کارت
+CARD_NAME = os.environ.get("CARD_NAME", "نام شما")  # نام صاحب کارت
+
 # دیتابیس ساده در حافظه
 user_data = {}
+subscription_data = {}  # داده‌های اشتراک
+pending_payments = {}   # پرداخت‌های در انتظار
 
 # فایل ذخیره‌سازی داده‌ها
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "user_data.json")
+SUBSCRIPTION_FILE = os.path.join(BASE_DIR, "subscriptions.json")
+PAYMENTS_FILE = os.path.join(BASE_DIR, "pending_payments.json")
 
 # --- Simple i18n ---
 LOCALES = {
@@ -47,6 +59,13 @@ LOCALES = {
         "lang_set_en": "✅ Language set to English.",
         "choose_lang": "🌍 Choose language:\n\nSelect:",
     }
+}
+
+# طرح‌های اشتراک
+SUBSCRIPTION_PLANS = {
+    "1month": {"price": 100, "days": 30, "title": "یک ماهه"},
+    "3months": {"price": 250, "days": 90, "title": "سه ماهه"},
+    "12months": {"price": 350, "days": 365, "title": "یک ساله"}
 }
 
 def load_locales():
@@ -121,8 +140,56 @@ def save_user_data():
     except Exception as e:
         logger.error(f"Error saving user data: {e}")
 
+def load_subscription_data():
+    """بارگذاری داده‌های اشتراک از فایل"""
+    global subscription_data
+    try:
+        if os.path.exists(SUBSCRIPTION_FILE):
+            with open(SUBSCRIPTION_FILE, 'r', encoding='utf-8') as f:
+                subscription_data = json.load(f)
+                logger.info(f"Loaded subscription data: {len(subscription_data)} users")
+        else:
+            subscription_data = {}
+    except Exception as e:
+        logger.error(f"Error loading subscription data: {e}")
+        subscription_data = {}
+
+def save_subscription_data():
+    """ذخیره داده‌های اشتراک در فایل"""
+    try:
+        with open(SUBSCRIPTION_FILE, 'w', encoding='utf-8') as f:
+            json.dump(subscription_data, f, ensure_ascii=False, indent=2)
+        logger.info(f"Saved subscription data: {len(subscription_data)} users")
+    except Exception as e:
+        logger.error(f"Error saving subscription data: {e}")
+
+def load_pending_payments():
+    """بارگذاری پرداخت‌های در انتظار از فایل"""
+    global pending_payments
+    try:
+        if os.path.exists(PAYMENTS_FILE):
+            with open(PAYMENTS_FILE, 'r', encoding='utf-8') as f:
+                pending_payments = json.load(f)
+                logger.info(f"Loaded pending payments: {len(pending_payments)} payments")
+        else:
+            pending_payments = {}
+    except Exception as e:
+        logger.error(f"Error loading pending payments: {e}")
+        pending_payments = {}
+
+def save_pending_payments():
+    """ذخیره پرداخت‌های در انتظار در فایل"""
+    try:
+        with open(PAYMENTS_FILE, 'w', encoding='utf-8') as f:
+            json.dump(pending_payments, f, ensure_ascii=False, indent=2)
+        logger.info(f"Saved pending payments: {len(pending_payments)} payments")
+    except Exception as e:
+        logger.error(f"Error saving pending payments: {e}")
+
 # بارگذاری داده‌ها در شروع
 load_user_data()
+load_subscription_data()
+load_pending_payments()
 load_locales()  # بارگذاری فایل‌های ترجمه
 
 app = Flask(__name__)
@@ -140,6 +207,11 @@ def webhook():
         return "ok"
 
     chat_id = msg["chat"]["id"]
+
+    # 📌 پردازش دستورات ادمین
+    if "text" in msg and msg["text"].startswith("/admin"):
+        handle_admin_command(chat_id, msg["text"])
+        return "ok"
 
     # 📌 پردازش متن
     if "text" in msg:
@@ -211,6 +283,43 @@ def webhook():
                     "last_reset": time.time()
                 }
             show_main_menu(chat_id)
+            return "ok"
+
+        # 📌 پردازش دکمه‌های اشتراک
+        if text == "⭐ اشتراک":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+            show_subscription_menu(chat_id)
+            return "ok"
+        
+        # پردازش دکمه‌های طرح اشتراک
+        if text in ["📦 یک ماهه - ۱۰۰ تومان", "📦 سه ماهه - ۲۵۰ تومان", "📦 یک ساله - ۳۵۰ تومان"]:
+            if "یک ماهه" in text:
+                plan = "1month"
+            elif "سه ماهه" in text:
+                plan = "3months" 
+            else:
+                plan = "12months"
+            show_payment_info(chat_id, plan)
+            return "ok"
+
+        # دکمه‌های قابلیت‌های اشتراکی
+        if text in ["🎞 تبدیل استیکر ویدیویی به گیف", "🎥 تبدیل گیف به استیکر ویدیویی", 
+                   "🖼 تبدیل عکس به استیکر", "📂 تبدیل استیکر به عکس", 
+                   "🌃 تبدیل PNG به استیکر", "🗂 تبدیل فایل ویدیو", "🎥 تبدیل ویدیو مسیج"]:
+            if not is_subscribed(chat_id):
+                send_message(chat_id, "⭐ این قابلیت فقط برای کاربران اشتراکی است!\n\nبرای خرید اشتراک از منوی اصلی استفاده کنید.")
+                return "ok"
+            handle_premium_feature(chat_id, text)
+            return "ok"
+
+        # دکمه ارسال رسید
+        if text == "📸 ارسال رسید":
+            user_data[chat_id] = user_data.get(chat_id, {})
+            user_data[chat_id]["step"] = "waiting_receipt"
+            send_message_with_back_button(chat_id, "📸 لطفاً عکس رسید پرداخت را ارسال کنید:")
             return "ok"
 
         # پردازش دکمه‌های اصلی (قبل از پردازش حالت‌ها)
@@ -432,12 +541,6 @@ def webhook():
                 return "ok"
             show_settings_menu(chat_id)
             return "ok"
-        elif text == "⭐ اشتراک":
-            # بررسی عضویت در کانال
-            if not check_channel_membership(chat_id):
-                send_membership_required_message(chat_id)
-                return "ok"
-            send_message(chat_id, "💳 بخش اشتراک بعداً فعال خواهد شد.")
         elif text == "ℹ️ درباره":
             # بررسی عضویت در کانال
             if not check_channel_membership(chat_id):
@@ -459,6 +562,56 @@ def webhook():
     # 📌 پردازش عکس
     elif "photo" in msg:
         state = user_data.get(chat_id, {})
+        
+        # بررسی ارسال رسید
+        if state.get("step") == "waiting_receipt":
+            photos = msg.get("photo", [])
+            if photos:
+                file_id = photos[-1].get("file_id")
+                if file_id:
+                    # ذخیره رسید در پرداخت‌های در انتظار
+                    payment_id = f"{chat_id}_{int(time.time())}"
+                    user_info = requests.get(API + f"getChat?chat_id={chat_id}").json()
+                    username = user_info.get("result", {}).get("username", f"user_{chat_id}")
+                    first_name = user_info.get("result", {}).get("first_name", "User")
+                    
+                    pending_payments[payment_id] = {
+                        "user_id": chat_id,
+                        "username": username,
+                        "first_name": first_name,
+                        "receipt_file_id": file_id,
+                        "timestamp": time.time(),
+                        "plan": state.get("selected_plan", "1month")
+                    }
+                    save_pending_payments()
+                    
+                    # اطلاع به ادمین
+                    admin_message = f"""🔔 رسید جدید دریافت شد!
+
+👤 کاربر: {first_name} (@{username if username != f'user_{chat_id}' else 'بدون یوزرنیم'})
+🆔 ایدی: {chat_id}
+📦 طرح: {SUBSCRIPTION_PLANS[state.get('selected_plan', '1month')]['title']}
+💰 مبلغ: {SUBSCRIPTION_PLANS[state.get('selected_plan', '1month')]['price']} تومان
+⏰ زمان: {time.strftime('%Y-%m-%d %H:%M:%S')}
+
+برای تایید: /admin add {chat_id} {SUBSCRIPTION_PLANS[state.get('selected_plan', '1month')]['days']}"""
+                    
+                    # ارسال رسید به ادمین
+                    try:
+                        requests.post(API + "sendPhoto", data={
+                            "chat_id": ADMIN_ID,
+                            "photo": file_id,
+                            "caption": admin_message
+                        })
+                    except Exception as e:
+                        logger.error(f"Error sending receipt to admin: {e}")
+                    
+                    # پاسخ به کاربر
+                    user_data[chat_id]["step"] = None
+                    send_message_with_back_button(chat_id, f"✅ رسید شما دریافت شد!\n\n⏳ لطفاً منتظر تایید پشتیبانی باشید.\n\n📞 در صورت عدم پاسخ، با {SUPPORT_ID} تماس بگیرید.")
+                    return "ok"
+        
+        # پردازش عکس برای استیکر
         if state.get("mode") == "free":
             photos = msg.get("photo", [])
             if photos:
@@ -475,6 +628,48 @@ def webhook():
                         send_message_with_back_button(chat_id, "✅ بکگراند تغییر کرد!\n✍️ متن استیکر بعدی را بفرست:")
 
     return "ok"
+
+def handle_premium_feature(chat_id, feature):
+    """پردازش قابلیت‌های اشتراکی"""
+    if chat_id not in user_data:
+        user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+    
+    if feature == "🎞 تبدیل استیکر ویدیویی به گیف":
+        user_data[chat_id]["mode"] = "video_sticker_to_gif"
+        user_data[chat_id]["step"] = "waiting_file"
+        send_message_with_back_button(chat_id, "🎞 لطفاً استیکر ویدیویی خود را ارسال کنید:")
+    
+    elif feature == "🎥 تبدیل گیف به استیکر ویدیویی":
+        user_data[chat_id]["mode"] = "gif_to_video_sticker"
+        user_data[chat_id]["step"] = "waiting_file"
+        send_message_with_back_button(chat_id, "🎥 لطفاً فایل GIF خود را ارسال کنید:")
+    
+    elif feature == "🖼 تبدیل عکس به استیکر":
+        user_data[chat_id]["mode"] = "photo_to_sticker"
+        user_data[chat_id]["step"] = "waiting_file"
+        send_message_with_back_button(chat_id, "🖼 لطفاً عکس خود را ارسال کنید:")
+    
+    elif feature == "📂 تبدیل استیکر به عکس":
+        user_data[chat_id]["mode"] = "sticker_to_photo"
+        user_data[chat_id]["step"] = "waiting_file"
+        send_message_with_back_button(chat_id, "📂 لطفاً استیکر خود را ارسال کنید:")
+    
+    elif feature == "🌃 تبدیل PNG به استیکر":
+        user_data[chat_id]["mode"] = "png_to_sticker"
+        user_data[chat_id]["step"] = "waiting_file"
+        send_message_with_back_button(chat_id, "🌃 لطفاً فایل PNG خود را ارسال کنید:")
+    
+    elif feature == "🗂 تبدیل فایل ویدیو":
+        user_data[chat_id]["mode"] = "file_to_video"
+        user_data[chat_id]["step"] = "waiting_file"
+        send_message_with_back_button(chat_id, "🗂 لطفاً فایل ویدیو خود را ارسال کنید:")
+    
+    elif feature == "🎥 تبدیل ویدیو مسیج":
+        user_data[chat_id]["mode"] = "video_message_to_video"
+        user_data[chat_id]["step"] = "waiting_file"
+        send_message_with_back_button(chat_id, "🎥 لطفاً ویدیو مسیج خود را ارسال کنید:")
+    
+    save_user_data()
 
 def process_user_state(chat_id, text):
     """پردازش حالت کاربر - این تابع جداگانه برای پردازش حالت‌ها"""
@@ -625,6 +820,344 @@ def process_user_state(chat_id, text):
     
     return False
 
+def show_subscription_menu(chat_id):
+    """نمایش منوی اشتراک"""
+    if is_subscribed(chat_id):
+        # کاربر اشتراک فعال دارد - نمایش قابلیت‌های ویژه
+        subscription = subscription_data[chat_id]
+        expires_at = subscription.get("expires_at", 0)
+        expires_date = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(expires_at))
+        
+        message = f"""💎 اشتراک فعال ✅
+
+📅 انقضا: {expires_date}
+🎉 شما دسترسی به تمام قابلیت‌ها دارید!
+
+🔥 قابلیت‌های ویژه:"""
+        
+        keyboard = {
+            "keyboard": [
+                ["🎞 تبدیل استیکر ویدیویی به گیف", "🎥 تبدیل گیف به استیکر ویدیویی"],
+                ["🖼 تبدیل عکس به استیکر", "📂 تبدیل استیکر به عکس"],
+                ["🌃 تبدیل PNG به استیکر", "🗂 تبدیل فایل ویدیو"],
+                ["🎥 تبدیل ویدیو مسیج"],
+                ["🔙 بازگشت"]
+            ],
+            "resize_keyboard": True
+        }
+        requests.post(API + "sendMessage", json={
+            "chat_id": chat_id,
+            "text": message,
+            "reply_markup": keyboard
+        })
+    else:
+        # نمایش طرح‌های اشتراک
+        message = f"""💎 اشتراک نامحدود
+
+🎯 مزایای اشتراک:
+• ساخت استیکر متنی نامحدود
+• تبدیل استیکر ویدیویی به گیف
+• تبدیل گیف به استیکر ویدیویی
+• تبدیل عکس به استیکر معمولی
+• تبدیل استیکر به عکس و PNG
+• تبدیل PNG به عکس و استیکر
+• تبدیل فایل ویدیو به ویدیو قابل پخش
+• تبدیل ویدیو مسیج به ویدیو معمولی
+• پشتیبانی اولویت‌دار
+
+💰 طرح‌های قیمت:"""
+        
+        keyboard = {
+            "keyboard": [
+                ["📦 یک ماهه - ۱۰۰ تومان"],
+                ["📦 سه ماهه - ۲۵۰ تومان"], 
+                ["📦 یک ساله - ۳۵۰ تومان"],
+                ["🔙 بازگشت"]
+            ],
+            "resize_keyboard": True
+        }
+        requests.post(API + "sendMessage", json={
+            "chat_id": chat_id,
+            "text": message,
+            "reply_markup": keyboard
+        })
+
+def show_payment_info(chat_id, plan):
+    """نمایش اطلاعات پرداخت برای طرح انتخابی"""
+    plan_info = SUBSCRIPTION_PLANS[plan]
+    
+    # ذخیره طرح انتخابی کاربر
+    if chat_id not in user_data:
+        user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+    user_data[chat_id]["selected_plan"] = plan
+    save_user_data()
+    
+    message = f"""💳 اطلاعات پرداخت
+
+📦 طرح: {plan_info['title']}
+💰 مبلغ: {plan_info['price']} تومان
+⏰ مدت: {plan_info['days']} روز
+
+💳 مشخصات کارت:
+🏦 شماره کارت: {CARD_NUMBER}
+👤 نام صاحب کارت: {CARD_NAME}
+
+📝 مراحل پرداخت:
+1️⃣ مبلغ {plan_info['price']} تومان را به کارت بالا واریز کنید
+2️⃣ عکس رسید واریز را ارسال کنید
+3️⃣ منتظر تایید پشتیبانی باشید
+
+⚠️ توجه: رسید را حتماً ارسال کنید تا اشتراک شما فعال شود."""
+    
+    keyboard = {
+        "keyboard": [
+            ["📸 ارسال رسید"],
+            ["🔙 بازگشت"]
+        ],
+        "resize_keyboard": True
+    }
+    requests.post(API + "sendMessage", json={
+        "chat_id": chat_id,
+        "text": message,
+        "reply_markup": keyboard
+    })
+
+def handle_admin_command(chat_id, text):
+    """پردازش دستورات ادمین"""
+    if not is_admin(chat_id):
+        send_message(chat_id, "❌ شما دسترسی ادمین ندارید!")
+        return True
+    
+    parts = text.split()
+    if len(parts) < 2:
+        send_message(chat_id, """🔧 پنل مدیریت ربات
+
+📋 دستورات موجود:
+/admin add <user_id> <days>     # فعال کردن اشتراک
+/admin remove <user_id>         # قطع اشتراک  
+/admin list                     # لیست کاربران اشتراکی
+/admin stats                    # آمار کلی ربات
+/admin broadcast <message>      # ارسال پیام همگانی
+/admin payments                 # رسیدهای در انتظار
+
+💡 مثال: /admin add 123456789 30""")
+        return True
+    
+    command = parts[1].lower()
+    
+    if command == "add" and len(parts) >= 4:
+        try:
+            user_id = int(parts[2])
+            days = int(parts[3])
+            
+            current_time = time.time()
+            expires_at = current_time + (days * 24 * 3600)
+            
+            subscription_data[user_id] = {
+                "expires_at": expires_at,
+                "created_at": current_time,
+                "days": days,
+                "admin_id": chat_id
+            }
+            save_subscription_data()
+            
+            expires_date = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(expires_at))
+            send_message(chat_id, f"✅ اشتراک {days} روزه برای کاربر {user_id} فعال شد!\n📅 انقضا: {expires_date}")
+            
+            # اطلاع به کاربر
+            try:
+                send_message(user_id, f"🎉 اشتراک شما فعال شد!\n📅 انقضا: {expires_date}\n\n🎯 حالا می‌توانید از تمام قابلیت‌های ربات استفاده کنید!")
+            except:
+                logger.error(f"Failed to notify user {user_id}")
+            
+        except ValueError:
+            send_message(chat_id, "❌ لطفاً ایدی و تعداد روز را به صورت عدد وارد کنید!")
+    
+    elif command == "remove" and len(parts) >= 3:
+        try:
+            user_id = int(parts[2])
+            if user_id in subscription_data:
+                del subscription_data[user_id]
+                save_subscription_data()
+                send_message(chat_id, f"✅ اشتراک کاربر {user_id} قطع شد!")
+                try:
+                    send_message(user_id, "❌ اشتراک شما توسط ادمین قطع شد!")
+                except:
+                    logger.error(f"Failed to notify user {user_id}")
+            else:
+                send_message(chat_id, f"❌ کاربر {user_id} اشتراک فعال ندارد!")
+        except ValueError:
+            send_message(chat_id, "❌ لطفاً ایدی را به صورت عدد وارد کنید!")
+    
+    elif command == "list":
+        if not subscription_data:
+            send_message(chat_id, "📋 هیچ کاربر اشتراکی وجود ندارد!")
+        else:
+            message = "📋 لیست کاربران اشتراکی:\n\n"
+            current_time = time.time()
+            for user_id, sub in subscription_data.items():
+                expires_at = sub.get("expires_at", 0)
+                expires_date = time.strftime("%Y-%m-%d", time.localtime(expires_at))
+                days = sub.get("days", 0)
+                status = "✅ فعال" if current_time < expires_at else "❌ منقضی"
+                message += f"👤 {user_id}: {days} روز - {expires_date} ({status})\n"
+            send_message(chat_id, message)
+    
+    elif command == "stats":
+        total_users = len(user_data)
+        subscribed_users = len(subscription_data)
+        active_subscriptions = sum(1 for sub in subscription_data.values() 
+                                 if time.time() < sub.get("expires_at", 0))
+        
+        # محاسبه استیکرهای ساخته شده امروز
+        today_stickers = 0
+        current_time = time.time()
+        today_start = current_time - (current_time % (24 * 3600))
+        
+        for user in user_data.values():
+            usage = user.get("sticker_usage", [])
+            today_stickers += sum(1 for timestamp in usage if timestamp >= today_start)
+        
+        message = f"""📊 آمار کلی ربات
+
+👥 کل کاربران: {total_users}
+💎 کاربران اشتراکی: {subscribed_users}
+✅ اشتراک‌های فعال: {active_subscriptions}
+❌ اشتراک‌های منقضی: {subscribed_users - active_subscriptions}
+
+📈 آمار امروز:
+🎨 استیکر ساخته شده: {today_stickers}
+🔔 رسیدهای در انتظار: {len(pending_payments)}"""
+        send_message(chat_id, message)
+    
+    elif command == "payments":
+        if not pending_payments:
+            send_message(chat_id, "📋 هیچ رسیدی در انتظار تایید نیست!")
+        else:
+            message = "📋 رسیدهای در انتظار:\n\n"
+            for payment_id, payment in pending_payments.items():
+                user_id = payment["user_id"]
+                first_name = payment["first_name"]
+                username = payment["username"]
+                plan = payment["plan"]
+                timestamp = payment["timestamp"]
+                date = time.strftime("%Y-%m-%d %H:%M", time.localtime(timestamp))
+                
+                message += f"👤 {first_name} (@{username})\n"
+                message += f"🆔 {user_id}\n"
+                message += f"📦 {SUBSCRIPTION_PLANS[plan]['title']} - {SUBSCRIPTION_PLANS[plan]['price']} تومان\n"
+                message += f"⏰ {date}\n"
+                message += f"✅ /admin add {user_id} {SUBSCRIPTION_PLANS[plan]['days']}\n\n"
+            
+            send_message(chat_id, message)
+    
+    elif command == "broadcast" and len(parts) >= 3:
+        broadcast_message = " ".join(parts[2:])
+        success_count = 0
+        fail_count = 0
+        
+        send_message(chat_id, f"📡 شروع ارسال پیام همگانی به {len(user_data)} کاربر...")
+        
+        for user_id in user_data.keys():
+            try:
+                send_message(user_id, f"📢 پیام ادمین:\n\n{broadcast_message}")
+                success_count += 1
+                time.sleep(0.05)  # جلوگیری از محدودیت rate limit
+            except:
+                fail_count += 1
+        
+        send_message(chat_id, f"✅ پیام همگانی ارسال شد!\n\n✅ موفق: {success_count}\n❌ ناموفق: {fail_count}")
+    
+    else:
+        send_message(chat_id, "❌ دستور نامعتبر! از /admin help استفاده کنید.")
+    
+    return True
+
+def is_subscribed(chat_id):
+    """بررسی اینکه کاربر اشتراک فعال دارد یا نه"""
+    if chat_id not in subscription_data:
+        return False
+    
+    current_time = time.time()
+    subscription = subscription_data[chat_id]
+    
+    # بررسی انقضای اشتراک
+    if current_time >= subscription.get("expires_at", 0):
+        # اشتراک منقضی شده
+        del subscription_data[chat_id]
+        save_subscription_data()
+        return False
+    
+    return True
+
+def is_admin(chat_id):
+    """بررسی اینکه کاربر ادمین است یا نه"""
+    return chat_id == ADMIN_ID
+
+def check_sticker_limit(chat_id):
+    """بررسی محدودیت استیکر برای کاربر"""
+    # اگر اشتراک فعال دارد، محدودیت ندارد
+    if is_subscribed(chat_id):
+        return 999, time.time() + 24 * 3600  # نامحدود
+    
+    if chat_id not in user_data:
+        return 5, time.time() + 24 * 3600  # 5 استیکر، 24 ساعت بعد
+    
+    current_time = time.time()
+    user_info = user_data[chat_id]
+    
+    # دریافت زمان آخرین reset (اگر وجود نداشت، از الان شروع کن)
+    last_reset = user_info.get("last_reset", current_time)
+    
+    # محاسبه زمان reset بعدی (بر اساس آخرین reset)
+    next_reset = last_reset + 24 * 3600
+    
+    # اگر زمان reset گذشته، reset کن
+    if current_time >= next_reset:
+        user_info["sticker_usage"] = []
+        user_info["last_reset"] = current_time
+        next_reset = current_time + 24 * 3600
+        save_user_data()  # ذخیره تغییرات
+        logger.info(f"Reset limit for user {chat_id} at {current_time}")
+    
+    # شمارش استیکرهای استفاده شده در 24 ساعت گذشته
+    used_stickers = len(user_info.get("sticker_usage", []))
+    remaining = 5 - used_stickers
+    
+    return max(0, remaining), next_reset
+
+def record_sticker_usage(chat_id):
+    """ثبت استفاده از استیکر"""
+    if chat_id not in user_data:
+        user_data[chat_id] = {
+            "mode": None, 
+            "count": 0, 
+            "step": None, 
+            "pack_name": None, 
+            "background": None, 
+            "created_packs": [],
+            "sticker_usage": [],
+            "last_reset": time.time()
+        }
+    
+    current_time = time.time()
+    user_info = user_data[chat_id]
+    
+    # دریافت زمان آخرین reset (اگر وجود نداشت، از الان شروع کن)
+    last_reset = user_info.get("last_reset", current_time)
+    
+    # محاسبه زمان reset بعدی
+    next_reset = last_reset + 24 * 3600
+    
+    # اگر زمان reset گذشته، reset کن
+    if current_time >= next_reset:
+        user_info["sticker_usage"] = []
+        user_info["last_reset"] = current_time
+        logger.info(f"Reset limit for user {chat_id} at {current_time}")
+    
+    # اضافه کردن زمان استفاده
+    user_info["sticker_usage"].append(current_time)
+    save_user_data()  # ذخیره فوری
 
 def send_as_sticker(chat_id, text, background_file_id=None):
     sticker_path = "sticker.png"
@@ -1400,107 +1933,45 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
         return False
 
 def show_main_menu(chat_id):
-    keyboard = {
-        "keyboard": [
-            ["🎁 تست رایگان", "⭐ اشتراک"],
-            ["🎨 طراحی پیشرفته", "📚 قالب‌های آماده"],
-            ["📝 تاریخچه", "⚙️ تنظیمات"],
-            ["ℹ️ درباره", "📞 پشتیبانی"]
-        ],
-        "resize_keyboard": True
-    }
-    requests.post(API + "sendMessage", json={
-        "chat_id": chat_id,
-        "text": tr(chat_id, "main_menu", "👋 خوش اومدی! یکی از گزینه‌ها رو انتخاب کن:"),
-        "reply_markup": keyboard
-    })
-
-def check_sticker_limit(chat_id):
-    """بررسی محدودیت استیکر برای کاربر"""
-    if chat_id not in user_data:
-        return 5, time.time() + 24 * 3600  # 5 استیکر، 24 ساعت بعد
-    
-    current_time = time.time()
-    user_info = user_data[chat_id]
-    
-    # دریافت زمان آخرین reset (اگر وجود نداشت، از الان شروع کن)
-    last_reset = user_info.get("last_reset", current_time)
-    
-    # محاسبه زمان reset بعدی (بر اساس آخرین reset)
-    next_reset = last_reset + 24 * 3600
-    
-    # اگر زمان reset گذشته، reset کن
-    if current_time >= next_reset:
-        user_info["sticker_usage"] = []
-        user_info["last_reset"] = current_time
-        next_reset = current_time + 24 * 3600
-        save_user_data()  # ذخیره تغییرات
-        logger.info(f"Reset limit for user {chat_id} at {current_time}")
-    
-    # شمارش استیکرهای استفاده شده در 24 ساعت گذشته
-    used_stickers = len(user_info.get("sticker_usage", []))
-    remaining = 5 - used_stickers
-    
-    return max(0, remaining), next_reset
-
-def record_sticker_usage(chat_id):
-    """ثبت استفاده از استیکر"""
-    if chat_id not in user_data:
-        user_data[chat_id] = {
-            "mode": None, 
-            "count": 0, 
-            "step": None, 
-            "pack_name": None, 
-            "background": None, 
-            "created_packs": [],
-            "sticker_usage": [],
-            "last_reset": time.time()
+    # بررسی وضعیت اشتراک کاربر
+    if is_subscribed(chat_id):
+        keyboard = {
+            "keyboard": [
+                ["🎁 تست رایگان", "⭐ اشتراک"],
+                ["🎨 طراحی پیشرفته", "📚 قالب‌های آماده"],
+                ["📝 تاریخچه", "⚙️ تنظیمات"],
+                ["ℹ️ درباره", "📞 پشتیبانی"]
+            ],
+            "resize_keyboard": True
+        }
+    else:
+        keyboard = {
+            "keyboard": [
+                ["🎁 تست رایگان", "⭐ اشتراک"],
+                ["🎨 طراحی پیشرفته", "📚 قالب‌های آماده"],
+                ["📝 تاریخچه", "⚙️ تنظیمات"],
+                ["ℹ️ درباره", "📞 پشتیبانی"]
+            ],
+            "resize_keyboard": True
         }
     
-    current_time = time.time()
-    user_info = user_data[chat_id]
+    welcome_message = tr(chat_id, "main_menu", "👋 خوش اومدی! یکی از گزینه‌ها رو انتخاب کن:")
     
-    # دریافت زمان آخرین reset (اگر وجود نداشت، از الان شروع کن)
-    last_reset = user_info.get("last_reset", current_time)
+    # اضافه کردن وضعیت اشتراک به پیام
+    if is_subscribed(chat_id):
+        subscription = subscription_data[chat_id]
+        expires_at = subscription.get("expires_at", 0)
+        expires_date = time.strftime("%Y-%m-%d", time.localtime(expires_at))
+        welcome_message += f"\n\n💎 اشتراک فعال تا: {expires_date}"
+    else:
+        remaining, _ = check_sticker_limit(chat_id)
+        welcome_message += f"\n\n📊 استیکر باقی مانده: {remaining}/5"
     
-    # محاسبه زمان reset بعدی
-    next_reset = last_reset + 24 * 3600
-    
-    # اگر زمان reset گذشته، reset کن
-    if current_time >= next_reset:
-        user_info["sticker_usage"] = []
-        user_info["last_reset"] = current_time
-        logger.info(f"Reset limit for user {chat_id} at {current_time}")
-    
-    # اضافه کردن زمان استفاده
-    user_info["sticker_usage"].append(current_time)
-    save_user_data()  # ذخیره فوری
-
-def get_user_packs_from_api(chat_id):
-    """دریافت پک‌های کاربر از API تلگرام"""
-    try:
-        # دریافت اطلاعات کاربر
-        user_info = requests.get(API + f"getChat?chat_id={chat_id}").json()
-        first_name = user_info.get("result", {}).get("first_name", "User")
-        
-        # جستجو برای پک‌هایی که با نام کاربر شروع می‌شوند
-        # این روش کامل نیست اما می‌تواند کمک کند
-        packs = []
-        
-        # اگر pack_name فعلی وجود دارد، آن را بررسی کن
-        current_pack = user_data.get(chat_id, {}).get("pack_name")
-        if current_pack:
-            resp = requests.get(API + f"getStickerSet?name={current_pack}").json()
-            if resp.get("ok"):
-                packs.append({
-                    "name": current_pack,
-                    "title": f"{first_name}'s Stickers"
-                })
-        
-        return packs
-    except Exception as e:
-        logger.error(f"Error getting user packs from API: {e}")
-        return []
+    requests.post(API + "sendMessage", json={
+        "chat_id": chat_id,
+        "text": welcome_message,
+        "reply_markup": keyboard
+    })
 
 def check_channel_membership(chat_id):
     """بررسی عضویت کاربر در کانال اجباری"""
@@ -1805,10 +2276,6 @@ def set_dark_mode(chat_id, is_dark):
     """تنظیم حالت تاریک/روشن"""
     mode = "تاریک" if is_dark else "روشن"
     send_message_with_back_button(chat_id, f"✅ حالت {mode} فعال شد!")
-
-def toggle_notifications(chat_id):
-    """تغییر وضعیت اعلان‌ها"""
-    send_message_with_back_button(chat_id, "✅ وضعیت اعلان‌ها تغییر کرد!")
 
 def show_language_menu(chat_id):
     """نمایش منوی زبان"""
