@@ -465,7 +465,21 @@ def process_user_state(chat_id, text):
         
         # اگر کاربر در حالت طراحی پیشرفته است و متن فرستاده، به حالت free برو
         if step in ["color_selection", "font_selection", "size_selection", "position_selection", "background_color_selection", "effect_selection"]:
-            # تنظیمات را ذخیره کن و به حالت free برو
+            # تنظیمات را بر اساس step ذخیره کن
+            if step == "color_selection":
+                user_data[chat_id]["text_color"] = text
+            elif step == "font_selection":
+                user_data[chat_id]["font_style"] = text
+            elif step == "size_selection":
+                user_data[chat_id]["text_size"] = text
+            elif step == "position_selection":
+                user_data[chat_id]["text_position"] = text
+            elif step == "background_color_selection":
+                user_data[chat_id]["background_style"] = text
+            elif step == "effect_selection":
+                user_data[chat_id]["text_effect"] = text
+            
+            # به حالت free برو
             user_data[chat_id]["mode"] = "free"
             user_data[chat_id]["step"] = "text"
             # اگر pack_name نداریم، باید از کاربر بپرسیم
@@ -800,18 +814,40 @@ def detect_language(text):
     else:
         return "other"
 
-def get_font(size, language="english"):
-    """بارگذاری فونت بر اساس زبان"""
+def get_font(size, language="english", font_style="عادی"):
+    """بارگذاری فونت بر اساس زبان و استایل"""
     if language == "persian_arabic":
         # فونت‌های فارسی/عربی
-        font_paths = [
-            "fonts/Vazirmatn-Regular.ttf",
-            "fonts/IRANSans.ttf", 
-            "fonts/Vazir.ttf",
-            "fonts/Vazir-Regular.ttf",
-            "fonts/Sahel.ttf",
-            "fonts/Samim.ttf",
-            "fonts/Tanha.ttf",
+        if "ضخیم" in font_style or "بولد" in font_style:
+            font_paths = [
+                "fonts/Vazirmatn-Bold.ttf",
+                "fonts/IRANSans-Bold.ttf",
+                "fonts/Vazir-Bold.ttf",
+                "fonts/Vazirmatn-Regular.ttf",
+                "fonts/IRANSans.ttf", 
+                "fonts/Vazir.ttf"
+            ]
+        elif "نازک" in font_style or "لایت" in font_style:
+            font_paths = [
+                "fonts/Vazirmatn-Light.ttf",
+                "fonts/IRANSans-Light.ttf",
+                "fonts/Vazir-Light.ttf",
+                "fonts/Vazirmatn-Regular.ttf",
+                "fonts/IRANSans.ttf", 
+                "fonts/Vazir.ttf"
+            ]
+        else:
+            font_paths = [
+                "fonts/Vazirmatn-Regular.ttf",
+                "fonts/IRANSans.ttf", 
+                "fonts/Vazir.ttf",
+                "fonts/Sahel.ttf",
+                "fonts/Samim.ttf",
+                "fonts/Tanha.ttf"
+            ]
+        
+        # اضافه کردن fallback ها
+        font_paths.extend([
             "Vazirmatn-Regular.ttf",
             "IRANSans.ttf", 
             "Vazir.ttf",
@@ -819,23 +855,32 @@ def get_font(size, language="english"):
             "Samim.ttf",
             "Tanha.ttf",
             "NotoSansArabic-Regular.ttf",
-            "NotoNaskhArabic-Regular.ttf",
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
             "/System/Library/Fonts/Helvetica.ttc",
             "/Windows/Fonts/arial.ttf"
-        ]
+        ])
     else:
         # فونت‌های انگلیسی
-        font_paths = [
-            "fonts/arial.ttf",
-            "arial.ttf",
-            "DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/System/Library/Fonts/Arial.ttf",
-            "/Windows/Fonts/arial.ttf",
+        if "ضخیم" in font_style or "بولد" in font_style:
+            font_paths = [
+                "fonts/arial-bold.ttf",
+                "arial-bold.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                "/System/Library/Fonts/Arial.ttf"
+            ]
+        else:
+            font_paths = [
+                "fonts/arial.ttf",
+                "arial.ttf",
+                "DejaVuSans.ttf",
+                "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                "/System/Library/Fonts/Arial.ttf",
+                "/Windows/Fonts/arial.ttf"
+            ]
+        
+        font_paths.extend([
             "NotoSans-Regular.ttf"
-        ]
+        ])
     
     for font_path in font_paths:
         try:
@@ -904,16 +949,36 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
         draw = ImageDraw.Draw(img)
         
         # 📌 تنظیمات فونت و باکس متن (بهینه‌سازی برای متن فارسی)
+        # تنظیم اندازه فونت از تنظیمات کاربر
+        if user_settings and "text_size" in user_settings:
+            size_text = user_settings["text_size"]
+            if "کوچک" in size_text:
+                initial_font_size = 30 if language == "persian_arabic" else 200
+            elif "متوسط" in size_text:
+                initial_font_size = 50 if language == "persian_arabic" else 300
+            elif "بزرگ" in size_text:
+                initial_font_size = 70 if language == "persian_arabic" else 400
+            else:
+                initial_font_size = 50 if language == "persian_arabic" else 300
+        else:
+            if language == "persian_arabic":
+                initial_font_size = 50   # کاهش بیشتر برای فارسی
+            else:
+                initial_font_size = 300  # فونت انگلیسی
+        
         if language == "persian_arabic":
-            initial_font_size = 50   # کاهش بیشتر برای فارسی
             min_font_size = 12       # کاهش بیشتر برای فارسی
         else:
-            initial_font_size = 440  # افزایش 2x فونت انگلیسی (220 * 2)
-            min_font_size = 120      # افزایش 2x حداقل فونت انگلیسی (60 * 2)
+            min_font_size = 120      # حداقل فونت انگلیسی
         max_width = 110              # کاهش بیشتر برای فارسی
         max_height = 110             # کاهش بیشتر برای فارسی
-            
-        font = get_font(initial_font_size, language)
+        
+        # تنظیم فونت از تنظیمات کاربر
+        font_style = "عادی"
+        if user_settings and "font_style" in user_settings:
+            font_style = user_settings["font_style"]
+        
+        font = get_font(initial_font_size, language, font_style)
         
         if font is None:
             logger.error("No font could be loaded, using basic text rendering")
@@ -945,7 +1010,7 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
                 lines = wrapped_lines
                 break
             font_size -= 3  # کاهش کمتر برای تنظیم دقیق‌تر
-            font = get_font(font_size, language)
+            font = get_font(font_size, language, font_style)
             if font is None:
                 font = ImageFont.load_default()
                 break
@@ -980,7 +1045,21 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
         # رنگ متن از تنظیمات کاربر
         text_color = "#000000"  # پیش‌فرض
         if user_settings and "text_color" in user_settings:
-            text_color = user_settings["text_color"]
+            color_text = user_settings["text_color"]
+            # تبدیل نام رنگ به کد hex
+            color_map = {
+                "قرمز": "#FF0000",
+                "آبی": "#0000FF", 
+                "سبز": "#00FF00",
+                "زرد": "#FFFF00",
+                "بنفش": "#800080",
+                "نارنجی": "#FFA500",
+                "صورتی": "#FFC0CB",
+                "مشکی": "#000000",
+                "سفید": "#FFFFFF",
+                "خاکستری": "#808080"
+            }
+            text_color = color_map.get(color_text, "#000000")
         
         # رسم هر خط با حاشیه و متن
         current_y = y
@@ -1400,9 +1479,14 @@ def apply_template(chat_id, template_name):
         
         # رفتن به حالت ساخت استیکر
         user_data[chat_id]["mode"] = "free"
-        user_data[chat_id]["step"] = "text"
         
-        send_message_with_back_button(chat_id, f"✅ قالب '{template_name}' اعمال شد!\n\n🎨 رنگ: {template['color']}\n🖼️ پس‌زمینه: {template['bg']}\n📝 فونت: {template['font']}\n📏 اندازه: {template['size']}\n\nحالا متن خود را بفرستید:")
+        # اگر pack_name نداریم، ابتدا آن را بپرس
+        if not user_data[chat_id].get("pack_name"):
+            user_data[chat_id]["step"] = "pack_name"
+            send_message(chat_id, f"✅ قالب '{template_name}' اعمال شد!\n\n🎨 رنگ: {template['color']}\n🖼️ پس‌زمینه: {template['bg']}\n📝 فونت: {template['font']}\n📏 اندازه: {template['size']}\n\n📝 حالا یک نام برای پک استیکر خود انتخاب کن:")
+        else:
+            user_data[chat_id]["step"] = "text"
+            send_message_with_back_button(chat_id, f"✅ قالب '{template_name}' اعمال شد!\n\n🎨 رنگ: {template['color']}\n🖼️ پس‌زمینه: {template['bg']}\n📝 فونت: {template['font']}\n📏 اندازه: {template['size']}\n\nحالا متن خود را بفرستید:")
     else:
         send_message_with_back_button(chat_id, "❌ قالب پیدا نشد!")
 
