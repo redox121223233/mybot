@@ -3,6 +3,8 @@ import logging
 import re
 import time
 import json
+import tempfile
+import subprocess
 from flask import Flask, request
 import requests
 from PIL import Image, ImageDraw, ImageFont
@@ -28,7 +30,7 @@ API = f"https://api.telegram.org/bot{BOT_TOKEN}/"
 
 # --- Admin Config ---
 ADMIN_ID = 6053579919  # ایدی ادمین اصلی
-SUPPORT_ID = os.environ.get("SUPPORT_ID", "@YourSupportID")  # ایدی پشتیبانی
+SUPPORT_ID = "@onedaytoalive"  # ایدی پشتیبانی
 
 # --- Payment Config ---
 CARD_NUMBER = os.environ.get("CARD_NUMBER", "1234-5678-9012-3456")  # شماره کارت
@@ -61,11 +63,11 @@ LOCALES = {
     }
 }
 
-# طرح‌های اشتراک - قیمت‌ها به هزار تومان تغییر یافت
+# طرح‌های اشتراک
 SUBSCRIPTION_PLANS = {
-    "1month": {"price": 100000, "days": 30, "title": "یک ماهه"},
-    "3months": {"price": 250000, "days": 90, "title": "سه ماهه"},
-    "12months": {"price": 350000, "days": 365, "title": "یک ساله"}
+    "1month": {"price": 100, "days": 30, "title": "یک ماهه"},
+    "3months": {"price": 250, "days": 90, "title": "سه ماهه"},
+    "12months": {"price": 350, "days": 365, "title": "یک ساله"}
 }
 
 def load_locales():
@@ -127,7 +129,6 @@ def load_user_data():
                 logger.info(f"Loaded user data: {len(user_data)} users")
         else:
             user_data = {}
-            logger.info("No user data file found, starting fresh")
     except Exception as e:
         logger.error(f"Error loading user data: {e}")
         user_data = {}
@@ -148,10 +149,9 @@ def load_subscription_data():
         if os.path.exists(SUBSCRIPTION_FILE):
             with open(SUBSCRIPTION_FILE, 'r', encoding='utf-8') as f:
                 subscription_data = json.load(f)
-                logger.info(f"Loaded subscription data: {len(subscription_data)} subscriptions")
+                logger.info(f"Loaded subscription data: {len(subscription_data)} users")
         else:
             subscription_data = {}
-            logger.info("No subscription data file found, starting fresh")
     except Exception as e:
         logger.error(f"Error loading subscription data: {e}")
         subscription_data = {}
@@ -161,7 +161,7 @@ def save_subscription_data():
     try:
         with open(SUBSCRIPTION_FILE, 'w', encoding='utf-8') as f:
             json.dump(subscription_data, f, ensure_ascii=False, indent=2)
-        logger.info(f"Saved subscription data: {len(subscription_data)} subscriptions")
+        logger.info(f"Saved subscription data: {len(subscription_data)} users")
     except Exception as e:
         logger.error(f"Error saving subscription data: {e}")
 
@@ -175,7 +175,6 @@ def load_pending_payments():
                 logger.info(f"Loaded pending payments: {len(pending_payments)} payments")
         else:
             pending_payments = {}
-            logger.info("No pending payments file found, starting fresh")
     except Exception as e:
         logger.error(f"Error loading pending payments: {e}")
         pending_payments = {}
@@ -189,13 +188,11 @@ def save_pending_payments():
     except Exception as e:
         logger.error(f"Error saving pending payments: {e}")
 
-# بارگذاری داده‌ها در شروع - اولویت کامل برای حفظ اطلاعات
-logger.info("🔄 Loading data files...")
+# بارگذاری داده‌ها در شروع
 load_user_data()
 load_subscription_data()
 load_pending_payments()
 load_locales()  # بارگذاری فایل‌های ترجمه
-logger.info("✅ All data files loaded successfully!")
 
 app = Flask(__name__)
 
@@ -253,7 +250,6 @@ def webhook():
                     "sticker_usage": [],
                     "last_reset": time.time()
                 }
-            save_user_data()  # ذخیره فوری
             show_main_menu(chat_id)
             return "ok"
 
@@ -288,11 +284,10 @@ def webhook():
                     "sticker_usage": [],
                     "last_reset": time.time()
                 }
-            save_user_data()  # ذخیره فوری
             show_main_menu(chat_id)
             return "ok"
 
-        # 📌 پردازش دکمه‌های اشتراک - با قیمت‌های اصلاح شده
+        # 📌 پردازش دکمه‌های اشتراک
         if text == "⭐ اشتراک":
             # بررسی عضویت در کانال
             if not check_channel_membership(chat_id):
@@ -301,8 +296,8 @@ def webhook():
             show_subscription_menu(chat_id)
             return "ok"
         
-        # پردازش دکمه‌های طرح اشتراک - با قیمت‌های جدید
-        if text in ["📦 یک ماهه - ۱۰۰ هزار تومان", "📦 سه ماهه - ۲۵۰ هزار تومان", "📦 یک ساله - ۳۵۰ هزار تومان"]:
+        # پردازش دکمه‌های طرح اشتراک
+        if text in ["📦 یک ماهه - ۱۰۰ تومان", "📦 سه ماهه - ۲۵۰ تومان", "📦 یک ساله - ۳۵۰ تومان"]:
             if "یک ماهه" in text:
                 plan = "1month"
             elif "سه ماهه" in text:
@@ -326,7 +321,6 @@ def webhook():
         if text == "📸 ارسال رسید":
             user_data[chat_id] = user_data.get(chat_id, {})
             user_data[chat_id]["step"] = "waiting_receipt"
-            save_user_data()  # ذخیره فوری
             send_message_with_back_button(chat_id, "📸 لطفاً عکس رسید پرداخت را ارسال کنید:")
             return "ok"
 
@@ -390,7 +384,6 @@ def webhook():
             else:
                 send_message(chat_id, limit_info + "📝 شما هنوز پکی ندارید. لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
                 user_data[chat_id]["step"] = "pack_name"
-            save_user_data()  # ذخیره فوری
             return "ok"
 
         # پردازش دکمه‌های طراحی پیشرفته
@@ -400,7 +393,6 @@ def webhook():
                 user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
             user_data[chat_id]["mode"] = "advanced_design"
             user_data[chat_id]["step"] = "color_selection"
-            save_user_data()  # ذخیره فوری
             show_color_menu(chat_id)
             return "ok"
         elif text == "📝 انتخاب فونت":
@@ -408,7 +400,6 @@ def webhook():
                 user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
             user_data[chat_id]["mode"] = "advanced_design"
             user_data[chat_id]["step"] = "font_selection"
-            save_user_data()  # ذخیره فوری
             show_font_menu(chat_id)
             return "ok"
         elif text == "📏 اندازه متن":
@@ -416,7 +407,6 @@ def webhook():
                 user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
             user_data[chat_id]["mode"] = "advanced_design"
             user_data[chat_id]["step"] = "size_selection"
-            save_user_data()  # ذخیره فوری
             show_size_menu(chat_id)
             return "ok"
         elif text == "📍 موقعیت متن":
@@ -424,7 +414,6 @@ def webhook():
                 user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
             user_data[chat_id]["mode"] = "advanced_design"
             user_data[chat_id]["step"] = "position_selection"
-            save_user_data()  # ذخیره فوری
             show_position_menu(chat_id)
             return "ok"
         elif text == "🖼️ رنگ پس‌زمینه":
@@ -432,7 +421,6 @@ def webhook():
                 user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
             user_data[chat_id]["mode"] = "advanced_design"
             user_data[chat_id]["step"] = "background_color_selection"
-            save_user_data()  # ذخیره فوری
             show_background_color_menu(chat_id)
             return "ok"
         elif text == "✨ افکت‌های ویژه":
@@ -440,7 +428,6 @@ def webhook():
                 user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
             user_data[chat_id]["mode"] = "advanced_design"
             user_data[chat_id]["step"] = "effect_selection"
-            save_user_data()  # ذخیره فوری
             show_effects_menu(chat_id)
             return "ok"
 
@@ -456,7 +443,6 @@ def webhook():
             else:
                 user_data[chat_id]["step"] = "text"
                 send_message_with_back_button(chat_id, f"✅ رنگ {text.split(' ')[1]} انتخاب شد!\n\n✍️ حالا متن استیکرت رو بفرست:")
-            save_user_data()  # ذخیره فوری
             return "ok"
 
         # پردازش دکمه‌های فونت
@@ -471,7 +457,6 @@ def webhook():
             else:
                 user_data[chat_id]["step"] = "text"
                 send_message_with_back_button(chat_id, f"✅ {text} انتخاب شد!\n\n✍️ حالا متن استیکرت رو بفرست:")
-            save_user_data()  # ذخیره فوری
             return "ok"
 
         # پردازش دکمه‌های اندازه
@@ -486,7 +471,6 @@ def webhook():
             else:
                 user_data[chat_id]["step"] = "text"
                 send_message_with_back_button(chat_id, f"✅ اندازه {text.split(' ')[1]} انتخاب شد!\n\n✍️ حالا متن استیکرت رو بفرست:")
-            save_user_data()  # ذخیره فوری
             return "ok"
 
         # پردازش دکمه‌های افکت‌های ویژه
@@ -501,7 +485,6 @@ def webhook():
             else:
                 user_data[chat_id]["step"] = "text"
                 send_message_with_back_button(chat_id, f"✅ افکت {text} انتخاب شد!\n\n✍️ حالا متن استیکرت رو بفرست:")
-            save_user_data()  # ذخیره فوری
             return "ok"
 
         # پردازش دکمه‌های قالب‌های آماده
@@ -520,7 +503,7 @@ def webhook():
             if chat_id not in user_data:
                 user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
             user_data[chat_id]["lang"] = "fa" if "🇮🇷" in text else "en"
-            save_user_data()  # ذخیره فوری
+            save_user_data()
             msg = tr(chat_id, "lang_set_fa", "✅ زبان به فارسی تغییر کرد.") if user_data[chat_id]["lang"] == "fa" else tr(chat_id, "lang_set_en", "✅ Language set to English.")
             send_message_with_back_button(chat_id, msg)
             return "ok"
@@ -571,8 +554,7 @@ def webhook():
             if not check_channel_membership(chat_id):
                 send_membership_required_message(chat_id)
                 return "ok"
-            support_id = os.environ.get("SUPPORT_ID", "@YourSupportID")
-            send_message(chat_id, f"📞 برای پشتیبانی با {support_id} در تماس باش.")
+            send_message(chat_id, f"📞 برای پشتیبانی با {SUPPORT_ID} در تماس باش.\n\nاگر مشکلی پیش آمد، حتماً پیوی بزنید!")
 
         # پردازش حالت کاربر (بعد از دکمه‌ها)
         if process_user_state(chat_id, text):
@@ -602,19 +584,18 @@ def webhook():
                         "timestamp": time.time(),
                         "plan": state.get("selected_plan", "1month")
                     }
-                    save_pending_payments()  # ذخیره فوری
+                    save_pending_payments()
                     
                     # اطلاع به ادمین
-                    plan_info = SUBSCRIPTION_PLANS[state.get('selected_plan', '1month')]
                     admin_message = f"""🔔 رسید جدید دریافت شد!
 
 👤 کاربر: {first_name} (@{username if username != f'user_{chat_id}' else 'بدون یوزرنیم'})
 🆔 ایدی: {chat_id}
-📦 طرح: {plan_info['title']}
-💰 مبلغ: {plan_info['price']:,} تومان
+📦 طرح: {SUBSCRIPTION_PLANS[state.get('selected_plan', '1month')]['title']}
+💰 مبلغ: {SUBSCRIPTION_PLANS[state.get('selected_plan', '1month')]['price']} تومان
 ⏰ زمان: {time.strftime('%Y-%m-%d %H:%M:%S')}
 
-برای تایید: /admin add {chat_id} {plan_info['days']}"""
+برای تایید: /admin add {chat_id} {SUBSCRIPTION_PLANS[state.get('selected_plan', '1month')]['days']}"""
                     
                     # ارسال رسید به ادمین
                     try:
@@ -628,7 +609,6 @@ def webhook():
                     
                     # پاسخ به کاربر
                     user_data[chat_id]["step"] = None
-                    save_user_data()  # ذخیره فوری
                     send_message_with_back_button(chat_id, f"✅ رسید شما دریافت شد!\n\n⏳ لطفاً منتظر تایید پشتیبانی باشید.\n\n📞 در صورت عدم پاسخ، با {SUPPORT_ID} تماس بگیرید.")
                     return "ok"
         
@@ -642,13 +622,34 @@ def webhook():
                         # عکس اول برای بکگراند
                         user_data[chat_id]["background"] = file_id
                         user_data[chat_id]["step"] = "text"
-                        save_user_data()  # ذخیره فوری
                         send_message_with_back_button(chat_id, "✍️ حالا متن استیکرت رو بفرست:")
                     elif state.get("step") == "text":
                         # تغییر بکگراند در حین ساخت استیکر
                         user_data[chat_id]["background"] = file_id
-                        save_user_data()  # ذخیره فوری
                         send_message_with_back_button(chat_id, "✅ بکگراند تغییر کرد!\n✍️ متن استیکر بعدی را بفرست:")
+        
+        # پردازش عکس برای قابلیت‌های اشتراکی
+        handle_premium_file(chat_id, "photo", msg.get("photo", []))
+
+    # 📌 پردازش استیکر
+    elif "sticker" in msg:
+        handle_premium_file(chat_id, "sticker", msg["sticker"])
+
+    # 📌 پردازش ویدیو
+    elif "video" in msg:
+        handle_premium_file(chat_id, "video", msg["video"])
+
+    # 📌 پردازش انیمیشن (GIF)
+    elif "animation" in msg:
+        handle_premium_file(chat_id, "animation", msg["animation"])
+
+    # 📌 پردازش ویدیو نوت
+    elif "video_note" in msg:
+        handle_premium_file(chat_id, "video_note", msg["video_note"])
+
+    # 📌 پردازش فایل
+    elif "document" in msg:
+        handle_premium_file(chat_id, "document", msg["document"])
 
     return "ok"
 
@@ -692,7 +693,366 @@ def handle_premium_feature(chat_id, feature):
         user_data[chat_id]["step"] = "waiting_file"
         send_message_with_back_button(chat_id, "🎥 لطفاً ویدیو مسیج خود را ارسال کنید:")
     
-    save_user_data()  # ذخیره فوری
+    save_user_data()
+
+def handle_premium_file(chat_id, file_type, file_data):
+    """پردازش فایل‌های قابلیت‌های اشتراکی"""
+    state = user_data.get(chat_id, {})
+    mode = state.get("mode")
+    
+    if not mode or state.get("step") != "waiting_file":
+        return
+    
+    if not is_subscribed(chat_id):
+        send_message(chat_id, "⭐ این قابلیت فقط برای کاربران اشتراکی است!")
+        return
+    
+    try:
+        # دریافت file_id بسته به نوع فایل
+        if file_type == "photo":
+            file_id = file_data[-1]["file_id"] if file_data else None
+        elif file_type in ["sticker", "video", "animation", "video_note", "document"]:
+            file_id = file_data["file_id"] if file_data else None
+        else:
+            file_id = None
+        
+        if not file_id:
+            send_message(chat_id, "❌ خطا در دریافت فایل!")
+            return
+        
+        # دریافت اطلاعات فایل از Telegram
+        file_info = requests.get(API + f"getFile?file_id={file_id}").json()
+        if not file_info.get("ok"):
+            send_message(chat_id, "❌ خطا در دریافت اطلاعات فایل!")
+            return
+        
+        file_path = file_info["result"]["file_path"]
+        file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
+        
+        # دانلود فایل
+        response = requests.get(file_url)
+        if response.status_code != 200:
+            send_message(chat_id, "❌ خطا در دانلود فایل!")
+            return
+        
+        # پردازش بر اساس نوع عملیات
+        send_message(chat_id, "⚙️ در حال پردازش...")
+        
+        if mode == "video_sticker_to_gif":
+            result = convert_video_sticker_to_gif(response.content, file_path)
+            if result:
+                send_animation_file(chat_id, result, "✅ استیکر ویدیویی به GIF تبدیل شد!")
+            else:
+                send_message(chat_id, "❌ خطا در تبدیل فایل!")
+        
+        elif mode == "gif_to_video_sticker":
+            result = convert_gif_to_video_sticker(response.content, file_path)
+            if result:
+                send_video_file(chat_id, result, "✅ GIF به استیکر ویدیویی تبدیل شد!")
+            else:
+                send_message(chat_id, "❌ خطا در تبدیل فایل!")
+        
+        elif mode == "photo_to_sticker":
+            result = convert_photo_to_sticker(response.content)
+            if result:
+                send_document_file(chat_id, result, "✅ عکس به استیکر تبدیل شد!")
+            else:
+                send_message(chat_id, "❌ خطا در تبدیل فایل!")
+        
+        elif mode == "sticker_to_photo":
+            result = convert_sticker_to_photo(response.content)
+            if result:
+                send_photo_file(chat_id, result, "✅ استیکر به عکس تبدیل شد!")
+            else:
+                send_message(chat_id, "❌ خطا در تبدیل فایل!")
+        
+        elif mode == "png_to_sticker":
+            result = convert_png_to_sticker(response.content)
+            if result:
+                send_document_file(chat_id, result, "✅ PNG به استیکر تبدیل شد!")
+            else:
+                send_message(chat_id, "❌ خطا در تبدیل فایل!")
+        
+        elif mode == "file_to_video":
+            result = convert_file_to_video(response.content, file_path)
+            if result:
+                send_video_file(chat_id, result, "✅ فایل به ویدیو تبدیل شد!")
+            else:
+                send_message(chat_id, "❌ خطا در تبدیل فایل!")
+        
+        elif mode == "video_message_to_video":
+            result = convert_video_message_to_video(response.content)
+            if result:
+                send_video_file(chat_id, result, "✅ ویدیو مسیج به ویدیو عادی تبدیل شد!")
+            else:
+                send_message(chat_id, "❌ خطا در تبدیل فایل!")
+        
+        # ریست کردن حالت
+        user_data[chat_id]["mode"] = None
+        user_data[chat_id]["step"] = None
+        save_user_data()
+        
+    except Exception as e:
+        logger.error(f"Error in handle_premium_file: {e}")
+        send_message(chat_id, "❌ خطا در پردازش فایل!")
+
+def convert_video_sticker_to_gif(file_content, original_path):
+    """تبدیل استیکر ویدیویی به GIF"""
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as input_file:
+            input_file.write(file_content)
+            input_file.flush()
+            
+            output_path = input_file.name.replace(".webm", ".gif")
+            
+            # تبدیل با ffmpeg
+            cmd = [
+                "ffmpeg", "-i", input_file.name,
+                "-vf", "fps=10,scale=320:320:flags=lanczos",
+                "-c:v", "gif", "-f", "gif",
+                output_path
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0 and os.path.exists(output_path):
+                with open(output_path, "rb") as f:
+                    gif_content = f.read()
+                
+                # حذف فایل‌های موقت
+                os.unlink(input_file.name)
+                os.unlink(output_path)
+                
+                return gif_content
+            else:
+                logger.error(f"FFmpeg error: {result.stderr}")
+                return None
+                
+    except Exception as e:
+        logger.error(f"Error converting video sticker to gif: {e}")
+        return None
+
+def convert_gif_to_video_sticker(file_content, original_path):
+    """تبدیل GIF به استیکر ویدیویی"""
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".gif", delete=False) as input_file:
+            input_file.write(file_content)
+            input_file.flush()
+            
+            output_path = input_file.name.replace(".gif", ".webm")
+            
+            # تبدیل با ffmpeg
+            cmd = [
+                "ffmpeg", "-i", input_file.name,
+                "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p",
+                "-vf", "scale=512:512:flags=lanczos",
+                "-an", "-f", "webm", "-t", "3",
+                output_path
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0 and os.path.exists(output_path):
+                with open(output_path, "rb") as f:
+                    webm_content = f.read()
+                
+                # حذف فایل‌های موقت
+                os.unlink(input_file.name)
+                os.unlink(output_path)
+                
+                return webm_content
+            else:
+                logger.error(f"FFmpeg error: {result.stderr}")
+                return None
+                
+    except Exception as e:
+        logger.error(f"Error converting gif to video sticker: {e}")
+        return None
+
+def convert_photo_to_sticker(file_content):
+    """تبدیل عکس به استیکر"""
+    try:
+        # بارگذاری تصویر
+        img = Image.open(BytesIO(file_content)).convert("RGBA")
+        
+        # تغییر اندازه به 512x512
+        img = img.resize((512, 512), Image.LANCZOS)
+        
+        # ذخیره در فرمت WebP
+        output_buffer = BytesIO()
+        img.save(output_buffer, format="WebP", quality=90)
+        output_buffer.seek(0)
+        
+        return output_buffer.getvalue()
+        
+    except Exception as e:
+        logger.error(f"Error converting photo to sticker: {e}")
+        return None
+
+def convert_sticker_to_photo(file_content):
+    """تبدیل استیکر به عکس"""
+    try:
+        # بارگذاری تصویر
+        img = Image.open(BytesIO(file_content)).convert("RGBA")
+        
+        # ایجاد پس‌زمینه سفید
+        background = Image.new("RGB", img.size, (255, 255, 255))
+        background.paste(img, mask=img.split()[-1])  # استفاده از کانال آلفا
+        
+        # ذخیره در فرمت JPEG
+        output_buffer = BytesIO()
+        background.save(output_buffer, format="JPEG", quality=95)
+        output_buffer.seek(0)
+        
+        return output_buffer.getvalue()
+        
+    except Exception as e:
+        logger.error(f"Error converting sticker to photo: {e}")
+        return None
+
+def convert_png_to_sticker(file_content):
+    """تبدیل PNG به استیکر"""
+    try:
+        # بارگذاری تصویر
+        img = Image.open(BytesIO(file_content)).convert("RGBA")
+        
+        # تغییر اندازه به 512x512
+        img = img.resize((512, 512), Image.LANCZOS)
+        
+        # ذخیره در فرمت WebP
+        output_buffer = BytesIO()
+        img.save(output_buffer, format="WebP", quality=90)
+        output_buffer.seek(0)
+        
+        return output_buffer.getvalue()
+        
+    except Exception as e:
+        logger.error(f"Error converting PNG to sticker: {e}")
+        return None
+
+def convert_file_to_video(file_content, original_path):
+    """تبدیل فایل به ویدیو قابل پخش"""
+    try:
+        # تشخیص پسوند فایل
+        extension = os.path.splitext(original_path)[1].lower()
+        if not extension:
+            extension = ".mp4"
+        
+        with tempfile.NamedTemporaryFile(suffix=extension, delete=False) as input_file:
+            input_file.write(file_content)
+            input_file.flush()
+            
+            output_path = input_file.name.replace(extension, ".mp4")
+            
+            # تبدیل با ffmpeg
+            cmd = [
+                "ffmpeg", "-i", input_file.name,
+                "-c:v", "libx264", "-c:a", "aac",
+                "-preset", "medium", "-crf", "23",
+                "-movflags", "+faststart",
+                output_path
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0 and os.path.exists(output_path):
+                with open(output_path, "rb") as f:
+                    video_content = f.read()
+                
+                # حذف فایل‌های موقت
+                os.unlink(input_file.name)
+                os.unlink(output_path)
+                
+                return video_content
+            else:
+                logger.error(f"FFmpeg error: {result.stderr}")
+                return None
+                
+    except Exception as e:
+        logger.error(f"Error converting file to video: {e}")
+        return None
+
+def convert_video_message_to_video(file_content):
+    """تبدیل ویدیو مسیج به ویدیو عادی"""
+    try:
+        with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as input_file:
+            input_file.write(file_content)
+            input_file.flush()
+            
+            output_path = input_file.name.replace(".mp4", "_converted.mp4")
+            
+            # تبدیل با ffmpeg (حذف محدودیت‌های ویدیو مسیج)
+            cmd = [
+                "ffmpeg", "-i", input_file.name,
+                "-c:v", "libx264", "-c:a", "aac",
+                "-preset", "medium", "-crf", "23",
+                "-vf", "scale=-2:480",  # کاهش اندازه برای سرعت بیشتر
+                "-movflags", "+faststart",
+                output_path
+            ]
+            
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            
+            if result.returncode == 0 and os.path.exists(output_path):
+                with open(output_path, "rb") as f:
+                    video_content = f.read()
+                
+                # حذف فایل‌های موقت
+                os.unlink(input_file.name)
+                os.unlink(output_path)
+                
+                return video_content
+            else:
+                logger.error(f"FFmpeg error: {result.stderr}")
+                return None
+                
+    except Exception as e:
+        logger.error(f"Error converting video message to video: {e}")
+        return None
+
+def send_photo_file(chat_id, file_content, caption):
+    """ارسال فایل عکس"""
+    try:
+        files = {"photo": ("photo.jpg", BytesIO(file_content), "image/jpeg")}
+        data = {"chat_id": chat_id, "caption": caption}
+        response = requests.post(API + "sendPhoto", files=files, data=data)
+        return response.json().get("ok", False)
+    except Exception as e:
+        logger.error(f"Error sending photo: {e}")
+        return False
+
+def send_video_file(chat_id, file_content, caption):
+    """ارسال فایل ویدیو"""
+    try:
+        files = {"video": ("video.mp4", BytesIO(file_content), "video/mp4")}
+        data = {"chat_id": chat_id, "caption": caption}
+        response = requests.post(API + "sendVideo", files=files, data=data)
+        return response.json().get("ok", False)
+    except Exception as e:
+        logger.error(f"Error sending video: {e}")
+        return False
+
+def send_animation_file(chat_id, file_content, caption):
+    """ارسال فایل انیمیشن (GIF)"""
+    try:
+        files = {"animation": ("animation.gif", BytesIO(file_content), "image/gif")}
+        data = {"chat_id": chat_id, "caption": caption}
+        response = requests.post(API + "sendAnimation", files=files, data=data)
+        return response.json().get("ok", False)
+    except Exception as e:
+        logger.error(f"Error sending animation: {e}")
+        return False
+
+def send_document_file(chat_id, file_content, caption):
+    """ارسال فایل به عنوان Document"""
+    try:
+        files = {"document": ("sticker.webp", BytesIO(file_content), "image/webp")}
+        data = {"chat_id": chat_id, "caption": caption}
+        response = requests.post(API + "sendDocument", files=files, data=data)
+        return response.json().get("ok", False)
+    except Exception as e:
+        logger.error(f"Error sending document: {e}")
+        return False
 
 def process_user_state(chat_id, text):
     """پردازش حالت کاربر - این تابع جداگانه برای پردازش حالت‌ها"""
@@ -705,7 +1065,6 @@ def process_user_state(chat_id, text):
             if text == "1":  # ساخت پک جدید
                 send_message(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
                 user_data[chat_id]["step"] = "pack_name"
-                save_user_data()  # ذخیره فوری
             elif text == "2":  # اضافه کردن به پک قبلی
                 created_packs = user_data[chat_id].get("created_packs", [])
                 if created_packs:
@@ -715,11 +1074,9 @@ def process_user_state(chat_id, text):
                         pack_list += f"{i}. {pack['title']}\n"
                     send_message(chat_id, f"📂 پک‌های موجود شما:\n{pack_list}\nلطفاً شماره پک مورد نظر را انتخاب کنید:")
                     user_data[chat_id]["step"] = "select_pack"
-                    save_user_data()  # ذخیره فوری
                 else:
                     send_message(chat_id, "❌ هنوز پک استیکری نداری. اول باید پک جدید بسازی.")
                     user_data[chat_id]["step"] = "pack_name"
-                    save_user_data()  # ذخیره فوری
                     send_message(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
             return True
 
@@ -732,7 +1089,6 @@ def process_user_state(chat_id, text):
                     user_data[chat_id]["pack_name"] = selected_pack["name"]
                     send_message_with_back_button(chat_id, f"✅ پک '{selected_pack['title']}' انتخاب شد.\n📷 یک عکس برای بکگراند استیکرت بفرست:")
                     user_data[chat_id]["step"] = "background"
-                    save_user_data()  # ذخیره فوری
                 else:
                     send_message(chat_id, "❌ شماره پک نامعتبر است. لطفاً دوباره انتخاب کنید:")
             except ValueError:
@@ -760,12 +1116,10 @@ def process_user_state(chat_id, text):
             # اگر کاربر از قالب استفاده کرده، مستقیماً به ساخت استیکر برو
             if user_data[chat_id].get("background_style"):
                 user_data[chat_id]["step"] = "text"
-                save_user_data()  # ذخیره فوری
                 send_message_with_back_button(chat_id, "✍️ حالا متن استیکرت رو بفرست:")
             else:
                 send_message_with_back_button(chat_id, "📷 یک عکس برای بکگراند استیکرت بفرست:")
                 user_data[chat_id]["step"] = "background"
-                save_user_data()  # ذخیره فوری
             return True
 
         if step == "background":
@@ -813,7 +1167,6 @@ def process_user_state(chat_id, text):
                 
                 # مهم: pack_name و background را حفظ کن تا استیکر بعدی در همان پک قرار بگیرد
                 # step همچنان "text" باقی می‌ماند تا کاربر بتواند استیکر بعدی بسازد
-                save_user_data()  # ذخیره فوری
             return True
     
     elif state.get("mode") == "advanced_design":
@@ -846,7 +1199,6 @@ def process_user_state(chat_id, text):
                 # اگر pack_name داریم، مستقیماً به ساخت استیکر برو
                 user_data[chat_id]["step"] = "text"
                 send_message_with_back_button(chat_id, "✍️ حالا متن استیکرت رو بفرست:")
-            save_user_data()  # ذخیره فوری
             return True
     
     return False
@@ -882,7 +1234,7 @@ def show_subscription_menu(chat_id):
             "reply_markup": keyboard
         })
     else:
-        # نمایش طرح‌های اشتراک با قیمت‌های جدید
+        # نمایش طرح‌های اشتراک
         message = f"""💎 اشتراک نامحدود
 
 🎯 مزایای اشتراک:
@@ -900,9 +1252,9 @@ def show_subscription_menu(chat_id):
         
         keyboard = {
             "keyboard": [
-                ["📦 یک ماهه - ۱۰۰ هزار تومان"],
-                ["📦 سه ماهه - ۲۵۰ هزار تومان"], 
-                ["📦 یک ساله - ۳۵۰ هزار تومان"],
+                ["📦 یک ماهه - ۱۰۰ تومان"],
+                ["📦 سه ماهه - ۲۵۰ تومان"], 
+                ["📦 یک ساله - ۳۵۰ تومان"],
                 ["🔙 بازگشت"]
             ],
             "resize_keyboard": True
@@ -921,12 +1273,12 @@ def show_payment_info(chat_id, plan):
     if chat_id not in user_data:
         user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
     user_data[chat_id]["selected_plan"] = plan
-    save_user_data()  # ذخیره فوری
+    save_user_data()
     
     message = f"""💳 اطلاعات پرداخت
 
 📦 طرح: {plan_info['title']}
-💰 مبلغ: {plan_info['price']:,} تومان
+💰 مبلغ: {plan_info['price']} تومان
 ⏰ مدت: {plan_info['days']} روز
 
 💳 مشخصات کارت:
@@ -934,11 +1286,13 @@ def show_payment_info(chat_id, plan):
 👤 نام صاحب کارت: {CARD_NAME}
 
 📝 مراحل پرداخت:
-1️⃣ مبلغ {plan_info['price']:,} تومان را به کارت بالا واریز کنید
+1️⃣ مبلغ {plan_info['price']} تومان را به کارت بالا واریز کنید
 2️⃣ عکس رسید واریز را ارسال کنید
 3️⃣ منتظر تایید پشتیبانی باشید
 
-⚠️ توجه: رسید را حتماً ارسال کنید تا اشتراک شما فعال شود."""
+⚠️ توجه: رسید را حتماً ارسال کنید تا اشتراک شما فعال شود.
+
+📞 پشتیبانی: {SUPPORT_ID} - اگر مشکلی پیش آمد، حتماً پیوی بزنید!"""
     
     keyboard = {
         "keyboard": [
@@ -990,7 +1344,7 @@ def handle_admin_command(chat_id, text):
                 "days": days,
                 "admin_id": chat_id
             }
-            save_subscription_data()  # ذخیره فوری
+            save_subscription_data()
             
             expires_date = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(expires_at))
             send_message(chat_id, f"✅ اشتراک {days} روزه برای کاربر {user_id} فعال شد!\n📅 انقضا: {expires_date}")
@@ -1009,7 +1363,7 @@ def handle_admin_command(chat_id, text):
             user_id = int(parts[2])
             if user_id in subscription_data:
                 del subscription_data[user_id]
-                save_subscription_data()  # ذخیره فوری
+                save_subscription_data()
                 send_message(chat_id, f"✅ اشتراک کاربر {user_id} قطع شد!")
                 try:
                     send_message(user_id, "❌ اشتراک شما توسط ادمین قطع شد!")
@@ -1074,12 +1428,11 @@ def handle_admin_command(chat_id, text):
                 timestamp = payment["timestamp"]
                 date = time.strftime("%Y-%m-%d %H:%M", time.localtime(timestamp))
                 
-                plan_info = SUBSCRIPTION_PLANS[plan]
                 message += f"👤 {first_name} (@{username})\n"
                 message += f"🆔 {user_id}\n"
-                message += f"📦 {plan_info['title']} - {plan_info['price']:,} تومان\n"
+                message += f"📦 {SUBSCRIPTION_PLANS[plan]['title']} - {SUBSCRIPTION_PLANS[plan]['price']} تومان\n"
                 message += f"⏰ {date}\n"
-                message += f"✅ /admin add {user_id} {plan_info['days']}\n\n"
+                message += f"✅ /admin add {user_id} {SUBSCRIPTION_PLANS[plan]['days']}\n\n"
             
             send_message(chat_id, message)
     
@@ -1117,7 +1470,7 @@ def is_subscribed(chat_id):
     if current_time >= subscription.get("expires_at", 0):
         # اشتراک منقضی شده
         del subscription_data[chat_id]
-        save_subscription_data()  # ذخیره فوری
+        save_subscription_data()
         return False
     
     return True
@@ -2301,7 +2654,6 @@ def apply_template(chat_id, template_name):
         else:
             user_data[chat_id]["step"] = "text"
             send_message_with_back_button(chat_id, f"✅ قالب '{template_name}' اعمال شد!\n\n🎨 رنگ: {color_name}\n🖼️ پس‌زمینه: {template['bg']}\n📝 فونت: {template['font']}\n📏 اندازه: {template['size']}\n\nحالا متن خود را بفرستید:")
-        save_user_data()  # ذخیره فوری
     else:
         send_message_with_back_button(chat_id, "❌ قالب پیدا نشد!")
 
