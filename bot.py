@@ -94,6 +94,10 @@ def tr(chat_id, key, fallback_text):
     lang = get_lang(chat_id)
     return LOCALES.get(lang, {}).get(key, fallback_text)
 
+def tr_lang(lang, key, fallback_text):
+    """ترجمه بر اساس زبان مشخص"""
+    return LOCALES.get(lang, {}).get(key, fallback_text)
+
 def load_user_data():
     """بارگذاری داده‌های کاربر از فایل"""
     global user_data
@@ -119,6 +123,7 @@ def save_user_data():
 
 # بارگذاری داده‌ها در شروع
 load_user_data()
+load_locales()  # بارگذاری فایل‌های ترجمه
 
 app = Flask(__name__)
 
@@ -355,6 +360,20 @@ def webhook():
             else:
                 user_data[chat_id]["step"] = "text"
                 send_message_with_back_button(chat_id, f"✅ اندازه {text.split(' ')[1]} انتخاب شد!\n\n✍️ حالا متن استیکرت رو بفرست:")
+            return "ok"
+
+        # پردازش دکمه‌های افکت‌های ویژه
+        if text in ["✨ سایه", "✨ نور", "✨ براق", "✨ مات", "✨ شفاف", "✨ انعکاس", "✨ چرخش", "✨ موج", "✨ پرش"]:
+            if chat_id not in user_data:
+                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+            user_data[chat_id]["text_effect"] = text
+            user_data[chat_id]["mode"] = "free"
+            if not user_data[chat_id].get("pack_name"):
+                user_data[chat_id]["step"] = "pack_name"
+                send_message(chat_id, f"✅ افکت {text} انتخاب شد!\n\n📝 حالا یک نام برای پک استیکر خود انتخاب کن:")
+            else:
+                user_data[chat_id]["step"] = "text"
+                send_message_with_back_button(chat_id, f"✅ افکت {text} انتخاب شد!\n\n✍️ حالا متن استیکرت رو بفرست:")
             return "ok"
 
         # پردازش دکمه‌های قالب‌های آماده
