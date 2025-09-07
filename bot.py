@@ -1023,7 +1023,7 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
         
         # 📌 تنظیمات فونت و باکس متن (بهینه‌سازی برای متن فارسی)
         # تنظیم اندازه فونت از تنظیمات کاربر
-        if user_settings and "text_size" in user_settings:
+        if user_settings and "text_size" in user_settings and user_settings["text_size"]:
             size_text = user_settings["text_size"]
             if "خیلی کوچک" in size_text:
                 initial_font_size = 20 if language == "persian_arabic" else 150
