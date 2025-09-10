@@ -800,51 +800,65 @@ def handle_premium_file(chat_id, file_type, file_data):
         if mode == "video_sticker_to_gif":
             result = convert_video_sticker_to_gif(response.content, file_path)
             if result:
-                send_animation_file(chat_id, result, "✅ استیکر ویدیویی به GIF تبدیل شد!")
+                success = send_animation_file(chat_id, result, "✅ استیکر ویدیویی به GIF تبدیل شد!")
+                if not success:
+                    send_message(chat_id, "❌ خطا در ارسال فایل تبدیل شده!")
             else:
-                send_message(chat_id, "❌ خطا در تبدیل فایل!")
+                send_message(chat_id, "❌ خطا در تبدیل فایل! لطفاً مطمئن شوید که فایل معتبر است و FFmpeg نصب شده باشد.")
         
         elif mode == "gif_to_video_sticker":
             result = convert_gif_to_video_sticker(response.content, file_path)
             if result:
-                send_video_file(chat_id, result, "✅ GIF به استیکر ویدیویی تبدیل شد!")
+                success = send_video_file(chat_id, result, "✅ GIF به استیکر ویدیویی تبدیل شد!")
+                if not success:
+                    send_message(chat_id, "❌ خطا در ارسال فایل تبدیل شده!")
             else:
-                send_message(chat_id, "❌ خطا در تبدیل فایل!")
+                send_message(chat_id, "❌ خطا در تبدیل فایل! لطفاً مطمئن شوید که فایل GIF معتبر است و FFmpeg نصب شده باشد.")
         
         elif mode == "photo_to_sticker":
             result = convert_photo_to_sticker(response.content)
             if result:
-                send_document_file(chat_id, result, "✅ عکس به استیکر تبدیل شد!")
+                success = send_document_file(chat_id, result, "✅ عکس به استیکر تبدیل شد!")
+                if not success:
+                    send_message(chat_id, "❌ خطا در ارسال فایل تبدیل شده!")
             else:
-                send_message(chat_id, "❌ خطا در تبدیل فایل!")
+                send_message(chat_id, "❌ خطا در تبدیل فایل! لطفاً مطمئن شوید که فایل عکس معتبر است.")
         
         elif mode == "sticker_to_photo":
             result = convert_sticker_to_photo(response.content)
             if result:
-                send_photo_file(chat_id, result, "✅ استیکر به عکس تبدیل شد!")
+                success = send_photo_file(chat_id, result, "✅ استیکر به عکس تبدیل شد!")
+                if not success:
+                    send_message(chat_id, "❌ خطا در ارسال فایل تبدیل شده!")
             else:
-                send_message(chat_id, "❌ خطا در تبدیل فایل!")
+                send_message(chat_id, "❌ خطا در تبدیل فایل! لطفاً مطمئن شوید که استیکر معتبر است.")
         
         elif mode == "png_to_sticker":
             result = convert_png_to_sticker(response.content)
             if result:
-                send_document_file(chat_id, result, "✅ PNG به استیکر تبدیل شد!")
+                success = send_document_file(chat_id, result, "✅ PNG به استیکر تبدیل شد!")
+                if not success:
+                    send_message(chat_id, "❌ خطا در ارسال فایل تبدیل شده!")
             else:
-                send_message(chat_id, "❌ خطا در تبدیل فایل!")
+                send_message(chat_id, "❌ خطا در تبدیل فایل! لطفاً مطمئن شوید که فایل PNG معتبر است.")
         
         elif mode == "file_to_video":
             result = convert_file_to_video(response.content, file_path)
             if result:
-                send_video_file(chat_id, result, "✅ فایل به ویدیو تبدیل شد!")
+                success = send_video_file(chat_id, result, "✅ فایل به ویدیو تبدیل شد!")
+                if not success:
+                    send_message(chat_id, "❌ خطا در ارسال فایل تبدیل شده!")
             else:
-                send_message(chat_id, "❌ خطا در تبدیل فایل!")
+                send_message(chat_id, "❌ خطا در تبدیل فایل! لطفاً مطمئن شوید که فایل ویدیو معتبر است و FFmpeg نصب شده باشد.")
         
         elif mode == "video_message_to_video":
             result = convert_video_message_to_video(response.content)
             if result:
-                send_video_file(chat_id, result, "✅ ویدیو مسیج به ویدیو عادی تبدیل شد!")
+                success = send_video_file(chat_id, result, "✅ ویدیو مسیج به ویدیو عادی تبدیل شد!")
+                if not success:
+                    send_message(chat_id, "❌ خطا در ارسال فایل تبدیل شده!")
             else:
-                send_message(chat_id, "❌ خطا در تبدیل فایل!")
+                send_message(chat_id, "❌ خطا در تبدیل فایل! لطفاً مطمئن شوید که ویدیو مسیج معتبر است و FFmpeg نصب شده باشد.")
         
         # ریست کردن حالت
         user_data[chat_id]["mode"] = None
@@ -858,6 +872,13 @@ def handle_premium_file(chat_id, file_type, file_data):
 def convert_video_sticker_to_gif(file_content, original_path):
     """تبدیل استیکر ویدیویی به GIF"""
     try:
+        # بررسی وجود ffmpeg
+        try:
+            subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True, timeout=5)
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+            logger.error("FFmpeg not found or not working")
+            return None
+        
         with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as input_file:
             input_file.write(file_content)
             input_file.flush()
@@ -866,27 +887,40 @@ def convert_video_sticker_to_gif(file_content, original_path):
             
             # تبدیل با ffmpeg
             cmd = [
-                "ffmpeg", "-i", input_file.name,
+                "ffmpeg", "-y", "-i", input_file.name,
                 "-vf", "fps=10,scale=320:320:flags=lanczos",
                 "-c:v", "gif", "-f", "gif",
                 output_path
             ]
             
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             
             if result.returncode == 0 and os.path.exists(output_path):
                 with open(output_path, "rb") as f:
                     gif_content = f.read()
                 
                 # حذف فایل‌های موقت
-                os.unlink(input_file.name)
-                os.unlink(output_path)
+                try:
+                    os.unlink(input_file.name)
+                    os.unlink(output_path)
+                except:
+                    pass
                 
                 return gif_content
             else:
                 logger.error(f"FFmpeg error: {result.stderr}")
+                # حذف فایل‌های موقت در صورت خطا
+                try:
+                    os.unlink(input_file.name)
+                    if os.path.exists(output_path):
+                        os.unlink(output_path)
+                except:
+                    pass
                 return None
                 
+    except subprocess.TimeoutExpired:
+        logger.error("FFmpeg timeout")
+        return None
     except Exception as e:
         logger.error(f"Error converting video sticker to gif: {e}")
         return None
@@ -894,6 +928,13 @@ def convert_video_sticker_to_gif(file_content, original_path):
 def convert_gif_to_video_sticker(file_content, original_path):
     """تبدیل GIF به استیکر ویدیویی"""
     try:
+        # بررسی وجود ffmpeg
+        try:
+            subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True, timeout=5)
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+            logger.error("FFmpeg not found or not working")
+            return None
+        
         with tempfile.NamedTemporaryFile(suffix=".gif", delete=False) as input_file:
             input_file.write(file_content)
             input_file.flush()
@@ -902,28 +943,41 @@ def convert_gif_to_video_sticker(file_content, original_path):
             
             # تبدیل با ffmpeg
             cmd = [
-                "ffmpeg", "-i", input_file.name,
+                "ffmpeg", "-y", "-i", input_file.name,
                 "-c:v", "libvpx-vp9", "-pix_fmt", "yuva420p",
                 "-vf", "scale=512:512:flags=lanczos",
                 "-an", "-f", "webm", "-t", "3",
                 output_path
             ]
             
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=30)
             
             if result.returncode == 0 and os.path.exists(output_path):
                 with open(output_path, "rb") as f:
                     webm_content = f.read()
                 
                 # حذف فایل‌های موقت
-                os.unlink(input_file.name)
-                os.unlink(output_path)
+                try:
+                    os.unlink(input_file.name)
+                    os.unlink(output_path)
+                except:
+                    pass
                 
                 return webm_content
             else:
                 logger.error(f"FFmpeg error: {result.stderr}")
+                # حذف فایل‌های موقت در صورت خطا
+                try:
+                    os.unlink(input_file.name)
+                    if os.path.exists(output_path):
+                        os.unlink(output_path)
+                except:
+                    pass
                 return None
                 
+    except subprocess.TimeoutExpired:
+        logger.error("FFmpeg timeout")
+        return None
     except Exception as e:
         logger.error(f"Error converting gif to video sticker: {e}")
         return None
@@ -992,6 +1046,13 @@ def convert_png_to_sticker(file_content):
 def convert_file_to_video(file_content, original_path):
     """تبدیل فایل به ویدیو قابل پخش"""
     try:
+        # بررسی وجود ffmpeg
+        try:
+            subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True, timeout=5)
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+            logger.error("FFmpeg not found or not working")
+            return None
+        
         # تشخیص پسوند فایل
         extension = os.path.splitext(original_path)[1].lower()
         if not extension:
@@ -1005,28 +1066,41 @@ def convert_file_to_video(file_content, original_path):
             
             # تبدیل با ffmpeg
             cmd = [
-                "ffmpeg", "-i", input_file.name,
+                "ffmpeg", "-y", "-i", input_file.name,
                 "-c:v", "libx264", "-c:a", "aac",
                 "-preset", "medium", "-crf", "23",
                 "-movflags", "+faststart",
                 output_path
             ]
             
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
             
             if result.returncode == 0 and os.path.exists(output_path):
                 with open(output_path, "rb") as f:
                     video_content = f.read()
                 
                 # حذف فایل‌های موقت
-                os.unlink(input_file.name)
-                os.unlink(output_path)
+                try:
+                    os.unlink(input_file.name)
+                    os.unlink(output_path)
+                except:
+                    pass
                 
                 return video_content
             else:
                 logger.error(f"FFmpeg error: {result.stderr}")
+                # حذف فایل‌های موقت در صورت خطا
+                try:
+                    os.unlink(input_file.name)
+                    if os.path.exists(output_path):
+                        os.unlink(output_path)
+                except:
+                    pass
                 return None
                 
+    except subprocess.TimeoutExpired:
+        logger.error("FFmpeg timeout")
+        return None
     except Exception as e:
         logger.error(f"Error converting file to video: {e}")
         return None
@@ -1034,6 +1108,13 @@ def convert_file_to_video(file_content, original_path):
 def convert_video_message_to_video(file_content):
     """تبدیل ویدیو مسیج به ویدیو عادی"""
     try:
+        # بررسی وجود ffmpeg
+        try:
+            subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True, timeout=5)
+        except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+            logger.error("FFmpeg not found or not working")
+            return None
+        
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as input_file:
             input_file.write(file_content)
             input_file.flush()
@@ -1042,7 +1123,7 @@ def convert_video_message_to_video(file_content):
             
             # تبدیل با ffmpeg (حذف محدودیت‌های ویدیو مسیج)
             cmd = [
-                "ffmpeg", "-i", input_file.name,
+                "ffmpeg", "-y", "-i", input_file.name,
                 "-c:v", "libx264", "-c:a", "aac",
                 "-preset", "medium", "-crf", "23",
                 "-vf", "scale=-2:480",  # کاهش اندازه برای سرعت بیشتر
@@ -1050,21 +1131,34 @@ def convert_video_message_to_video(file_content):
                 output_path
             ]
             
-            result = subprocess.run(cmd, capture_output=True, text=True)
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=60)
             
             if result.returncode == 0 and os.path.exists(output_path):
                 with open(output_path, "rb") as f:
                     video_content = f.read()
                 
                 # حذف فایل‌های موقت
-                os.unlink(input_file.name)
-                os.unlink(output_path)
+                try:
+                    os.unlink(input_file.name)
+                    os.unlink(output_path)
+                except:
+                    pass
                 
                 return video_content
             else:
                 logger.error(f"FFmpeg error: {result.stderr}")
+                # حذف فایل‌های موقت در صورت خطا
+                try:
+                    os.unlink(input_file.name)
+                    if os.path.exists(output_path):
+                        os.unlink(output_path)
+                except:
+                    pass
                 return None
                 
+    except subprocess.TimeoutExpired:
+        logger.error("FFmpeg timeout")
+        return None
     except Exception as e:
         logger.error(f"Error converting video message to video: {e}")
         return None
@@ -1549,6 +1643,11 @@ def handle_admin_command(chat_id, text):
             message += f"📈 رضایت: {satisfaction_rate:.1f}%"
             
             send_message(chat_id, message)
+    
+    elif command == "system":
+        # بررسی وضعیت سیستم
+        system_status = check_system_status()
+        send_message(chat_id, system_status)
     
     elif command == "broadcast" and len(parts) >= 3:
         broadcast_message = " ".join(parts[2:])
@@ -2860,6 +2959,98 @@ def save_negative_feedback(chat_id, reason):
     }
     save_feedback_data()
     logger.info(f"Negative feedback saved for user {chat_id}: {reason}")
+
+def check_system_status():
+    """بررسی وضعیت سیستم و ابزارهای مورد نیاز"""
+    status_message = "🔧 وضعیت سیستم:\n\n"
+    
+    # بررسی FFmpeg
+    ffmpeg_status = "❌ نصب نشده"
+    try:
+        result = subprocess.run(["ffmpeg", "-version"], capture_output=True, text=True, timeout=5)
+        if result.returncode == 0:
+            # استخراج نسخه FFmpeg
+            version_line = result.stdout.split('\n')[0]
+            ffmpeg_status = f"✅ نصب شده - {version_line}"
+        else:
+            ffmpeg_status = "❌ خطا در اجرا"
+    except subprocess.TimeoutExpired:
+        ffmpeg_status = "⏰ timeout"
+    except FileNotFoundError:
+        ffmpeg_status = "❌ نصب نشده"
+    except Exception as e:
+        ffmpeg_status = f"❌ خطا: {str(e)[:50]}"
+    
+    status_message += f"🎬 FFmpeg: {ffmpeg_status}\n\n"
+    
+    # بررسی PIL/Pillow
+    pil_status = "✅ نصب شده"
+    try:
+        from PIL import Image
+        pil_version = Image.__version__ if hasattr(Image, '__version__') else "نامشخص"
+        pil_status = f"✅ نصب شده - v{pil_version}"
+    except ImportError:
+        pil_status = "❌ نصب نشده"
+    except Exception as e:
+        pil_status = f"❌ خطا: {str(e)[:50]}"
+    
+    status_message += f"🖼️ PIL/Pillow: {pil_status}\n\n"
+    
+    # بررسی فونت‌های فارسی
+    persian_fonts = [
+        "fonts/Vazirmatn-Regular.ttf",
+        "fonts/IRANSans.ttf",
+        "fonts/Vazir.ttf"
+    ]
+    
+    found_fonts = []
+    for font_path in persian_fonts:
+        try:
+            full_path = os.path.join(BASE_DIR, font_path)
+            if os.path.exists(full_path):
+                found_fonts.append(font_path)
+        except:
+            pass
+    
+    if found_fonts:
+        status_message += f"📝 فونت‌های فارسی: ✅ {len(found_fonts)} فونت موجود\n"
+        for font in found_fonts[:3]:  # نمایش حداکثر 3 فونت
+            status_message += f"   • {font}\n"
+    else:
+        status_message += "📝 فونت‌های فارسی: ❌ هیچ فونت فارسی پیدا نشد\n"
+    
+    status_message += "\n"
+    
+    # بررسی فایل‌های داده
+    data_files = [
+        ("user_data.json", DATA_FILE),
+        ("subscriptions.json", SUBSCRIPTION_FILE),
+        ("pending_payments.json", PAYMENTS_FILE),
+        ("feedback_data.json", FEEDBACK_FILE)
+    ]
+    
+    status_message += "💾 فایل‌های داده:\n"
+    for name, path in data_files:
+        if os.path.exists(path):
+            size = os.path.getsize(path)
+            status_message += f"   • {name}: ✅ ({size} bytes)\n"
+        else:
+            status_message += f"   • {name}: ❌ وجود ندارد\n"
+    
+    status_message += "\n"
+    
+    # بررسی متغیرهای محیطی
+    env_vars = [
+        ("BOT_TOKEN", "✅ تنظیم شده" if BOT_TOKEN else "❌ تنظیم نشده"),
+        ("APP_URL", "✅ تنظیم شده" if APP_URL else "❌ تنظیم نشده"),
+        ("BOT_USERNAME", "✅ تنظیم شده" if BOT_USERNAME else "❌ تنظیم نشده")
+    ]
+    
+    status_message += "🔧 متغیرهای محیطی:\n"
+    for var_name, status in env_vars:
+        status_message += f"   • {var_name}: {status}\n"
+    
+    return status_message
 
 if __name__ == "__main__":
     load_locales()
