@@ -40,12 +40,14 @@ CARD_NAME = os.environ.get("CARD_NAME", "نام شما")  # نام صاحب کا
 user_data = {}
 subscription_data = {}  # داده‌های اشتراک
 pending_payments = {}   # پرداخت‌های در انتظار
+feedback_data = {}      # بازخوردهای کاربران
 
 # فایل ذخیره‌سازی داده‌ها
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 DATA_FILE = os.path.join(BASE_DIR, "user_data.json")
 SUBSCRIPTION_FILE = os.path.join(BASE_DIR, "subscriptions.json")
 PAYMENTS_FILE = os.path.join(BASE_DIR, "pending_payments.json")
+FEEDBACK_FILE = os.path.join(BASE_DIR, "feedback_data.json")
 
 # --- Simple i18n ---
 LOCALES = {
@@ -188,10 +190,34 @@ def save_pending_payments():
     except Exception as e:
         logger.error(f"Error saving pending payments: {e}")
 
+def load_feedback_data():
+    """بارگذاری بازخوردهای کاربران از فایل"""
+    global feedback_data
+    try:
+        if os.path.exists(FEEDBACK_FILE):
+            with open(FEEDBACK_FILE, 'r', encoding='utf-8') as f:
+                feedback_data = json.load(f)
+                logger.info(f"Loaded feedback data: {len(feedback_data)} feedbacks")
+        else:
+            feedback_data = {}
+    except Exception as e:
+        logger.error(f"Error loading feedback data: {e}")
+        feedback_data = {}
+
+def save_feedback_data():
+    """ذخیره بازخوردهای کاربران در فایل"""
+    try:
+        with open(FEEDBACK_FILE, 'w', encoding='utf-8') as f:
+            json.dump(feedback_data, f, ensure_ascii=False, indent=2)
+        logger.info(f"Saved feedback data: {len(feedback_data)} feedbacks")
+    except Exception as e:
+        logger.error(f"Error saving feedback data: {e}")
+
 # بارگذاری داده‌ها در شروع
 load_user_data()
 load_subscription_data()
 load_pending_payments()
+load_feedback_data()
 load_locales()  # بارگذاری فایل‌های ترجمه
 
 app = Flask(__name__)
@@ -322,6 +348,39 @@ def webhook():
             user_data[chat_id] = user_data.get(chat_id, {})
             user_data[chat_id]["step"] = "waiting_receipt"
             send_message_with_back_button(chat_id, "📸 لطفاً عکس رسید پرداخت را ارسال کنید:")
+            return "ok"
+
+        # پردازش بازخورد
+        if text in ["👍 عالی بود!", "👎 خوب نبود"]:
+            handle_feedback(chat_id, text)
+            return "ok"
+        
+        # دکمه‌های اضافی بعد از بازخورد
+        if text == "✍️ متن بعدی":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+            
+            # بررسی محدودیت استیکر
+            remaining, next_reset = check_sticker_limit(chat_id)
+            if remaining <= 0:
+                next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
+                send_message(chat_id, f"⏰ محدودیت روزانه شما تمام شده!\n\n🔄 زمان بعدی: {next_reset_time}\n\n💎 برای ساخت استیکر نامحدود، اشتراک تهیه کنید.")
+                return "ok"
+            
+            send_message_with_back_button(chat_id, "✍️ متن استیکر بعدی را بفرست:")
+            return "ok"
+        
+        if text == "📷 تغییر بکگراند":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+            
+            send_message_with_back_button(chat_id, "📷 عکس جدید برای بکگراند بفرست:")
+            if chat_id in user_data:
+                user_data[chat_id]["step"] = "background"
             return "ok"
 
         # پردازش دکمه‌های اصلی (قبل از پردازش حالت‌ها)
@@ -1058,6 +1117,13 @@ def process_user_state(chat_id, text):
     """پردازش حالت کاربر - این تابع جداگانه برای پردازش حالت‌ها"""
     state = user_data.get(chat_id, {})
     
+    # پردازش بازخورد منفی - درخواست دلیل
+    if state.get("step") == "waiting_feedback_reason":
+        save_negative_feedback(chat_id, text)
+        user_data[chat_id]["step"] = "text"  # بازگشت به حالت عادی
+        send_message_with_back_button(chat_id, "🙏 ممنون از بازخوردتون! سعی می‌کنیم بهتر شیم.\n\n✍️ متن استیکر بعدی را بفرست:")
+        return True
+    
     if state.get("mode") == "free":
         step = state.get("step")
         
@@ -1163,7 +1229,8 @@ def process_user_state(chat_id, text):
                 if user_data[chat_id].get("text_size"):
                     settings_info += f"\n📏 اندازه: {user_data[chat_id]['text_size']}"
                 
-                send_message_with_back_button(chat_id, f"✅ استیکر شماره {user_data[chat_id]['count']} ساخته شد.{limit_info}{settings_info}\n\n✍️ متن استیکر بعدی را بفرست:\n\n📷 یا عکس جدید برای تغییر بکگراند بفرست:")
+                # ارسال پیام با دکمه‌های بازخورد
+                send_feedback_message(chat_id, f"✅ استیکر شماره {user_data[chat_id]['count']} ساخته شد.{limit_info}{settings_info}")
                 
                 # مهم: pack_name و background را حفظ کن تا استیکر بعدی در همان پک قرار بگیرد
                 # step همچنان "text" باقی می‌ماند تا کاربر بتواند استیکر بعدی بسازد
@@ -1403,6 +1470,12 @@ def handle_admin_command(chat_id, text):
             usage = user.get("sticker_usage", [])
             today_stickers += sum(1 for timestamp in usage if timestamp >= today_start)
         
+        # محاسبه آمار بازخورد
+        positive_feedbacks = sum(1 for f in feedback_data.values() if f.get("type") == "positive")
+        negative_feedbacks = sum(1 for f in feedback_data.values() if f.get("type") == "negative")
+        total_feedbacks = positive_feedbacks + negative_feedbacks
+        satisfaction_rate = (positive_feedbacks / total_feedbacks * 100) if total_feedbacks > 0 else 0
+        
         message = f"""📊 آمار کلی ربات
 
 👥 کل کاربران: {total_users}
@@ -1412,7 +1485,12 @@ def handle_admin_command(chat_id, text):
 
 📈 آمار امروز:
 🎨 استیکر ساخته شده: {today_stickers}
-🔔 رسیدهای در انتظار: {len(pending_payments)}"""
+🔔 رسیدهای در انتظار: {len(pending_payments)}
+
+💭 آمار بازخورد:
+👍 بازخورد مثبت: {positive_feedbacks}
+👎 بازخورد منفی: {negative_feedbacks}
+📊 میزان رضایت: {satisfaction_rate:.1f}%"""
         send_message(chat_id, message)
     
     elif command == "payments":
@@ -1433,6 +1511,42 @@ def handle_admin_command(chat_id, text):
                 message += f"📦 {SUBSCRIPTION_PLANS[plan]['title']} - {SUBSCRIPTION_PLANS[plan]['price']} تومان\n"
                 message += f"⏰ {date}\n"
                 message += f"✅ /admin add {user_id} {SUBSCRIPTION_PLANS[plan]['days']}\n\n"
+            
+            send_message(chat_id, message)
+    
+    elif command == "feedback":
+        if not feedback_data:
+            send_message(chat_id, "💭 هیچ بازخوردی ثبت نشده!")
+        else:
+            # نمایش آخرین 10 بازخورد
+            recent_feedbacks = sorted(feedback_data.items(), key=lambda x: x[1]["timestamp"], reverse=True)[:10]
+            message = "💭 آخرین بازخوردها:\n\n"
+            
+            for feedback_id, feedback in recent_feedbacks:
+                user_id = feedback["user_id"]
+                feedback_type = "👍 مثبت" if feedback["type"] == "positive" else "👎 منفی"
+                timestamp = feedback["timestamp"]
+                date = time.strftime("%Y-%m-%d %H:%M", time.localtime(timestamp))
+                
+                message += f"👤 کاربر: {user_id}\n"
+                message += f"💭 نوع: {feedback_type}\n"
+                message += f"⏰ زمان: {date}\n"
+                
+                if feedback.get("reason"):
+                    message += f"📝 دلیل: {feedback['reason']}\n"
+                
+                message += "─────────────\n"
+            
+            # آمار کلی
+            positive_count = sum(1 for f in feedback_data.values() if f.get("type") == "positive")
+            negative_count = sum(1 for f in feedback_data.values() if f.get("type") == "negative")
+            total_count = positive_count + negative_count
+            satisfaction_rate = (positive_count / total_count * 100) if total_count > 0 else 0
+            
+            message += f"\n📊 آمار کلی:\n"
+            message += f"👍 مثبت: {positive_count}\n"
+            message += f"👎 منفی: {negative_count}\n"
+            message += f"📈 رضایت: {satisfaction_rate:.1f}%"
             
             send_message(chat_id, message)
     
@@ -2693,6 +2807,59 @@ def share_sticker(chat_id):
     except Exception as e:
         logger.error(f"Error generating share link: {e}")
         send_message_with_back_button(chat_id, "📤 لینک اشتراک‌گذاری:\n\n🔗 https://t.me/your_bot")
+
+def send_feedback_message(chat_id, message):
+    """ارسال پیام با دکمه‌های بازخورد"""
+    keyboard = {
+        "keyboard": [
+            ["👍 عالی بود!", "👎 خوب نبود"],
+            ["✍️ متن بعدی", "📷 تغییر بکگراند"],
+            ["🔙 بازگشت"]
+        ],
+        "resize_keyboard": True
+    }
+    requests.post(API + "sendMessage", json={
+        "chat_id": chat_id,
+        "text": message + "\n\n💭 نظرتون درباره این استیکر چیه؟",
+        "reply_markup": keyboard
+    })
+
+def handle_feedback(chat_id, feedback):
+    """پردازش بازخورد کاربر"""
+    if feedback == "👍 عالی بود!":
+        # بازخورد مثبت
+        save_positive_feedback(chat_id)
+        send_message_with_back_button(chat_id, "🙏 ممنون از نظر مثبتتون! خوشحالیم که راضی هستید.\n\n✍️ متن استیکر بعدی را بفرست:\n\n📷 یا عکس جدید برای تغییر بکگراند بفرست:")
+    
+    elif feedback == "👎 خوب نبود":
+        # بازخورد منفی - درخواست دلیل
+        user_data[chat_id]["step"] = "waiting_feedback_reason"
+        send_message_with_back_button(chat_id, "😔 متأسفیم که راضی نبودید.\n\n💬 لطفاً بگید چه مشکلی داشت تا بتونیم بهتر شیم:")
+
+def save_positive_feedback(chat_id):
+    """ذخیره بازخورد مثبت"""
+    feedback_id = f"{chat_id}_{int(time.time())}"
+    feedback_data[feedback_id] = {
+        "user_id": chat_id,
+        "type": "positive",
+        "timestamp": time.time(),
+        "rating": 5
+    }
+    save_feedback_data()
+    logger.info(f"Positive feedback saved for user {chat_id}")
+
+def save_negative_feedback(chat_id, reason):
+    """ذخیره بازخورد منفی با دلیل"""
+    feedback_id = f"{chat_id}_{int(time.time())}"
+    feedback_data[feedback_id] = {
+        "user_id": chat_id,
+        "type": "negative",
+        "timestamp": time.time(),
+        "rating": 2,
+        "reason": reason
+    }
+    save_feedback_data()
+    logger.info(f"Negative feedback saved for user {chat_id}: {reason}")
 
 if __name__ == "__main__":
     load_locales()
