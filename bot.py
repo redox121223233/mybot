@@ -675,17 +675,41 @@ def webhook():
         if state.get("mode") == "free":
             photos = msg.get("photo", [])
             if photos:
-                file_id = photos[-1].get("file_id")
+                # انتخاب بهترین کیفیت عکس (آخرین عکس معمولاً بالاترین کیفیت است)
+                photo = photos[-1]
+                file_id = photo.get("file_id")
+                file_size = photo.get("file_size", 0)
+                
                 if file_id:
+                    # بررسی حجم عکس
+                    if file_size > 20 * 1024 * 1024:  # 20MB
+                        send_message_with_back_button(chat_id, "❌ عکس خیلی بزرگ است! (حداکثر 20MB)\n\n💡 راه حل:\n• از عکس با کیفیت کمتر استفاده کنید\n• عکس را فشرده کنید\n• از ابزارهای آنلاین برای کاهش حجم استفاده کنید")
+                        return "ok"
+                    
                     if state.get("step") == "background":
                         # عکس اول برای بکگراند
                         user_data[chat_id]["background"] = file_id
                         user_data[chat_id]["step"] = "text"
-                        send_message_with_back_button(chat_id, "✍️ حالا متن استیکرت رو بفرست:")
+                        
+                        # اطلاع‌رسانی در مورد حجم عکس
+                        size_info = ""
+                        if file_size > 5 * 1024 * 1024:  # 5MB
+                            size_info = "\n\n⚠️ عکس شما بزرگ است، ممکن است پردازش کمی طول بکشد."
+                        elif file_size > 2 * 1024 * 1024:  # 2MB
+                            size_info = "\n\n📷 عکس با کیفیت خوب دریافت شد."
+                        
+                        send_message_with_back_button(chat_id, f"✅ بکگراند تنظیم شد!{size_info}\n\n✍️ حالا متن استیکرت رو بفرست:")
+                        
                     elif state.get("step") == "text":
                         # تغییر بکگراند در حین ساخت استیکر
                         user_data[chat_id]["background"] = file_id
-                        send_message_with_back_button(chat_id, "✅ بکگراند تغییر کرد!\n✍️ متن استیکر بعدی را بفرست:")
+                        
+                        # اطلاع‌رسانی در مورد حجم عکس
+                        size_info = ""
+                        if file_size > 5 * 1024 * 1024:  # 5MB
+                            size_info = "\n⚠️ عکس بزرگ است، پردازش ممکن است کمی طول بکشد."
+                        
+                        send_message_with_back_button(chat_id, f"✅ بکگراند تغییر کرد!{size_info}\n✍️ متن استیکر بعدی را بفرست:")
         
         # پردازش عکس برای قابلیت‌های اشتراکی
         handle_premium_file(chat_id, "photo", msg.get("photo", []))
@@ -770,28 +794,57 @@ def handle_premium_file(chat_id, file_type, file_data):
         # دریافت file_id بسته به نوع فایل
         if file_type == "photo":
             file_id = file_data[-1]["file_id"] if file_data else None
+            file_size = file_data[-1].get("file_size", 0) if file_data else 0
         elif file_type in ["sticker", "video", "animation", "video_note", "document"]:
             file_id = file_data["file_id"] if file_data else None
+            file_size = file_data.get("file_size", 0) if file_data else 0
         else:
             file_id = None
+            file_size = 0
         
         if not file_id:
             send_message(chat_id, "❌ خطا در دریافت فایل!")
             return
         
+        # بررسی حجم فایل قبل از دانلود
+        if file_size > 20 * 1024 * 1024:  # 20MB
+            send_message(chat_id, "❌ فایل خیلی بزرگ است! (حداکثر 20MB)\n\n💡 راه حل:\n• از عکس با کیفیت کمتر استفاده کنید\n• فایل را فشرده کنید\n• از ابزارهای آنلاین برای کاهش حجم استفاده کنید")
+            return
+        
         # دریافت اطلاعات فایل از Telegram
         file_info = requests.get(API + f"getFile?file_id={file_id}").json()
         if not file_info.get("ok"):
-            send_message(chat_id, "❌ خطا در دریافت اطلاعات فایل!")
+            error_desc = file_info.get("description", "خطای نامشخص")
+            if "file is too big" in error_desc.lower():
+                send_message(chat_id, "❌ فایل خیلی بزرگ است!\n\n💡 راه حل:\n• از عکس با کیفیت کمتر استفاده کنید\n• فایل را فشرده کنید\n• حداکثر حجم مجاز: 20MB")
+            else:
+                send_message(chat_id, f"❌ خطا در دریافت اطلاعات فایل!\n\n🔍 جزئیات: {error_desc}")
             return
         
         file_path = file_info["result"]["file_path"]
         file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
         
-        # دانلود فایل
-        response = requests.get(file_url)
-        if response.status_code != 200:
-            send_message(chat_id, "❌ خطا در دانلود فایل!")
+        # دانلود فایل با timeout و بررسی حجم
+        try:
+            response = requests.get(file_url, timeout=30, stream=True)
+            if response.status_code != 200:
+                send_message(chat_id, f"❌ خطا در دانلود فایل! (کد خطا: {response.status_code})\n\n💡 لطفاً دوباره تلاش کنید یا از فایل کوچکتری استفاده کنید.")
+                return
+            
+            # بررسی حجم واقعی فایل
+            content_length = response.headers.get('content-length')
+            if content_length and int(content_length) > 20 * 1024 * 1024:
+                send_message(chat_id, "❌ فایل خیلی بزرگ است! (حداکثر 20MB)\n\n💡 راه حل:\n• از عکس با کیفیت کمتر استفاده کنید\n• فایل را فشرده کنید")
+                return
+            
+            # دانلود محتوا
+            file_content = response.content
+            
+        except requests.exceptions.Timeout:
+            send_message(chat_id, "⏰ زمان دانلود فایل تمام شد!\n\n💡 راه حل:\n• اینترنت خود را بررسی کنید\n• از فایل کوچکتری استفاده کنید\n• دوباره تلاش کنید")
+            return
+        except requests.exceptions.RequestException as e:
+            send_message(chat_id, f"❌ خطا در دانلود فایل!\n\n🔍 جزئیات: {str(e)[:100]}\n\n💡 لطفاً دوباره تلاش کنید.")
             return
         
         # پردازش بر اساس نوع عملیات
@@ -983,23 +1036,102 @@ def convert_gif_to_video_sticker(file_content, original_path):
         return None
 
 def convert_photo_to_sticker(file_content):
-    """تبدیل عکس به استیکر"""
+    """تبدیل عکس به استیکر با بهینه‌سازی برای فایل‌های بزرگ"""
     try:
+        # بررسی حجم فایل
+        if len(file_content) > 10 * 1024 * 1024:  # 10MB
+            logger.warning(f"Large image file: {len(file_content)} bytes")
+        
+        # بارگذاری تصویر با بهینه‌سازی حافظه
+        img = Image.open(BytesIO(file_content))
+        
+        # تبدیل به RGBA با بهینه‌سازی
+        if img.mode != "RGBA":
+            img = img.convert("RGBA")
+        
+        # اگر تصویر خیلی بزرگ است، ابتدا آن را کوچک کن
+        original_size = img.size
+        if original_size[0] > 2048 or original_size[1] > 2048:
+            # کاهش اندازه به حداکثر 2048 پیکسل
+            img.thumbnail((2048, 2048), Image.LANCZOS)
+            logger.info(f"Image resized from {original_size} to {img.size}")
+        
+        # تغییر اندازه به 512x512
+        img = img.resize((512, 512), Image.LANCZOS)
+        
+        # ذخیره در فرمت WebP با کیفیت بهینه
+        output_buffer = BytesIO()
+        
+        # تنظیم کیفیت بر اساس حجم اصلی
+        if len(file_content) > 5 * 1024 * 1024:  # 5MB
+            quality = 75
+        elif len(file_content) > 2 * 1024 * 1024:  # 2MB
+            quality = 85
+        else:
+            quality = 90
+        
+        img.save(output_buffer, format="WebP", quality=quality, optimize=True)
+        output_buffer.seek(0)
+        
+        result = output_buffer.getvalue()
+        logger.info(f"Sticker created: {len(file_content)} -> {len(result)} bytes")
+        
+        return result
+        
+    except MemoryError:
+        logger.error("Memory error while processing large image")
+        return None
+    except Exception as e:
+        logger.error(f"Error converting photo to sticker: {e}")
+        return None
+
+def convert_png_to_sticker(file_content):
+    """تبدیل PNG به استیکر با بهینه‌سازی برای فایل‌های بزرگ"""
+    try:
+        # بررسی حجم فایل
+        if len(file_content) > 10 * 1024 * 1024:  # 10MB
+            logger.warning(f"Large PNG file: {len(file_content)} bytes")
+        
         # بارگذاری تصویر
-        img = Image.open(BytesIO(file_content)).convert("RGBA")
+        img = Image.open(BytesIO(file_content))
+        
+        # تبدیل به RGBA
+        if img.mode != "RGBA":
+            img = img.convert("RGBA")
+        
+        # اگر تصویر خیلی بزرگ است، ابتدا آن را کوچک کن
+        original_size = img.size
+        if original_size[0] > 2048 or original_size[1] > 2048:
+            img.thumbnail((2048, 2048), Image.LANCZOS)
+            logger.info(f"PNG resized from {original_size} to {img.size}")
         
         # تغییر اندازه به 512x512
         img = img.resize((512, 512), Image.LANCZOS)
         
         # ذخیره در فرمت WebP
         output_buffer = BytesIO()
-        img.save(output_buffer, format="WebP", quality=90)
+        
+        # تنظیم کیفیت بر اساس حجم اصلی
+        if len(file_content) > 5 * 1024 * 1024:  # 5MB
+            quality = 75
+        elif len(file_content) > 2 * 1024 * 1024:  # 2MB
+            quality = 85
+        else:
+            quality = 90
+        
+        img.save(output_buffer, format="WebP", quality=quality, optimize=True)
         output_buffer.seek(0)
         
-        return output_buffer.getvalue()
+        result = output_buffer.getvalue()
+        logger.info(f"PNG to sticker: {len(file_content)} -> {len(result)} bytes")
         
+        return result
+        
+    except MemoryError:
+        logger.error("Memory error while processing large PNG")
+        return None
     except Exception as e:
-        logger.error(f"Error converting photo to sticker: {e}")
+        logger.error(f"Error converting PNG to sticker: {e}")
         return None
 
 def convert_sticker_to_photo(file_content):
@@ -1023,25 +1155,6 @@ def convert_sticker_to_photo(file_content):
         logger.error(f"Error converting sticker to photo: {e}")
         return None
 
-def convert_png_to_sticker(file_content):
-    """تبدیل PNG به استیکر"""
-    try:
-        # بارگذاری تصویر
-        img = Image.open(BytesIO(file_content)).convert("RGBA")
-        
-        # تغییر اندازه به 512x512
-        img = img.resize((512, 512), Image.LANCZOS)
-        
-        # ذخیره در فرمت WebP
-        output_buffer = BytesIO()
-        img.save(output_buffer, format="WebP", quality=90)
-        output_buffer.seek(0)
-        
-        return output_buffer.getvalue()
-        
-    except Exception as e:
-        logger.error(f"Error converting PNG to sticker: {e}")
-        return None
 
 def convert_file_to_video(file_content, original_path):
     """تبدیل فایل به ویدیو قابل پخش"""
@@ -2282,18 +2395,46 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
                 file_info = requests.get(API + f"getFile?file_id={background_file_id}").json()
                 if file_info.get("ok"):
                     file_path = file_info["result"]["file_path"]
-                    file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
-                    resp = requests.get(file_url)
-                    if resp.status_code == 200:
-                        bg = Image.open(BytesIO(resp.content)).convert("RGBA")
-                        bg = bg.resize((img_size, img_size))
-                        img.paste(bg, (0, 0))
-                        background_applied = True
-                        logger.info("Background image loaded successfully")
+                    file_size = file_info["result"].get("file_size", 0)
+                    
+                    # بررسی حجم فایل پس‌زمینه
+                    if file_size > 10 * 1024 * 1024:  # 10MB
+                        logger.warning(f"Background image too large: {file_size} bytes")
+                        # ادامه با پس‌زمینه شفاف
                     else:
-                        logger.error(f"Failed to download user background: status={resp.status_code}")
+                        file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_path}"
+                        
+                        # دانلود با timeout
+                        resp = requests.get(file_url, timeout=15)
+                        if resp.status_code == 200:
+                            try:
+                                bg = Image.open(BytesIO(resp.content))
+                                
+                                # اگر تصویر خیلی بزرگ است، ابتدا آن را کوچک کن
+                                if bg.size[0] > 1024 or bg.size[1] > 1024:
+                                    bg.thumbnail((1024, 1024), Image.LANCZOS)
+                                    logger.info(f"Background resized to {bg.size}")
+                                
+                                bg = bg.convert("RGBA")
+                                bg = bg.resize((img_size, img_size), Image.LANCZOS)
+                                img.paste(bg, (0, 0))
+                                background_applied = True
+                                logger.info("Background image loaded successfully")
+                                
+                            except MemoryError:
+                                logger.error("Memory error while processing background image")
+                            except Exception as img_error:
+                                logger.error(f"Error processing background image: {img_error}")
+                        else:
+                            logger.error(f"Failed to download user background: status={resp.status_code}")
                 else:
-                    logger.error(f"getFile not ok for background_file_id: {file_info}")
+                    error_desc = file_info.get("description", "خطای نامشخص")
+                    if "file is too big" in error_desc.lower():
+                        logger.error("Background file too big for Telegram API")
+                    else:
+                        logger.error(f"getFile not ok for background_file_id: {file_info}")
+            except requests.exceptions.Timeout:
+                logger.error("Timeout downloading background image")
             except Exception as e:
                 logger.error(f"Error loading background: {e}")
 
@@ -3051,6 +3192,72 @@ def check_system_status():
         status_message += f"   • {var_name}: {status}\n"
     
     return status_message
+
+def get_file_size_error_message(file_size_bytes, file_type="فایل"):
+    """ایجاد پیام خطای مناسب برای فایل‌های بزرگ"""
+    size_mb = file_size_bytes / (1024 * 1024)
+    
+    message = f"❌ {file_type} خیلی بزرگ است! ({size_mb:.1f}MB)\n\n"
+    message += "💡 راه‌های حل:\n"
+    
+    if file_type == "عکس":
+        message += "• از تنظیمات دوربین، کیفیت عکس را کاهش دهید\n"
+        message += "• از اپلیکیشن‌های فشرده‌سازی عکس استفاده کنید\n"
+        message += "• عکس را در اندازه کوچکتر ذخیره کنید\n"
+        message += "• از فرمت JPEG به جای PNG استفاده کنید\n"
+    else:
+        message += "• فایل را فشرده کنید\n"
+        message += "• از ابزارهای آنلاین برای کاهش حجم استفاده کنید\n"
+        message += "• فایل را در کیفیت کمتر ذخیره کنید\n"
+    
+    message += f"\n📏 حداکثر حجم مجاز: 20MB\n"
+    message += f"📊 حجم فعلی شما: {size_mb:.1f}MB"
+    
+    return message
+
+def handle_file_processing_error(chat_id, error_type, details=""):
+    """مدیریت خطاهای پردازش فایل و ارائه راه‌حل"""
+    if error_type == "memory_error":
+        message = "❌ فایل خیلی بزرگ است و حافظه کافی نیست!\n\n"
+        message += "💡 راه‌های حل:\n"
+        message += "• از عکس با کیفیت کمتر استفاده کنید\n"
+        message += "• عکس را فشرده کنید\n"
+        message += "• چند دقیقه صبر کنید و دوباره تلاش کنید\n"
+        message += "• از عکس با اندازه کوچکتر استفاده کنید"
+        
+    elif error_type == "timeout":
+        message = "⏰ زمان پردازش فایل تمام شد!\n\n"
+        message += "💡 راه‌های حل:\n"
+        message += "• اتصال اینترنت خود را بررسی کنید\n"
+        message += "• از فایل کوچکتری استفاده کنید\n"
+        message += "• چند لحظه صبر کنید و دوباره تلاش کنید\n"
+        message += "• در زمان‌های کم‌ترافیک تلاش کنید"
+        
+    elif error_type == "invalid_format":
+        message = "❌ فرمت فایل پشتیبانی نمی‌شود!\n\n"
+        message += "💡 راه‌های حل:\n"
+        message += "• از فرمت‌های معتبر استفاده کنید (JPG, PNG, WebP)\n"
+        message += "• فایل را در فرمت دیگری ذخیره کنید\n"
+        message += "• مطمئن شوید فایل خراب نیست"
+        
+    elif error_type == "download_failed":
+        message = "❌ خطا در دانلود فایل!\n\n"
+        message += "💡 راه‌های حل:\n"
+        message += "• اتصال اینترنت خود را بررسی کنید\n"
+        message += "• دوباره فایل را ارسال کنید\n"
+        message += "• از فایل کوچکتری استفاده کنید\n"
+        message += "• چند لحظه صبر کنید و تلاش کنید"
+        
+    else:
+        message = f"❌ خطا در پردازش فایل!\n\n"
+        if details:
+            message += f"🔍 جزئیات: {details[:100]}\n\n"
+        message += "💡 راه‌های حل:\n"
+        message += "• دوباره تلاش کنید\n"
+        message += "• از فایل دیگری استفاده کنید\n"
+        message += "• با پشتیبانی تماس بگیرید"
+    
+    send_message_with_back_button(chat_id, message)
 
 if __name__ == "__main__":
     load_locales()
