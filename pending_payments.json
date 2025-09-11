@@ -1,0 +1,10 @@
+{
+  "payment_123456_1694448000": {
+    "user_id": 123456,
+    "username": "user123",
+    "first_name": "علی",
+    "receipt_file_id": "BAADBAADrwADBREAAWYVAQABFiQ",
+    "timestamp": 1694448000,
+    "plan": "1month"
+  }
+}

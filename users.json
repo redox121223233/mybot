@@ -1,0 +1,19 @@
+{
+  "example_user_123": {
+    "mode": null,
+    "count": 0,
+    "step": null,
+    "pack_name": null,
+    "background": null,
+    "created_packs": [],
+    "sticker_usage": [],
+    "last_reset": 1694434800,
+    "lang": "fa",
+    "text_color": null,
+    "font_style": null,
+    "text_size": null,
+    "text_position": null,
+    "text_effect": null,
+    "background_style": null
+  }
+}
