@@ -1372,19 +1372,40 @@ def process_user_state(chat_id, text):
             # تبدیل نام پک به فرمت قابل قبول
             original_name = text
             pack_name = sanitize_pack_name(text)
-            full_pack_name = f"{pack_name}_by_{BOT_USERNAME}"
+            
+            # اضافه کردن شناسه کاربر برای جلوگیری از تداخل
+            unique_pack_name = f"{pack_name}_{chat_id}_by_{BOT_USERNAME}"
+            
+            # اگر نام خیلی طولانی شد، کوتاهش کن
+            if len(unique_pack_name) > 64:
+                # کوتاه کردن نام اصلی
+                max_name_length = 64 - len(f"_{chat_id}_by_{BOT_USERNAME}")
+                pack_name = pack_name[:max_name_length]
+                unique_pack_name = f"{pack_name}_{chat_id}_by_{BOT_USERNAME}"
             
             # اگر نام تبدیل شده با نام اصلی متفاوت بود، به کاربر اطلاع بده
             if pack_name != original_name.replace(" ", "_"):
                 send_message(chat_id, f"ℹ️ نام پک شما از '{original_name}' به '{pack_name}' تبدیل شد تا با قوانین تلگرام سازگار باشد.")
             
-            # بررسی اینکه پک با این نام وجود دارد یا نه
-            resp = requests.get(API + f"getStickerSet?name={full_pack_name}").json()
+            # بررسی اینکه پک با این نام وجود دارد یا نه (اگرچه با شناسه کاربر احتمال تداخل کمه)
+            resp = requests.get(API + f"getStickerSet?name={unique_pack_name}").json()
             if resp.get("ok"):
-                send_message(chat_id, f"❌ پک با نام '{pack_name}' از قبل وجود دارد. لطفاً نام دیگری انتخاب کنید:")
-                return True
+                # اگر پک وجود داشت، شماره اضافه کن
+                counter = 1
+                while True:
+                    test_name = f"{pack_name}_{counter}_{chat_id}_by_{BOT_USERNAME}"
+                    if len(test_name) <= 64:
+                        resp = requests.get(API + f"getStickerSet?name={test_name}").json()
+                        if not resp.get("ok"):
+                            unique_pack_name = test_name
+                            break
+                    counter += 1
+                    if counter > 100:  # جلوگیری از حلقه بی‌نهایت
+                        unique_pack_name = f"pack_{int(time.time())}_{chat_id}_by_{BOT_USERNAME}"
+                        break
             
-            user_data[chat_id]["pack_name"] = full_pack_name
+            user_data[chat_id]["pack_name"] = unique_pack_name
+            logger.info(f"Pack name set for user {chat_id}: {unique_pack_name}")
             
             # اگر کاربر از قالب استفاده کرده، مستقیماً به ساخت استیکر برو
             if user_data[chat_id].get("background_style"):
@@ -2657,12 +2678,41 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
         # ذخیره تصویر با بهینه‌سازی برای استیکر
         final_img.save(path, "PNG", optimize=True, compress_level=9)
         
-        # بررسی حجم فایل
+        # بررسی و کاهش حجم فایل برای استیکر
         file_size = os.path.getsize(path)
-        if file_size > 512 * 1024:  # اگر بیشتر از 512KB باشد
-            logger.warning(f"Sticker file too large: {file_size} bytes, compressing...")
-            # کاهش کیفیت
-            final_img.save(path, "PNG", optimize=True, compress_level=9, quality=85)
+        max_attempts = 3
+        quality = 90
+        
+        while file_size > 512 * 1024 and max_attempts > 0:  # حداکثر 512KB
+            logger.warning(f"Sticker file too large: {file_size} bytes, compressing with quality {quality}...")
+            
+            # کاهش کیفیت تدریجی
+            if quality > 60:
+                quality -= 15
+            else:
+                # اگر کیفیت خیلی پایین شد، سایز رو کم کن
+                final_img = final_img.resize((480, 480), Image.LANCZOS)
+                quality = 75
+            
+            # ذخیره با کیفیت جدید
+            final_img.save(path, "PNG", optimize=True, compress_level=9)
+            
+            # اگر هنوز بزرگ بود، به WebP تبدیل کن
+            if os.path.getsize(path) > 512 * 1024:
+                webp_path = path.replace('.png', '.webp')
+                final_img.save(webp_path, "WebP", quality=quality, optimize=True)
+                if os.path.exists(webp_path) and os.path.getsize(webp_path) < os.path.getsize(path):
+                    os.remove(path)
+                    os.rename(webp_path, path)
+            
+            file_size = os.path.getsize(path)
+            max_attempts -= 1
+        
+        if file_size > 512 * 1024:
+            logger.error(f"Could not compress sticker below 512KB: {file_size} bytes")
+            # آخرین تلاش: سایز خیلی کوچک
+            final_img = final_img.resize((256, 256), Image.LANCZOS)
+            final_img.save(path, "PNG", optimize=True, compress_level=9)
         
         logger.info(f"Sticker saved successfully to {path} with font size: {font_size} for {language}, size: {os.path.getsize(path)} bytes")
         return True
