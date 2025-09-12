@@ -22,8 +22,10 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN")
 if not BOT_TOKEN:
     raise ValueError("❌ BOT_TOKEN is not set!")
 
-WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "secret")
+WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "secret").strip()
 APP_URL = os.environ.get("APP_URL")
+if APP_URL:
+    APP_URL = APP_URL.strip().rstrip('/')
 BOT_USERNAME = os.environ.get("BOT_USERNAME", "MyBot")  # یوزرنیم ربات بدون @
 CHANNEL_LINK = os.environ.get("CHANNEL_LINK", "@YourChannel")  # لینک کانال اجباری
 API = f"https://api.telegram.org/bot{BOT_TOKEN}/"
@@ -3366,8 +3368,14 @@ if __name__ == "__main__":
     load_locales()
     if APP_URL:
         webhook_url = f"{APP_URL}/webhook/{WEBHOOK_SECRET}"
-        resp = requests.get(API + f"setWebhook?url={webhook_url}")
-        logger.info(f"setWebhook: {resp.json()}")
+        try:
+            resp = requests.get(API + f"setWebhook?url={webhook_url}")
+            logger.info(f"setWebhook: {resp.json()}")
+        except requests.exceptions.ConnectionError as e:
+            logger.error(f"Failed to set webhook due to network error: {e}")
+            logger.info("Bot will start without webhook registration. Webhook can be set later when network is available.")
+        except Exception as e:
+            logger.error(f"Unexpected error setting webhook: {e}")
     else:
         logger.warning("⚠️ APP_URL is not set. Webhook not registered.")
 
