@@ -2465,31 +2465,27 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
         draw = ImageDraw.Draw(img)
         
         # 📌 تنظیمات فونت و باکس متن (بهینه‌سازی برای متن فارسی)
-        # تنظیم اندازه فونت از تنظیمات کاربر
+        # تنظیم اندازه فونت از تنظیمات کاربر - اندازه‌های یکسان برای هر دو زبان
         if user_settings and "text_size" in user_settings and user_settings["text_size"]:
             size_text = user_settings["text_size"]
             if "خیلی کوچک" in size_text:
-                initial_font_size = 20 if language == "persian_arabic" else 150
+                initial_font_size = 40  # یکسان برای هر دو زبان
             elif "کوچک" in size_text:
-                initial_font_size = 30 if language == "persian_arabic" else 200
+                initial_font_size = 60  # یکسان برای هر دو زبان
             elif "متوسط" in size_text:
-                initial_font_size = 50 if language == "persian_arabic" else 300
+                initial_font_size = 80  # یکسان برای هر دو زبان
             elif "بزرگ" in size_text:
-                initial_font_size = 70 if language == "persian_arabic" else 400
+                initial_font_size = 100  # یکسان برای هر دو زبان
             elif "خیلی بزرگ" in size_text:
-                initial_font_size = 90 if language == "persian_arabic" else 500
+                initial_font_size = 120  # یکسان برای هر دو زبان
             else:
-                initial_font_size = 50 if language == "persian_arabic" else 300
+                initial_font_size = 80  # پیش‌فرض یکسان
         else:
-            if language == "persian_arabic":
-                initial_font_size = 50   # کاهش بیشتر برای فارسی
-            else:
-                initial_font_size = 300  # فونت انگلیسی
+            # اندازه پیش‌فرض یکسان برای هر دو زبان
+            initial_font_size = 80
         
-        if language == "persian_arabic":
-            min_font_size = 12       # کاهش بیشتر برای فارسی
-        else:
-            min_font_size = 120      # حداقل فونت انگلیسی
+        # حداقل اندازه فونت یکسان برای هر دو زبان
+        min_font_size = 20
         max_width = 110              # کاهش بیشتر برای فارسی
         max_height = 110             # کاهش بیشتر برای فارسی
         
