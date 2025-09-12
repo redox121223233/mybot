@@ -2018,8 +2018,9 @@ def reshape_text(text):
     try:
         # استفاده از arabic_reshaper برای چسباندن حروف
         reshaped = arabic_reshaper.reshape(text)
-        # برعکس کردن ترتیب برای حفظ ترتیب طبیعی
-        return reshaped[::-1]
+        # استفاده از bidi برای نمایش صحیح راست به چپ
+        bidi_text = get_display(reshaped)
+        return bidi_text
     except Exception as e:
         logger.error(f"Error reshaping text: {e}")
         return text
@@ -2117,33 +2118,32 @@ def _hard_wrap_word(draw, word, font, max_width):
 
 def wrap_text_multiline(draw, text, font, max_width, is_rtl=False):
     """شکستن متن به خطوط متعدد با در نظر گرفتن فاصله‌ها و کلمات خیلی بلند.
-    برای حفظ ترتیب طبیعی حروف، از روش ساده استفاده می‌کنیم.
+    برای متن فارسی از الگوریتم بهینه‌شده استفاده می‌کنیم.
     """
     if not text:
         return [""]
     
-    # برای متن فارسی، از روش ساده‌تر استفاده می‌کنیم
+    # برای متن فارسی، از روش بهینه‌شده استفاده می‌کنیم
     if is_rtl:
         # اگر متن کوتاه است، کل متن را در یک خط قرار بده
         w, _ = _measure_text(draw, text, font)
         if w <= max_width:
             return [text]
         
-        # اگر متن طولانی است، بر اساس فاصله شکست بده
+        # تقسیم متن بر اساس فاصله‌ها
         words = text.split()
         if len(words) == 1:
             # اگر فقط یک کلمه است و خیلی بلند است، آن را شکست بده
-            w, _ = _measure_text(draw, text, font)
             if w > max_width:
                 return _hard_wrap_word(draw, text, font, max_width)
             else:
                 return [text]
         
-        # برای متن‌های طولانی فارسی، کلمات را کلمه به کلمه در خطوط مختلف قرار بده
+        # برای متن‌های چندکلمه‌ای فارسی
         lines = []
         current_line = ""
         
-        for word in words:
+        for i, word in enumerate(words):
             # بررسی اینکه آیا کلمه جدید در خط فعلی جا می‌شود یا نه
             test_line = current_line + (" " if current_line else "") + word
             w, _ = _measure_text(draw, test_line, font)
@@ -2155,9 +2155,17 @@ def wrap_text_multiline(draw, text, font, max_width, is_rtl=False):
                 # کلمه در خط فعلی جا نمی‌شود
                 if current_line:
                     lines.append(current_line)
-                    current_line = word
+                    # بررسی اینکه آیا کلمه جدید به تنهایی جا می‌شود
+                    word_w, _ = _measure_text(draw, word, font)
+                    if word_w <= max_width:
+                        current_line = word
+                    else:
+                        # کلمه خیلی بلند است، باید شکسته شود
+                        word_parts = _hard_wrap_word(draw, word, font, max_width)
+                        lines.extend(word_parts[:-1])
+                        current_line = word_parts[-1] if word_parts else ""
                 else:
-                    # اگر خط خالی است و کلمه جا نمی‌شود، باید کلمه را شکست
+                    # خط خالی است و کلمه جا نمی‌شود
                     word_parts = _hard_wrap_word(draw, word, font, max_width)
                     lines.extend(word_parts[:-1])
                     current_line = word_parts[-1] if word_parts else ""
@@ -2221,21 +2229,38 @@ def measure_multiline_block(draw, lines, font, line_spacing_px):
     return max_w, total_h
 
 def detect_language(text):
-    """تشخیص زبان متن"""
-    # الگوی فارسی/عربی
-    persian_arabic_pattern = re.compile(r'[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF]')
+    """تشخیص زبان متن با دقت بیشتر"""
+    if not text or not text.strip():
+        return "english"  # پیش‌فرض
+    
+    # الگوی فارسی/عربی - محدوده‌های کامل‌تر
+    persian_arabic_pattern = re.compile(r'[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFF\u200C-\u200F]')
     persian_arabic_chars = len(persian_arabic_pattern.findall(text))
     
     # الگوی انگلیسی
     english_pattern = re.compile(r'[a-zA-Z]')
     english_chars = len(english_pattern.findall(text))
     
-    if persian_arabic_chars > english_chars:
+    # الگوی اعداد و علائم
+    numbers_symbols = re.compile(r'[0-9\s\.,!?@#$%^&*()_+\-=\[\]{};\':"\\|,.<>/?`~]')
+    neutral_chars = len(numbers_symbols.findall(text))
+    
+    total_chars = len(text.strip())
+    
+    # اگر بیش از 30% کاراکترها فارسی/عربی باشند
+    if persian_arabic_chars > 0 and (persian_arabic_chars / total_chars) > 0.3:
         return "persian_arabic"
-    elif english_chars > 0:
+    # اگر بیش از 50% کاراکترها انگلیسی باشند
+    elif english_chars > 0 and (english_chars / total_chars) > 0.5:
+        return "english"
+    # اگر هر دو زبان وجود داشته باشد، زبان غالب را انتخاب کن
+    elif persian_arabic_chars > english_chars:
+        return "persian_arabic"
+    elif english_chars > persian_arabic_chars:
         return "english"
     else:
-        return "other"
+        # اگر فقط اعداد و علائم باشد، انگلیسی در نظر بگیر
+        return "english"
 
 def get_font(size, language="english", font_style="عادی"):
     """بارگذاری فونت بر اساس زبان و استایل"""
