@@ -2130,17 +2130,41 @@ def wrap_text_multiline(draw, text, font, max_width, is_rtl=False):
         # اگر متن طولانی است، بر اساس فاصله شکست بده
         words = text.split()
         if len(words) == 1:
-            # اگر فقط یک کلمه است، آن را در وسط استیکر نگه دار
-            return [text]
+            # اگر فقط یک کلمه است و خیلی بلند است، آن را شکست بده
+            w, _ = _measure_text(draw, text, font)
+            if w > max_width:
+                return _hard_wrap_word(draw, text, font, max_width)
+            else:
+                return [text]
         
-        # برای متن‌های طولانی فارسی، کلمات را از بالا به پایین مرتب کن
+        # برای متن‌های طولانی فارسی، کلمات را کلمه به کلمه در خطوط مختلف قرار بده
         lines = []
-        for word in words:
-            # هر کلمه را در یک خط جداگانه قرار بده
-            lines.append(word)
+        current_line = ""
         
-        # برعکس کردن ترتیب کلمات تا کلمه اول بالا باشه
-        return lines[::-1] if lines else [""]
+        for word in words:
+            # بررسی اینکه آیا کلمه جدید در خط فعلی جا می‌شود یا نه
+            test_line = current_line + (" " if current_line else "") + word
+            w, _ = _measure_text(draw, test_line, font)
+            
+            if w <= max_width:
+                # کلمه در خط فعلی جا می‌شود
+                current_line = test_line
+            else:
+                # کلمه در خط فعلی جا نمی‌شود
+                if current_line:
+                    lines.append(current_line)
+                    current_line = word
+                else:
+                    # اگر خط خالی است و کلمه جا نمی‌شود، باید کلمه را شکست
+                    word_parts = _hard_wrap_word(draw, word, font, max_width)
+                    lines.extend(word_parts[:-1])
+                    current_line = word_parts[-1] if word_parts else ""
+        
+        # اضافه کردن آخرین خط
+        if current_line:
+            lines.append(current_line)
+        
+        return lines if lines else [""]
     
     # برای متن انگلیسی، از روش قبلی استفاده می‌کنیم
     tokens = re.split(r"(\s+)", text)
