@@ -2465,24 +2465,24 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
         draw = ImageDraw.Draw(img)
         
         # 📌 تنظیمات فونت و باکس متن (بهینه‌سازی برای متن فارسی)
-        # تنظیم اندازه فونت از تنظیمات کاربر - اندازه‌های یکسان برای هر دو زبان
+        # تنظیم اندازه فونت از تنظیمات کاربر - اندازه‌های بزرگتر برای انگلیسی
         if user_settings and "text_size" in user_settings and user_settings["text_size"]:
             size_text = user_settings["text_size"]
             if "خیلی کوچک" in size_text:
-                initial_font_size = 40  # یکسان برای هر دو زبان
+                initial_font_size = 50 if language == "english" else 40  # انگلیسی بزرگتر
             elif "کوچک" in size_text:
-                initial_font_size = 60  # یکسان برای هر دو زبان
+                initial_font_size = 75 if language == "english" else 60  # انگلیسی بزرگتر
             elif "متوسط" in size_text:
-                initial_font_size = 80  # یکسان برای هر دو زبان
+                initial_font_size = 100 if language == "english" else 80  # انگلیسی بزرگتر
             elif "بزرگ" in size_text:
-                initial_font_size = 100  # یکسان برای هر دو زبان
+                initial_font_size = 125 if language == "english" else 100  # انگلیسی بزرگتر
             elif "خیلی بزرگ" in size_text:
-                initial_font_size = 120  # یکسان برای هر دو زبان
+                initial_font_size = 150 if language == "english" else 120  # انگلیسی بزرگتر
             else:
-                initial_font_size = 80  # پیش‌فرض یکسان
+                initial_font_size = 100 if language == "english" else 80  # پیش‌فرض انگلیسی بزرگتر
         else:
-            # اندازه پیش‌فرض یکسان برای هر دو زبان
-            initial_font_size = 80
+            # اندازه پیش‌فرض بزرگتر برای انگلیسی
+            initial_font_size = 100 if language == "english" else 80
         
         # حداقل اندازه فونت یکسان برای هر دو زبان
         min_font_size = 20
