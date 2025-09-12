@@ -2217,7 +2217,18 @@ def get_font(size, language="english", font_style="عادی"):
     if not font_style:
         font_style = "عادی"
     
-    logger.info(f"✅ Getting font: size={size}, language={language}, style={font_style}")
+    logger.info(f"🔍 Getting font: size={size}, language={language}, style={font_style}")
+    
+    # بررسی وجود پوشه fonts
+    base_dir = os.path.dirname(os.path.abspath(__file__))
+    fonts_dir = os.path.join(base_dir, "fonts")
+    logger.info(f"🔍 Base directory: {base_dir}")
+    logger.info(f"🔍 Fonts directory: {fonts_dir}")
+    logger.info(f"🔍 Fonts directory exists: {os.path.exists(fonts_dir)}")
+    
+    if os.path.exists(fonts_dir):
+        font_files = os.listdir(fonts_dir)
+        logger.info(f"🔍 Available font files: {font_files}")
     
     if language == "persian_arabic":
         # فونت‌های فارسی/عربی
@@ -2259,52 +2270,56 @@ def get_font(size, language="english", font_style="عادی"):
             "/Windows/Fonts/arial.ttf"
         ])
     else:
-        # فونت‌های انگلیسی - فونت‌های بهتر و جدیدتر
-        font_paths = [
-            "fonts/Roboto-Regular.ttf",
-            "fonts/OpenSans-Regular.ttf",
-            "fonts/Montserrat-Regular.ttf",
-            "fonts/Inter-Regular.ttf",
-            "fonts/Poppins-Regular.ttf",
-            "fonts/arial.ttf",
-            "arial.ttf",
-            "DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
-            "/System/Library/Fonts/Arial.ttf",
-            "/Windows/Fonts/arial.ttf"
-        ]
+        # فونت‌های انگلیسی - اجبار استفاده از Roboto
+        base_dir = os.path.dirname(os.path.abspath(__file__))
         
-        # اگر فونت ضخیم انتخاب شده، ابتدا آن‌ها را امتحان کن
+        # اگر فونت ضخیم انتخاب شده - استفاده از فونت‌های موجود شما
         if "ضخیم" in font_style or "بولد" in font_style:
             font_paths = [
-                "fonts/Roboto-Bold.ttf",
-                "fonts/OpenSans-Bold.ttf",
-                "fonts/Montserrat-Bold.ttf",
-                "fonts/Inter-Bold.ttf",
-                "fonts/Poppins-Bold.ttf",
-                "fonts/arial-bold.ttf",
-                "arial-bold.ttf",
-                "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-            ] + font_paths
+                os.path.join(base_dir, "fonts", "Poppins-Black.ttf"),
+                os.path.join(base_dir, "fonts", "Montserrat-VariableFont_wght.ttf"),
+                os.path.join(base_dir, "fonts", "Roboto-VariableFont_wdth,wght.ttf"),
+                "fonts/Poppins-Black.ttf",
+                "fonts/Montserrat-VariableFont_wght.ttf",
+                "fonts/Roboto-VariableFont_wdth,wght.ttf"
+            ]
         elif "نازک" in font_style or "لایت" in font_style:
             font_paths = [
-                "fonts/Roboto-Light.ttf",
-                "fonts/OpenSans-Light.ttf",
-                "fonts/Montserrat-Light.ttf",
-                "fonts/Inter-Light.ttf",
-                "fonts/Poppins-Light.ttf"
-            ] + font_paths
+                os.path.join(base_dir, "fonts", "Roboto-Italic-VariableFont_wdth,wght.ttf"),
+                os.path.join(base_dir, "fonts", "OpenSans-VariableFont_wdth,wght.ttf"),
+                "fonts/Roboto-Italic-VariableFont_wdth,wght.ttf",
+                "fonts/OpenSans-VariableFont_wdth,wght.ttf"
+            ]
+        else:
+            # فونت عادی - استفاده از فونت‌های اصلی شما
+            font_paths = [
+                os.path.join(base_dir, "fonts", "Roboto-VariableFont_wdth,wght.ttf"),
+                os.path.join(base_dir, "fonts", "Montserrat-VariableFont_wght.ttf"),
+                os.path.join(base_dir, "fonts", "OpenSans-VariableFont_wdth,wght.ttf"),
+                os.path.join(base_dir, "fonts", "Poppins-Black.ttf"),
+                "fonts/Roboto-VariableFont_wdth,wght.ttf",
+                "fonts/Montserrat-VariableFont_wght.ttf",
+                "fonts/OpenSans-VariableFont_wdth,wght.ttf",
+                "fonts/Poppins-Black.ttf"
+            ]
         
+        # اضافه کردن fallback fonts
         font_paths.extend([
+            "fonts/arial.ttf",
+            "arial.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/System/Library/Fonts/Arial.ttf",
+            "/Windows/Fonts/arial.ttf",
             "NotoSans-Regular.ttf"
         ])
     
     for font_path in font_paths:
         try:
             font = ImageFont.truetype(font_path, size)
-            logger.info(f"Successfully loaded font: {font_path} with size: {size} for {language}")
+            logger.info(f"✅ Successfully loaded font: {font_path} with size: {size} for {language}")
             return font
-        except (OSError, IOError):
+        except (OSError, IOError) as e:
+            logger.warning(f"❌ Failed to load font: {font_path} - {e}")
             continue
     
     try:
