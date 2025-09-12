@@ -2259,8 +2259,13 @@ def get_font(size, language="english", font_style="عادی"):
             "/Windows/Fonts/arial.ttf"
         ])
     else:
-        # فونت‌های انگلیسی
+        # فونت‌های انگلیسی - فونت‌های بهتر و جدیدتر
         font_paths = [
+            "fonts/Roboto-Regular.ttf",
+            "fonts/OpenSans-Regular.ttf",
+            "fonts/Montserrat-Regular.ttf",
+            "fonts/Inter-Regular.ttf",
+            "fonts/Poppins-Regular.ttf",
             "fonts/arial.ttf",
             "arial.ttf",
             "DejaVuSans.ttf",
@@ -2272,9 +2277,22 @@ def get_font(size, language="english", font_style="عادی"):
         # اگر فونت ضخیم انتخاب شده، ابتدا آن‌ها را امتحان کن
         if "ضخیم" in font_style or "بولد" in font_style:
             font_paths = [
+                "fonts/Roboto-Bold.ttf",
+                "fonts/OpenSans-Bold.ttf",
+                "fonts/Montserrat-Bold.ttf",
+                "fonts/Inter-Bold.ttf",
+                "fonts/Poppins-Bold.ttf",
                 "fonts/arial-bold.ttf",
                 "arial-bold.ttf",
                 "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+            ] + font_paths
+        elif "نازک" in font_style or "لایت" in font_style:
+            font_paths = [
+                "fonts/Roboto-Light.ttf",
+                "fonts/OpenSans-Light.ttf",
+                "fonts/Montserrat-Light.ttf",
+                "fonts/Inter-Light.ttf",
+                "fonts/Poppins-Light.ttf"
             ] + font_paths
         
         font_paths.extend([
@@ -2465,24 +2483,24 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
         draw = ImageDraw.Draw(img)
         
         # 📌 تنظیمات فونت و باکس متن (بهینه‌سازی برای متن فارسی)
-        # تنظیم اندازه فونت از تنظیمات کاربر - اندازه‌های بزرگتر برای انگلیسی
+        # تنظیم اندازه فونت از تنظیمات کاربر - اندازه‌های خیلی بزرگتر برای انگلیسی
         if user_settings and "text_size" in user_settings and user_settings["text_size"]:
             size_text = user_settings["text_size"]
             if "خیلی کوچک" in size_text:
-                initial_font_size = 50 if language == "english" else 40  # انگلیسی بزرگتر
+                initial_font_size = 70 if language == "english" else 40  # انگلیسی خیلی بزرگتر
             elif "کوچک" in size_text:
-                initial_font_size = 75 if language == "english" else 60  # انگلیسی بزرگتر
+                initial_font_size = 95 if language == "english" else 60  # انگلیسی خیلی بزرگتر
             elif "متوسط" in size_text:
-                initial_font_size = 100 if language == "english" else 80  # انگلیسی بزرگتر
+                initial_font_size = 120 if language == "english" else 80  # انگلیسی خیلی بزرگتر
             elif "بزرگ" in size_text:
-                initial_font_size = 125 if language == "english" else 100  # انگلیسی بزرگتر
+                initial_font_size = 150 if language == "english" else 100  # انگلیسی خیلی بزرگتر
             elif "خیلی بزرگ" in size_text:
-                initial_font_size = 150 if language == "english" else 120  # انگلیسی بزرگتر
+                initial_font_size = 180 if language == "english" else 120  # انگلیسی خیلی بزرگتر
             else:
-                initial_font_size = 100 if language == "english" else 80  # پیش‌فرض انگلیسی بزرگتر
+                initial_font_size = 120 if language == "english" else 80  # پیش‌فرض انگلیسی خیلی بزرگتر
         else:
-            # اندازه پیش‌فرض بزرگتر برای انگلیسی
-            initial_font_size = 100 if language == "english" else 80
+            # اندازه پیش‌فرض خیلی بزرگتر برای انگلیسی
+            initial_font_size = 120 if language == "english" else 80
         
         # حداقل اندازه فونت یکسان برای هر دو زبان
         min_font_size = 20
