@@ -2145,45 +2145,43 @@ def wrap_text_multiline(draw, text, font, max_width, is_rtl=False):
         # برعکس کردن ترتیب کلمات تا کلمه اول بالا باشه
         return lines[::-1] if lines else [""]
     
-    # برای متن انگلیسی، از روش قبلی استفاده می‌کنیم
-    tokens = re.split(r"(\s+)", text)
-    lines = []
-    current = ""
-    for token in tokens:
-        if token.strip() == "":
-            # فضای خالی: فقط اگر چیزی در خط داریم اضافه شود
-            tentative = current + token
-            w, _ = _measure_text(draw, tentative, font)
-            if w <= max_width:
-                current = tentative
-            else:
-                if current:
-                    lines.append(current.rstrip())
-                    current = ""
-            continue
-        # کلمه غیرسفید
-        tentative = current + token
-        w, _ = _measure_text(draw, tentative, font)
-        if w <= max_width:
-            current = tentative
-        else:
-            # اگر خود کلمه جا نشود باید کلمه را خرد کنیم
-            if current:
-                lines.append(current.rstrip())
-                current = ""
-            # خرد کردن کلمه طولانی
-            for part in _hard_wrap_word(draw, token, font, max_width):
-                w_part, _ = _measure_text(draw, part, font)
-                if current == "" and w_part <= max_width:
-                    current = part
-                else:
-                    if current:
-                        lines.append(current.rstrip())
-                    current = part
-    if current:
-        lines.append(current.rstrip())
+    # برای متن انگلیسی، کلمات را کنار هم نگه دار یا کلمه به کلمه از بالا به پایین
+    words = text.split()
+    if len(words) == 1:
+        # اگر فقط یک کلمه است، آن را در یک خط قرار بده
+        return [text]
     
-    return lines or [""]
+    # اگر متن کوتاه است، سعی کن همه را در یک خط قرار بدهی
+    w, _ = _measure_text(draw, text, font)
+    if w <= max_width:
+        return [text]
+    
+    # اگر متن طولانی است، کلمات را کنار هم قرار بده تا جا شود
+    lines = []
+    current_line = ""
+    
+    for word in words:
+        # بررسی اینکه آیا کلمه جدید در خط فعلی جا می‌شود
+        test_line = current_line + (" " if current_line else "") + word
+        w, _ = _measure_text(draw, test_line, font)
+        
+        if w <= max_width:
+            # کلمه در خط فعلی جا می‌شود
+            current_line = test_line
+        else:
+            # کلمه در خط فعلی جا نمی‌شود
+            if current_line:
+                lines.append(current_line)
+                current_line = word
+            else:
+                # اگر خط خالی است و کلمه جا نمی‌شود، آن را به تنهایی قرار بده
+                current_line = word
+    
+    # اضافه کردن آخرین خط
+    if current_line:
+        lines.append(current_line)
+    
+    return lines if lines else [""]
 
 def measure_multiline_block(draw, lines, font, line_spacing_px):
     """محاسبه اندازه بلوک چندخطی"""
