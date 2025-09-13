@@ -2118,63 +2118,32 @@ def _hard_wrap_word(draw, word, font, max_width):
 
 def wrap_text_multiline(draw, text, font, max_width, is_rtl=False):
     """شکستن متن به خطوط متعدد با در نظر گرفتن فاصله‌ها و کلمات خیلی بلند.
-    برای متن فارسی از الگوریتم بهینه‌شده استفاده می‌کنیم.
+    برای حفظ ترتیب طبیعی حروف، از روش ساده استفاده می‌کنیم.
     """
     if not text:
         return [""]
     
-    # برای متن فارسی، از روش بهینه‌شده استفاده می‌کنیم
+    # برای متن فارسی، از روش ساده‌تر استفاده می‌کنیم
     if is_rtl:
         # اگر متن کوتاه است، کل متن را در یک خط قرار بده
         w, _ = _measure_text(draw, text, font)
         if w <= max_width:
             return [text]
         
-        # تقسیم متن بر اساس فاصله‌ها
+        # اگر متن طولانی است، بر اساس فاصله شکست بده
         words = text.split()
         if len(words) == 1:
-            # اگر فقط یک کلمه است و خیلی بلند است، آن را شکست بده
-            if w > max_width:
-                return _hard_wrap_word(draw, text, font, max_width)
-            else:
-                return [text]
+            # اگر فقط یک کلمه است، آن را در وسط استیکر نگه دار
+            return [text]
         
-        # برای متن‌های چندکلمه‌ای فارسی
+        # برای متن‌های طولانی فارسی، کلمات را از بالا به پایین مرتب کن
         lines = []
-        current_line = ""
+        for word in words:
+            # هر کلمه را در یک خط جداگانه قرار بده
+            lines.append(word)
         
-        for i, word in enumerate(words):
-            # بررسی اینکه آیا کلمه جدید در خط فعلی جا می‌شود یا نه
-            test_line = current_line + (" " if current_line else "") + word
-            w, _ = _measure_text(draw, test_line, font)
-            
-            if w <= max_width:
-                # کلمه در خط فعلی جا می‌شود
-                current_line = test_line
-            else:
-                # کلمه در خط فعلی جا نمی‌شود
-                if current_line:
-                    lines.append(current_line)
-                    # بررسی اینکه آیا کلمه جدید به تنهایی جا می‌شود
-                    word_w, _ = _measure_text(draw, word, font)
-                    if word_w <= max_width:
-                        current_line = word
-                    else:
-                        # کلمه خیلی بلند است، باید شکسته شود
-                        word_parts = _hard_wrap_word(draw, word, font, max_width)
-                        lines.extend(word_parts[:-1])
-                        current_line = word_parts[-1] if word_parts else ""
-                else:
-                    # خط خالی است و کلمه جا نمی‌شود
-                    word_parts = _hard_wrap_word(draw, word, font, max_width)
-                    lines.extend(word_parts[:-1])
-                    current_line = word_parts[-1] if word_parts else ""
-        
-        # اضافه کردن آخرین خط
-        if current_line:
-            lines.append(current_line)
-        
-        return lines if lines else [""]
+        # برعکس کردن ترتیب کلمات تا کلمه اول بالا باشه
+        return lines[::-1] if lines else [""]
     
     # برای متن انگلیسی، از روش قبلی استفاده می‌کنیم
     tokens = re.split(r"(\s+)", text)
@@ -2549,27 +2518,31 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
         draw = ImageDraw.Draw(img)
         
         # 📌 تنظیمات فونت و باکس متن (بهینه‌سازی برای متن فارسی)
-        # تنظیم اندازه فونت از تنظیمات کاربر - اندازه‌های خیلی بزرگتر برای انگلیسی
+        # تنظیم اندازه فونت از تنظیمات کاربر
         if user_settings and "text_size" in user_settings and user_settings["text_size"]:
             size_text = user_settings["text_size"]
             if "خیلی کوچک" in size_text:
-                initial_font_size = 70 if language == "english" else 40  # انگلیسی خیلی بزرگتر
+                initial_font_size = 20 if language == "persian_arabic" else 80
             elif "کوچک" in size_text:
-                initial_font_size = 95 if language == "english" else 60  # انگلیسی خیلی بزرگتر
+                initial_font_size = 30 if language == "persian_arabic" else 100
             elif "متوسط" in size_text:
-                initial_font_size = 120 if language == "english" else 80  # انگلیسی خیلی بزرگتر
+                initial_font_size = 50 if language == "persian_arabic" else 120
             elif "بزرگ" in size_text:
-                initial_font_size = 150 if language == "english" else 100  # انگلیسی خیلی بزرگتر
+                initial_font_size = 70 if language == "persian_arabic" else 140
             elif "خیلی بزرگ" in size_text:
-                initial_font_size = 180 if language == "english" else 120  # انگلیسی خیلی بزرگتر
+                initial_font_size = 90 if language == "persian_arabic" else 160
             else:
-                initial_font_size = 120 if language == "english" else 80  # پیش‌فرض انگلیسی خیلی بزرگتر
+                initial_font_size = 50 if language == "persian_arabic" else 120
         else:
-            # اندازه پیش‌فرض خیلی بزرگتر برای انگلیسی
-            initial_font_size = 120 if language == "english" else 80
+            if language == "persian_arabic":
+                initial_font_size = 50   # فونت فارسی اصلی
+            else:
+                initial_font_size = 120  # فونت انگلیسی کوچکتر از قبل
         
-        # حداقل اندازه فونت یکسان برای هر دو زبان
-        min_font_size = 20
+        if language == "persian_arabic":
+            min_font_size = 12       # حداقل فونت فارسی
+        else:
+            min_font_size = 40      # حداقل فونت انگلیسی
         max_width = 110              # کاهش بیشتر برای فارسی
         max_height = 110             # کاهش بیشتر برای فارسی
         
