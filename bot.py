@@ -13,6 +13,14 @@ from io import BytesIO
 import arabic_reshaper
 from bidi.algorithm import get_display
 
+# اضافه کردن import برای سیستم کنترل هوش مصنوعی
+try:
+    from ai_integration import should_ai_respond, AIManager, check_ai_status, activate_ai, deactivate_ai, toggle_ai
+    AI_INTEGRATION_AVAILABLE = True
+except ImportError:
+    AI_INTEGRATION_AVAILABLE = False
+    logger = None  # logger هنوز تعریف نشده
+
 # --- Logger ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("bot")
@@ -43,6 +51,17 @@ user_data = {}
 subscription_data = {}  # داده‌های اشتراک
 pending_payments = {}   # پرداخت‌های در انتظار
 feedback_data = {}      # بازخوردهای کاربران
+
+# ایجاد نمونه مدیر هوش مصنوعی
+if AI_INTEGRATION_AVAILABLE:
+    try:
+        ai_manager = AIManager()
+        logger.info("✅ AI Manager initialized successfully")
+    except Exception as e:
+        AI_INTEGRATION_AVAILABLE = False
+        logger.error(f"❌ Failed to initialize AI Manager: {e}")
+else:
+    ai_manager = None
 
 # فایل ذخیره‌سازی داده‌ها
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -616,6 +635,37 @@ def webhook():
                 send_membership_required_message(chat_id)
                 return "ok"
             send_message(chat_id, f"📞 برای پشتیبانی با {SUPPORT_ID} در تماس باش.\n\nاگر مشکلی پیش آمد، حتماً پیوی بزنید!")
+
+        # مدیریت دکمه‌های هوش مصنوعی
+        elif text in ["🤖 هوش مصنوعی ✅", "🤖 هوش مصنوعی ❌", "🤖 هوش مصنوعی ⚠️", "🤖 هوش مصنوعی (غیرفعال)"]:
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+            handle_ai_control_button(chat_id)
+            return "ok"
+        
+        elif text.startswith("🚀 فعال کردن هوش مصنوعی") or text.startswith("⏸️ غیرفعال کردن هوش مصنوعی"):
+            handle_ai_toggle(chat_id)
+            return "ok"
+        
+        elif text == "📊 وضعیت هوش مصنوعی":
+            handle_ai_status_check(chat_id)
+            return "ok"
+        
+        elif text == "🔗 پنل وب":
+            handle_ai_web_panel(chat_id)
+            return "ok"
+
+        # بررسی اینکه آیا هوش مصنوعی باید پاسخ دهد
+        if AI_INTEGRATION_AVAILABLE and not text.startswith('/'):
+            try:
+                if not should_ai_respond(chat_id, text):
+                    logger.info(f"AI is inactive - ignoring message from {chat_id}: {text[:50]}")
+                    return "ok"
+            except Exception as e:
+                logger.error(f"Error checking AI status: {e}")
+                # در صورت خطا، ادامه پردازش عادی
 
         # پردازش حالت کاربر (بعد از دکمه‌ها)
         if process_user_state(chat_id, text):
@@ -1706,12 +1756,22 @@ def handle_admin_command(chat_id, text):
         total_feedbacks = positive_feedbacks + negative_feedbacks
         satisfaction_rate = (positive_feedbacks / total_feedbacks * 100) if total_feedbacks > 0 else 0
         
+        # آمار هوش مصنوعی
+        ai_status_line = ""
+        if AI_INTEGRATION_AVAILABLE:
+            try:
+                is_active = check_ai_status()
+                ai_status_text = "فعال ✅" if is_active else "غیرفعال ❌"
+                ai_status_line = f"\n🤖 هوش مصنوعی: {ai_status_text}"
+            except:
+                ai_status_line = "\n🤖 هوش مصنوعی: خطا در بررسی وضعیت ⚠️"
+        
         message = f"""📊 آمار کلی ربات
 
 👥 کل کاربران: {total_users}
 💎 کاربران اشتراکی: {subscribed_users}
 ✅ اشتراک‌های فعال: {active_subscriptions}
-❌ اشتراک‌های منقضی: {subscribed_users - active_subscriptions}
+❌ اشتراک‌های منقضی: {subscribed_users - active_subscriptions}{ai_status_line}
 
 📈 آمار امروز:
 🎨 استیکر ساخته شده: {today_stickers}
@@ -1801,6 +1861,74 @@ def handle_admin_command(chat_id, text):
                 fail_count += 1
         
         send_message(chat_id, f"✅ پیام همگانی ارسال شد!\n\n✅ موفق: {success_count}\n❌ ناموفق: {fail_count}")
+    
+    # دستورات کنترل هوش مصنوعی
+    elif command == "ai_status" and AI_INTEGRATION_AVAILABLE:
+        try:
+            status_info = ai_manager.get_status() if ai_manager else None
+            if status_info:
+                status_text = 'فعال ✅' if status_info['active'] else 'غیرفعال ❌'
+                message = f"""🤖 وضعیت هوش مصنوعی (ادمین)
+
+📊 وضعیت: {status_text}
+⏰ آخرین به‌روزرسانی: {status_info.get('formatted_time', 'نامشخص')}
+👤 به‌روزرسانی شده توسط: {status_info.get('updated_by', 'نامشخص')}
+
+🔧 دستورات کنترل:
+/admin ai_on - فعال کردن هوش مصنوعی
+/admin ai_off - غیرفعال کردن هوش مصنوعی
+/admin ai_toggle - تغییر وضعیت
+/admin ai_panel - باز کردن پنل کنترل"""
+            else:
+                message = "❌ خطا در دریافت وضعیت هوش مصنوعی"
+            send_message(chat_id, message)
+        except Exception as e:
+            send_message(chat_id, f"❌ خطا در بررسی وضعیت: {e}")
+    
+    elif command == "ai_on" and AI_INTEGRATION_AVAILABLE:
+        try:
+            success, message = activate_ai()
+            if success:
+                send_message(chat_id, f"✅ {message}")
+            else:
+                send_message(chat_id, f"❌ خطا: {message}")
+        except Exception as e:
+            send_message(chat_id, f"❌ خطا در فعال کردن: {e}")
+    
+    elif command == "ai_off" and AI_INTEGRATION_AVAILABLE:
+        try:
+            success, message = deactivate_ai()
+            if success:
+                send_message(chat_id, f"✅ {message}")
+            else:
+                send_message(chat_id, f"❌ خطا: {message}")
+        except Exception as e:
+            send_message(chat_id, f"❌ خطا در غیرفعال کردن: {e}")
+    
+    elif command == "ai_toggle" and AI_INTEGRATION_AVAILABLE:
+        try:
+            success, message, new_status = toggle_ai()
+            if success:
+                status_emoji = '✅' if new_status else '❌'
+                send_message(chat_id, f"{status_emoji} {message}")
+            else:
+                send_message(chat_id, f"❌ خطا: {message}")
+        except Exception as e:
+            send_message(chat_id, f"❌ خطا در تغییر وضعیت: {e}")
+    
+    elif command == "ai_panel" and AI_INTEGRATION_AVAILABLE:
+        panel_url = os.environ.get('AI_CONTROL_URL', 'http://localhost:5000')
+        message = f"""🎛️ پنل کنترل هوش مصنوعی (ادمین)
+
+🔗 لینک پنل: {panel_url}
+
+از این پنل می‌توانید:
+• وضعیت هوش مصنوعی را مشاهده کنید
+• هوش مصنوعی را فعال/غیرفعال کنید
+• تاریخچه تغییرات را ببینید
+
+💡 نکته: این لینک فقط برای ادمین در دسترس است."""
+        send_message(chat_id, message)
     
     else:
         send_message(chat_id, "❌ دستور نامعتبر! از /admin help استفاده کنید.")
@@ -2774,13 +2902,16 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
 
 def show_main_menu(chat_id):
     # بررسی وضعیت اشتراک کاربر
+    ai_button_text = get_ai_button_text()
+    
     if is_subscribed(chat_id):
         keyboard = {
             "keyboard": [
                 ["🎁 تست رایگان", "⭐ اشتراک"],
                 ["🎨 طراحی پیشرفته", "📚 قالب‌های آماده"],
-                ["📝 تاریخچه", "⚙️ تنظیمات"],
-                ["ℹ️ درباره", "📞 پشتیبانی"]
+                [ai_button_text, "📝 تاریخچه"],
+                ["⚙️ تنظیمات", "📞 پشتیبانی"],
+                ["ℹ️ درباره"]
             ],
             "resize_keyboard": True
         }
@@ -2789,8 +2920,9 @@ def show_main_menu(chat_id):
             "keyboard": [
                 ["🎁 تست رایگان", "⭐ اشتراک"],
                 ["🎨 طراحی پیشرفته", "📚 قالب‌های آماده"],
-                ["📝 تاریخچه", "⚙️ تنظیمات"],
-                ["ℹ️ درباره", "📞 پشتیبانی"]
+                [ai_button_text, "📝 تاریخچه"],
+                ["⚙️ تنظیمات", "📞 پشتیبانی"],
+                ["ℹ️ درباره"]
             ],
             "resize_keyboard": True
         }
@@ -2806,6 +2938,11 @@ def show_main_menu(chat_id):
     else:
         remaining, _ = check_sticker_limit(chat_id)
         welcome_message += f"\n\n📊 استیکر باقی مانده: {remaining}/5"
+    
+    # اضافه کردن وضعیت هوش مصنوعی
+    if AI_INTEGRATION_AVAILABLE:
+        ai_status = get_ai_status_text()
+        welcome_message += f"\n{ai_status}"
     
     requests.post(API + "sendMessage", json={
         "chat_id": chat_id,
@@ -3359,6 +3496,193 @@ def handle_file_processing_error(chat_id, error_type, details=""):
         message += "• با پشتیبانی تماس بگیرید"
     
     send_message_with_back_button(chat_id, message)
+
+# === توابع کنترل هوش مصنوعی ===
+
+def get_ai_button_text():
+    """دریافت متن دکمه هوش مصنوعی بر اساس وضعیت فعلی"""
+    if not AI_INTEGRATION_AVAILABLE:
+        return "🤖 هوش مصنوعی (غیرفعال)"
+    
+    try:
+        is_active = check_ai_status()
+        if is_active:
+            return "🤖 هوش مصنوعی ✅"
+        else:
+            return "🤖 هوش مصنوعی ❌"
+    except:
+        return "🤖 هوش مصنوعی ⚠️"
+
+def get_ai_status_text():
+    """دریافت متن وضعیت هوش مصنوعی برای نمایش در منو"""
+    if not AI_INTEGRATION_AVAILABLE:
+        return "🤖 هوش مصنوعی: غیردسترس"
+    
+    try:
+        is_active = check_ai_status()
+        if is_active:
+            return "🤖 هوش مصنوعی: فعال ✅"
+        else:
+            return "🤖 هوش مصنوعی: غیرفعال ❌"
+    except:
+        return "🤖 هوش مصنوعی: خطا در اتصال ⚠️"
+
+def handle_ai_control_button(chat_id):
+    """مدیریت کلیک روی دکمه هوش مصنوعی"""
+    if not AI_INTEGRATION_AVAILABLE:
+        send_message_with_back_button(chat_id,
+            "❌ سیستم کنترل هوش مصنوعی در دسترس نیست!\n\n"
+            "💡 برای فعال کردن این قابلیت، لطفاً با پشتیبانی تماس بگیرید.")
+        return
+    
+    try:
+        # دریافت وضعیت فعلی
+        current_status = check_ai_status()
+        
+        # نمایش پنل کنترل هوش مصنوعی
+        show_ai_control_panel(chat_id, current_status)
+        
+    except Exception as e:
+        logger.error(f"Error in AI control: {e}")
+        send_message_with_back_button(chat_id,
+            "❌ خطا در دریافت وضعیت هوش مصنوعی!\n\n"
+            "🔄 لطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.")
+
+def show_ai_control_panel(chat_id, current_status):
+    """نمایش پنل کنترل هوش مصنوعی"""
+    status_emoji = "✅" if current_status else "❌"
+    status_text = "فعال" if current_status else "غیرفعال"
+    action_text = "غیرفعال کردن" if current_status else "فعال کردن"
+    action_emoji = "⏸️" if current_status else "🚀"
+    
+    message = f"""🤖 پنل کنترل هوش مصنوعی
+
+📊 وضعیت فعلی: {status_text} {status_emoji}
+
+💡 توضیحات:
+• وقتی هوش مصنوعی فعال باشد، به پیام‌های کاربران پاسخ می‌دهد
+• وقتی غیرفعال باشد، فقط عملکرد عادی ربات کار می‌کند
+
+🎛️ برای تغییر وضعیت، روی دکمه زیر کلیک کنید:"""
+
+    keyboard = {
+        "keyboard": [
+            [f"{action_emoji} {action_text} هوش مصنوعی"],
+            ["📊 وضعیت هوش مصنوعی", "🔗 پنل وب"],
+            ["🔙 بازگشت"]
+        ],
+        "resize_keyboard": True
+    }
+    
+    requests.post(API + "sendMessage", json={
+        "chat_id": chat_id,
+        "text": message,
+        "reply_markup": keyboard
+    })
+
+def handle_ai_toggle(chat_id):
+    """مدیریت تغییر وضعیت هوش مصنوعی"""
+    if not AI_INTEGRATION_AVAILABLE:
+        send_message_with_back_button(chat_id, "❌ سیستم کنترل هوش مصنوعی در دسترس نیست!")
+        return
+    
+    try:
+        # تغییر وضعیت
+        success, message, new_status = toggle_ai()
+        
+        if success:
+            status_emoji = "✅" if new_status else "❌"
+            status_text = "فعال" if new_status else "غیرفعال"
+            
+            response_message = f"""🤖 وضعیت هوش مصنوعی تغییر کرد!
+
+📊 وضعیت جدید: {status_text} {status_emoji}
+
+✅ {message}
+
+💡 تغییرات بلافاصله اعمال شده‌اند."""
+            
+            # نمایش پنل جدید
+            show_ai_control_panel(chat_id, new_status)
+            
+        else:
+            send_message_with_back_button(chat_id, f"❌ خطا در تغییر وضعیت: {message}")
+            
+    except Exception as e:
+        logger.error(f"Error toggling AI: {e}")
+        send_message_with_back_button(chat_id,
+            "❌ خطا در تغییر وضعیت هوش مصنوعی!\n\n"
+            "🔄 لطفاً دوباره تلاش کنید.")
+
+def handle_ai_status_check(chat_id):
+    """نمایش وضعیت تفصیلی هوش مصنوعی"""
+    if not AI_INTEGRATION_AVAILABLE:
+        send_message_with_back_button(chat_id, "❌ سیستم کنترل هوش مصنوعی در دسترس نیست!")
+        return
+    
+    try:
+        status_info = ai_manager.get_status() if ai_manager else None
+        
+        if status_info:
+            status_text = 'فعال ✅' if status_info['active'] else 'غیرفعال ❌'
+            
+            message = f"""📊 گزارش کامل وضعیت هوش مصنوعی
+
+🤖 وضعیت: {status_text}
+⏰ آخرین به‌روزرسانی: {status_info.get('formatted_time', 'نامشخص')}
+👤 به‌روزرسانی شده توسط: {status_info.get('updated_by', 'نامشخص')}
+
+🔧 عملکرد:
+• پاسخ‌دهی خودکار: {'فعال' if status_info['active'] else 'غیرفعال'}
+• اتصال به سرور: {'برقرار' if status_info['active'] else 'قطع'}
+
+💡 برای تغییر وضعیت از دکمه‌های زیر استفاده کنید."""
+            
+            show_ai_control_panel(chat_id, status_info['active'])
+        else:
+            send_message_with_back_button(chat_id, "❌ خطا در دریافت اطلاعات وضعیت!")
+            
+    except Exception as e:
+        logger.error(f"Error checking AI status: {e}")
+        send_message_with_back_button(chat_id, "❌ خطا در بررسی وضعیت هوش مصنوعی!")
+
+def handle_ai_web_panel(chat_id):
+    """ارسال لینک پنل وب کنترل هوش مصنوعی"""
+    panel_url = os.environ.get('AI_CONTROL_URL', 'http://localhost:5000')
+    
+    message = f"""🌐 پنل وب کنترل هوش مصنوعی
+
+🔗 لینک پنل: {panel_url}
+
+🎛️ از این پنل می‌توانید:
+• وضعیت هوش مصنوعی را مشاهده کنید
+• هوش مصنوعی را فعال/غیرفعال کنید
+• تاریخچه تغییرات را ببینید
+• اتصال سرور را بررسی کنید
+
+💡 نکته: این پنل برای مدیریت آسان‌تر طراحی شده است."""
+    
+    keyboard = {
+        "inline_keyboard": [[
+            {
+                "text": "🌐 باز کردن پنل وب",
+                "url": panel_url
+            }
+        ]]
+    }
+    
+    requests.post(API + "sendMessage", json={
+        "chat_id": chat_id,
+        "text": message,
+        "reply_markup": keyboard
+    })
+    
+    # بازگشت به منوی کنترل
+    try:
+        current_status = check_ai_status()
+        show_ai_control_panel(chat_id, current_status)
+    except:
+        send_message_with_back_button(chat_id, "🔙 برای بازگشت به منو از دکمه بازگشت استفاده کنید.")
 
 if __name__ == "__main__":
     load_locales()
