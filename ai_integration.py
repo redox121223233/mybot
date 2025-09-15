@@ -3,6 +3,9 @@ import json
 import os
 import logging
 
+# تنظیم logger ابتدا
+logger = logging.getLogger("ai_integration")
+
 # تنظیمات سرور کنترل هوش مصنوعی
 AI_CONTROL_URL = os.environ.get('AI_CONTROL_URL', 'http://localhost:5000')
 AI_CONTROL_SECRET = os.environ.get('AI_CONTROL_SECRET', 'default_secret')
@@ -11,8 +14,6 @@ AI_CONTROL_SECRET = os.environ.get('AI_CONTROL_SECRET', 'default_secret')
 if AI_CONTROL_URL and not AI_CONTROL_URL.startswith(('http://', 'https://')):
     AI_CONTROL_URL = 'https://' + AI_CONTROL_URL
     logger.info(f"URL اصلاح شد: {AI_CONTROL_URL}")
-
-logger = logging.getLogger("ai_integration")
 
 def check_ai_status():
     """بررسی وضعیت هوش مصنوعی"""
