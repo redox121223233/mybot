@@ -201,13 +201,22 @@ def should_ai_respond():
     return is_ai_active()
 
 if __name__ == '__main__':
-    print("🚀 سرور کنترل هوش مصنوعی در حال راه‌اندازی...")
-    print(f"📁 فایل وضعیت: {AI_STATUS_FILE}")
+    # تنظیم encoding برای Windows
+    import sys
+    if sys.platform.startswith('win'):
+        import codecs
+        sys.stdout = codecs.getwriter('utf-8')(sys.stdout.detach())
+        sys.stderr = codecs.getwriter('utf-8')(sys.stderr.detach())
+    
+    print("سرور کنترل هوش مصنوعی در حال راه‌اندازی...")
+    print(f"فایل وضعیت: {AI_STATUS_FILE}")
     
     # بارگذاری وضعیت اولیه
     initial_status = load_ai_status()
-    print(f"📊 وضعیت اولیه: {'فعال' if initial_status['active'] else 'غیرفعال'}")
+    status_text = 'فعال' if initial_status['active'] else 'غیرفعال'
+    print(f"وضعیت اولیه: {status_text}")
     
     # راه‌اندازی سرور
     port = int(os.environ.get('AI_CONTROL_PORT', 5000))
-    app.run(host='0.0.0.0', port=port, debug=True)
+    print(f"سرور در حال اجرا روی پورت: {port}")
+    app.run(host='0.0.0.0', port=port, debug=False)
