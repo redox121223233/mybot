@@ -1,2 +1,2 @@
 web: python bot.py
-ai-control: python ai_control_server.py
+
