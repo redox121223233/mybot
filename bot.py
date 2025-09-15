@@ -247,6 +247,106 @@ app = Flask(__name__)
 def home():
     return "✅ Bot is running!"
 
+@app.route("/api/create-sticker", methods=["POST"])
+def api_create_sticker():
+    """API endpoint برای ساخت استیکر از n8n"""
+    try:
+        data = request.get_json()
+        if not data:
+            return {"error": "داده‌های JSON مورد نیاز است"}, 400
+        
+        chat_id = data.get("chat_id")
+        text = data.get("text")
+        user_id = data.get("user_id", chat_id)
+        background = data.get("background", "default")
+        
+        if not chat_id or not text:
+            return {"error": "chat_id و text الزامی هستند"}, 400
+        
+        # بررسی محدودیت استیکر (اگر اشتراک ندارد)
+        if not is_subscribed(chat_id):
+            remaining, next_reset = check_sticker_limit(chat_id)
+            if remaining <= 0:
+                next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
+                return {
+                    "error": "محدودیت روزانه تمام شده",
+                    "message": f"محدودیت روزانه شما تمام شده! زمان بعدی: {next_reset_time}",
+                    "next_reset": next_reset_time
+                }, 429
+        
+        # آماده‌سازی کاربر برای ساخت استیکر
+        if chat_id not in user_data:
+            user_data[chat_id] = {
+                "mode": "free",
+                "count": 0,
+                "step": "text",
+                "pack_name": None,
+                "background": None,
+                "created_packs": [],
+                "sticker_usage": [],
+                "last_reset": time.time()
+            }
+        
+        # تنظیم pack_name اگر وجود نداشت
+        if not user_data[chat_id].get("pack_name"):
+            pack_name = sanitize_pack_name(f"ai_pack_{user_id}")
+            unique_pack_name = f"{pack_name}_{chat_id}_by_{BOT_USERNAME}"
+            user_data[chat_id]["pack_name"] = unique_pack_name
+        
+        user_data[chat_id]["mode"] = "free"
+        user_data[chat_id]["step"] = "text"
+        
+        # ساخت استیکر
+        logger.info(f"API: Creating sticker for chat_id={chat_id}, text='{text}'")
+        
+        # استفاده از تابع موجود برای ساخت استیکر
+        success = send_as_sticker(chat_id, text, None)
+        
+        if success:
+            user_data[chat_id]["count"] += 1
+            record_sticker_usage(chat_id)
+            save_user_data()
+            
+            return {
+                "success": True,
+                "message": "استیکر با موفقیت ساخته شد",
+                "sticker_count": user_data[chat_id]["count"],
+                "pack_name": user_data[chat_id]["pack_name"]
+            }
+        else:
+            return {"error": "خطا در ساخت استیکر"}, 500
+            
+    except Exception as e:
+        logger.error(f"API Error: {e}")
+        return {"error": f"خطای سرور: {str(e)}"}, 500
+
+@app.route("/api/sticker-status/<int:chat_id>", methods=["GET"])
+def api_sticker_status(chat_id):
+    """بررسی وضعیت استیکر کاربر"""
+    try:
+        if chat_id not in user_data:
+            return {
+                "has_pack": False,
+                "sticker_count": 0,
+                "remaining_limit": 5
+            }
+        
+        user_info = user_data[chat_id]
+        remaining, next_reset = check_sticker_limit(chat_id)
+        
+        return {
+            "has_pack": bool(user_info.get("pack_name")),
+            "pack_name": user_info.get("pack_name"),
+            "sticker_count": user_info.get("count", 0),
+            "remaining_limit": remaining,
+            "is_subscribed": is_subscribed(chat_id),
+            "next_reset": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
+        }
+        
+    except Exception as e:
+        logger.error(f"API Status Error: {e}")
+        return {"error": f"خطا: {str(e)}"}, 500
+
 @app.post(f"/webhook/{WEBHOOK_SECRET}")
 def webhook():
     update = request.get_json(force=True, silent=True) or {}
