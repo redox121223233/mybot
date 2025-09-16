@@ -3954,53 +3954,115 @@ def handle_ai_message(chat_id, message_text):
         logger.error(f"Error in AI message handling: {e}")
         send_message(chat_id, "🤖 متأسفانه خطایی رخ داد. لطفاً دوباره تلاش کنید.")
 
-def generate_ai_response(message_text):
-    """تولید پاسخ هوش مصنوعی (شبیه‌سازی - در آینده با n8n جایگزین می‌شود)"""
+def send_to_n8n_ai(chat_id, message_text):
+    """ارسال پیام به n8n برای پردازش هوش مصنوعی"""
     try:
-        # کلمات کلیدی برای تشخیص درخواست استیکر
-        sticker_keywords = [
-            "استیکر", "sticker", "بساز", "make", "create", "تولید", "درست کن",
-            "می‌خوام", "want", "need", "لازم دارم", "بده", "give me"
-        ]
+        n8n_webhook_url = os.environ.get('N8N_AI_WEBHOOK_URL')
+        if not n8n_webhook_url:
+            logger.warning("N8N_AI_WEBHOOK_URL not configured, using local AI")
+            return None
         
-        # بررسی اینکه آیا کاربر استیکر می‌خواهد
-        should_create_sticker = any(keyword in message_text.lower() for keyword in sticker_keywords)
+        payload = {
+            "chat_id": chat_id,
+            "message": message_text,
+            "timestamp": time.time(),
+            "user_info": user_data.get(chat_id, {})
+        }
         
-        if should_create_sticker:
-            # استخراج متن استیکر از پیام
+        response = requests.post(n8n_webhook_url, json=payload, timeout=30)
+        
+        if response.status_code == 200:
+            return response.json()
+        else:
+            logger.error(f"N8N webhook error: {response.status_code}")
+            return None
+            
+    except Exception as e:
+        logger.error(f"Error sending to N8N: {e}")
+        return None
+
+def generate_ai_response(message_text):
+    """تولید پاسخ هوش مصنوعی - اتصال به n8n یا fallback محلی"""
+    try:
+        # سعی برای ارسال به n8n
+        n8n_response = send_to_n8n_ai(None, message_text)
+        
+        if n8n_response:
+            # اگر n8n پاسخ داد، از آن استفاده کن
+            return {
+                "create_sticker": n8n_response.get("create_sticker", True),
+                "sticker_text": n8n_response.get("sticker_text", message_text),
+                "response": n8n_response.get("response", "پاسخ هوش مصنوعی"),
+                "background_description": n8n_response.get("background_description"),
+                "image_url": n8n_response.get("image_url")
+            }
+        
+        # اگر n8n در دسترس نبود، از سیستم محلی استفاده کن
+        return generate_local_ai_response(message_text)
+        
+    except Exception as e:
+        logger.error(f"Error in AI response generation: {e}")
+        return generate_local_ai_response(message_text)
+
+def generate_local_ai_response(message_text):
+    """تولید پاسخ محلی هوشمند"""
+    try:
+        message_lower = message_text.lower()
+        
+        # تشخیص درخواست‌های پیچیده
+        if any(word in message_lower for word in ["مرد", "زن", "آدم", "شخص", "کسی", "person", "man", "woman"]):
+            # درخواست تصویر انسان
+            if any(word in message_lower for word in ["راه", "walk", "می‌ره", "going", "حرکت", "moving"]):
+                return {
+                    "create_sticker": True,
+                    "sticker_text": "🚶‍♂️",
+                    "response": "متأسفانه فعلاً نمی‌تونم تصویر واقعی بکشم، ولی یه ایموجی مناسب برات انتخاب کردم! 🎨\n\n💡 برای تصاویر پیچیده، لطفاً منتظر به‌روزرسانی بعدی باشید."
+                }
+        
+        # درخواست‌های رنگ و بکگراند
+        elif any(word in message_lower for word in ["بکگراند", "background", "پس‌زمینه", "رنگ", "color"]):
+            return {
+                "create_sticker": False,
+                "response": """🎨 بله! می‌تونم بکگراند و رنگ‌های مختلف اضافه کنم!
+
+🌈 رنگ‌های موجود:
+• قرمز، آبی، سبز، زرد
+• مشکی، سفید، بنفش، نارنجی
+
+🖼️ بکگراندهای موجود:
+• شفاف، گرادیانت، الگو
+• یا عکس دلخواه شما
+
+💡 مثال: "استیکر بساز سلام با بکگراند آبی"
+📝 یا فقط متنتون رو بگید تا استیکر بسازم!"""
+            }
+        
+        # درخواست استیکر ساده
+        elif any(word in message_lower for word in ["استیکر", "sticker", "بساز", "create", "می‌خوام"]):
             sticker_text = extract_sticker_text(message_text)
-            
-            responses = [
-                f"حتماً! استیکر '{sticker_text}' رو برات می‌سازم! 🎨",
-                f"عالیه! الان استیکر '{sticker_text}' رو آماده می‌کنم! ✨",
-                f"باشه! استیکر '{sticker_text}' در حال ساخت... 🚀",
-                f"چه ایده قشنگی! استیکر '{sticker_text}' رو برات درست می‌کنم! 🎭"
-            ]
-            
-            import random
             return {
                 "create_sticker": True,
                 "sticker_text": sticker_text,
-                "response": random.choice(responses)
+                "response": f"حتماً! استیکر '{sticker_text}' رو برات می‌سازم! 🎨"
             }
-        else:
-            # پاسخ‌های عمومی هوش مصنوعی
-            responses = [
-                "سلام! چطور می‌تونم کمکتون کنم؟ 😊",
-                "چه خبر؟ اگه می‌خواید استیکر بسازم، بهم بگید! 🎨",
-                "سلام عزیز! برای ساخت استیکر کافیه بگید 'استیکر بساز' و متنتون رو بدید! ✨",
-                "چطورید؟ من اینجام تا استیکرهای قشنگ براتون بسازم! 🤖",
-                "سلام! اگه نیاز به استیکر دارید، فقط کافیه بگید چی می‌خواید! 🎭"
-            ]
-            
-            import random
+        
+        # سوالات عمومی
+        elif any(word in message_lower for word in ["سلام", "hello", "hi", "چطوری", "how are you"]):
             return {
                 "create_sticker": False,
-                "response": random.choice(responses)
+                "response": "سلام! من یه هوش مصنوعی هستم که استیکر می‌سازم! 🤖\n\n🎨 می‌تونم:\n• استیکر با متن دلخواه بسازم\n• رنگ‌ها و بکگراند اضافه کنم\n• فونت‌های مختلف استفاده کنم\n\n💡 مثال: 'استیکر بساز سلام دنیا'"
+            }
+        
+        # پاسخ پیش‌فرض
+        else:
+            return {
+                "create_sticker": True,
+                "sticker_text": message_text[:30],  # استفاده از خود پیام
+                "response": "فهمیدم! یه استیکر قشنگ با همین متن برات می‌سازم! ✨"
             }
             
     except Exception as e:
-        logger.error(f"Error generating AI response: {e}")
+        logger.error(f"Error in local AI response: {e}")
         return {
             "create_sticker": False,
             "response": "سلام! چطور می‌تونم کمکتون کنم؟ 😊"
