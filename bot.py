@@ -1562,10 +1562,13 @@ def process_user_state(chat_id, text):
             # اگر کاربر از قالب استفاده کرده، مستقیماً به ساخت استیکر برو
             if user_data[chat_id].get("background_style"):
                 user_data[chat_id]["step"] = "text"
-                send_message_with_back_button(chat_id, "✍️ حالا متن استیکرت رو بفرست:")
+                send_message_with_back_button(chat_id, f"✅ نام پک '{pack_name}' ثبت شد!\n\n✍️ حالا متن استیکرت رو بفرست:")
             else:
-                send_message_with_back_button(chat_id, "📷 یک عکس برای بکگراند استیکرت بفرست:")
+                send_message_with_back_button(chat_id, f"✅ نام پک '{pack_name}' ثبت شد!\n\n📷 یک عکس برای بکگراند استیکرت بفرست:")
                 user_data[chat_id]["step"] = "background"
+            
+            # ذخیره فوری
+            save_user_data()
             return True
 
         if step == "background":
@@ -2026,6 +2029,7 @@ def handle_admin_command(chat_id, text):
 • وضعیت هوش مصنوعی را مشاهده کنید
 • هوش مصنوعی را فعال/غیرفعال کنید
 • تاریخچه تغییرات را ببینید
+• اتصال سرور را بررسی کنید
 
 💡 نکته: این لینک فقط برای ادمین در دسترس است."""
         send_message(chat_id, message)
@@ -3298,7 +3302,8 @@ def apply_template(chat_id, template_name):
         "😄 خنده‌دار": {"color": "#FFA500", "bg": "templates/funny_bg.png", "font": "📝 فونت فانتزی", "size": "📏 بزرگ"},
         "🔥 هیجان‌انگیز": {"color": "#FF0000", "bg": "templates/exciting_bg.png", "font": "📝 فونت ضخیم", "size": "📏 خیلی بزرگ"},
         "📚 آموزشی": {"color": "#0000FF", "bg": "templates/education_bg.png", "font": "📝 فونت عادی", "size": "📏 متوسط"},
-        "💼 کاری": {"color": "#000000", "bg": "templates/work_bg.png", "font": "📝 فونت کلاسیک", "size": "📏 متوسط"},
+        # 🔧 رفع مشکل: تغییر رنگ فونت کاری از مشکی به سفید
+        "💼 کاری": {"color": "#FFFFFF", "bg": "templates/work_bg.png", "font": "📝 فونت کلاسیک", "size": "📏 متوسط"},
         "🏠 خانوادگی": {"color": "#00FF00", "bg": "templates/family_bg.png", "font": "📝 فونت عادی", "size": "📏 متوسط"}
     }
     
@@ -3681,14 +3686,22 @@ def show_ai_control_panel(chat_id, current_status):
     })
 
 def handle_ai_toggle(chat_id):
-    """مدیریت تغییر وضعیت هوش مصنوعی"""
+    """🔧 رفع مشکل: مدیریت تغییر وضعیت هوش مصنوعی با try-catch بهتر"""
     if not AI_INTEGRATION_AVAILABLE:
         send_message_with_back_button(chat_id, "❌ سیستم کنترل هوش مصنوعی در دسترس نیست!")
         return
     
     try:
-        # تغییر وضعیت
-        success, message, new_status = toggle_ai()
+        # تغییر وضعیت با مدیریت خطا بهتر
+        try:
+            success, message, new_status = toggle_ai()
+        except Exception as toggle_error:
+            logger.error(f"Error in toggle_ai function: {toggle_error}")
+            send_message_with_back_button(chat_id, 
+                f"❌ خطا در تغییر وضعیت هوش مصنوعی!\n\n"
+                f"🔍 جزئیات: {str(toggle_error)[:100]}\n\n"
+                f"💡 لطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.")
+            return
         
         if success:
             status_emoji = "✅" if new_status else "❌"
@@ -3703,13 +3716,14 @@ def handle_ai_toggle(chat_id):
 💡 تغییرات بلافاصله اعمال شده‌اند."""
             
             # نمایش پنل جدید
+            send_message(chat_id, response_message)
             show_ai_control_panel(chat_id, new_status)
             
         else:
             send_message_with_back_button(chat_id, f"❌ خطا در تغییر وضعیت: {message}")
             
     except Exception as e:
-        logger.error(f"Error toggling AI: {e}")
+        logger.error(f"Error in handle_ai_toggle: {e}")
         send_message_with_back_button(chat_id,
             "❌ خطا در تغییر وضعیت هوش مصنوعی!\n\n"
             "🔄 لطفاً دوباره تلاش کنید.")
