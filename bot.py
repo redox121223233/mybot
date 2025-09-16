@@ -538,32 +538,28 @@ def webhook():
                 send_message(chat_id, f"⏰ محدودیت روزانه شما تمام شده!\n\n🔄 زمان بعدی: {next_reset_time}\n\n💎 برای ساخت استیکر نامحدود، اشتراک تهیه کنید.")
                 return "ok"
             
+            # تنظیم حالت ساخت استیکر
             user_data[chat_id]["mode"] = "free"
-            # مهم: count, pack_name و background را reset نکن اگر کاربر قبلاً پکی دارد
-            if not user_data[chat_id].get("pack_name"):
-                user_data[chat_id]["count"] = 0
-                user_data[chat_id]["step"] = "ask_pack_choice"
-                user_data[chat_id]["pack_name"] = None
-                user_data[chat_id]["background"] = None
-            else:
-                # اگر کاربر قبلاً پکی دارد، مستقیماً به مرحله text برو
-                user_data[chat_id]["step"] = "text"
             
             # نمایش وضعیت محدودیت
             next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
             limit_info = f"📊 وضعیت شما: {remaining}/5 استیکر باقی مانده\n🔄 زمان بعدی: {next_reset_time}\n\n"
             
-            # بررسی پک‌های موجود
-            created_packs = user_data[chat_id].get("created_packs", [])
+            # بررسی پک‌های موجود و تنظیم مسیر درست
             if user_data[chat_id].get("pack_name"):
                 # اگر کاربر قبلاً پکی دارد، مستقیماً به ساخت استیکر ادامه دهد
-                pack_name = user_data[chat_id]["pack_name"]
+                user_data[chat_id]["step"] = "text"
                 send_message_with_back_button(chat_id, limit_info + f"✅ ادامه ساخت استیکر در پک فعلی\n✍️ متن استیکر بعدی را بفرست:\n\n📷 یا عکس جدید برای تغییر بکگراند بفرست:")
-            elif created_packs:
+            elif user_data[chat_id].get("created_packs"):
+                # اگر پک‌های قبلی دارد، اختیار انتخاب بده
+                user_data[chat_id]["step"] = "ask_pack_choice"
                 send_message(chat_id, limit_info + "📝 آیا می‌خواهید پک جدید بسازید یا به پک قبلی اضافه کنید؟\n1. ساخت پک جدید\n2. اضافه کردن به پک قبلی")
             else:
-                send_message(chat_id, limit_info + "📝 شما هنوز پکی ندارید. لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
+                # اگر هیچ پکی نداره، مستقیماً نام پک بپرس
                 user_data[chat_id]["step"] = "pack_name"
+                send_message_with_back_button(chat_id, limit_info + "📝 شما هنوز پکی ندارید. لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
+            
+            save_user_data()
             return "ok"
 
         # پردازش دکمه‌های طراحی پیشرفته
@@ -619,7 +615,7 @@ def webhook():
             user_data[chat_id]["mode"] = "free"
             if not user_data[chat_id].get("pack_name"):
                 user_data[chat_id]["step"] = "pack_name"
-                send_message(chat_id, f"✅ رنگ {text.split(' ')[1]} انتخاب شد!\n\n📝 حالا یک نام برای پک استیکر خود انتخاب کن:")
+                send_message_with_back_button(chat_id, f"✅ رنگ {text.split(' ')[1]} انتخاب شد!\n\n📝 حالا یک نام برای پک استیکر خود انتخاب کن:")
             else:
                 user_data[chat_id]["step"] = "text"
                 send_message_with_back_button(chat_id, f"✅ رنگ {text.split(' ')[1]} انتخاب شد!\n\n✍️ حالا متن استیکرت رو بفرست:")
@@ -633,7 +629,7 @@ def webhook():
             user_data[chat_id]["mode"] = "free"
             if not user_data[chat_id].get("pack_name"):
                 user_data[chat_id]["step"] = "pack_name"
-                send_message(chat_id, f"✅ {text} انتخاب شد!\n\n📝 حالا یک نام برای پک استیکر خود انتخاب کن:")
+                send_message_with_back_button(chat_id, f"✅ {text} انتخاب شد!\n\n📝 حالا یک نام برای پک استیکر خود انتخاب کن:")
             else:
                 user_data[chat_id]["step"] = "text"
                 send_message_with_back_button(chat_id, f"✅ {text} انتخاب شد!\n\n✍️ حالا متن استیکرت رو بفرست:")
@@ -647,7 +643,7 @@ def webhook():
             user_data[chat_id]["mode"] = "free"
             if not user_data[chat_id].get("pack_name"):
                 user_data[chat_id]["step"] = "pack_name"
-                send_message(chat_id, f"✅ اندازه {text.split(' ')[1]} انتخاب شد!\n\n📝 حالا یک نام برای پک استیکر خود انتخاب کن:")
+                send_message_with_back_button(chat_id, f"✅ اندازه {text.split(' ')[1]} انتخاب شد!\n\n📝 حالا یک نام برای پک استیکر خود انتخاب کن:")
             else:
                 user_data[chat_id]["step"] = "text"
                 send_message_with_back_button(chat_id, f"✅ اندازه {text.split(' ')[1]} انتخاب شد!\n\n✍️ حالا متن استیکرت رو بفرست:")
@@ -661,7 +657,7 @@ def webhook():
             user_data[chat_id]["mode"] = "free"
             if not user_data[chat_id].get("pack_name"):
                 user_data[chat_id]["step"] = "pack_name"
-                send_message(chat_id, f"✅ افکت {text} انتخاب شد!\n\n📝 حالا یک نام برای پک استیکر خود انتخاب کن:")
+                send_message_with_back_button(chat_id, f"✅ افکت {text} انتخاب شد!\n\n📝 حالا یک نام برای پک استیکر خود انتخاب کن:")
             else:
                 user_data[chat_id]["step"] = "text"
                 send_message_with_back_button(chat_id, f"✅ افکت {text} انتخاب شد!\n\n✍️ حالا متن استیکرت رو بفرست:")
@@ -1488,7 +1484,7 @@ def process_user_state(chat_id, text):
         
         if step == "ask_pack_choice":
             if text == "1":  # ساخت پک جدید
-                send_message(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
+                send_message_with_back_button(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
                 user_data[chat_id]["step"] = "pack_name"
             elif text == "2":  # اضافه کردن به پک قبلی
                 created_packs = user_data[chat_id].get("created_packs", [])
@@ -1497,12 +1493,12 @@ def process_user_state(chat_id, text):
                     pack_list = ""
                     for i, pack in enumerate(created_packs, 1):
                         pack_list += f"{i}. {pack['title']}\n"
-                    send_message(chat_id, f"📂 پک‌های موجود شما:\n{pack_list}\nلطفاً شماره پک مورد نظر را انتخاب کنید:")
+                    send_message_with_back_button(chat_id, f"📂 پک‌های موجود شما:\n{pack_list}\nلطفاً شماره پک مورد نظر را انتخاب کنید:")
                     user_data[chat_id]["step"] = "select_pack"
                 else:
-                    send_message(chat_id, "❌ هنوز پک استیکری نداری. اول باید پک جدید بسازی.")
+                    send_message_with_back_button(chat_id, "❌ هنوز پک استیکری نداری. اول باید پک جدید بسازی.")
                     user_data[chat_id]["step"] = "pack_name"
-                    send_message(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
+                    send_message_with_back_button(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
             return True
 
         if step == "select_pack":
@@ -1512,12 +1508,12 @@ def process_user_state(chat_id, text):
                 if 0 <= pack_index < len(created_packs):
                     selected_pack = created_packs[pack_index]
                     user_data[chat_id]["pack_name"] = selected_pack["name"]
-                    send_message_with_back_button(chat_id, f"✅ پک '{selected_pack['title']}' انتخاب شد.\n📷 یک عکس برای بکگراند استیکرت بفرست:")
                     user_data[chat_id]["step"] = "background"
+                    send_message_with_back_button(chat_id, f"✅ پک '{selected_pack['title']}' انتخاب شد.\n📷 یک عکس برای بکگراند استیکرت بفرست:")
                 else:
-                    send_message(chat_id, "❌ شماره پک نامعتبر است. لطفاً دوباره انتخاب کنید:")
+                    send_message_with_back_button(chat_id, "❌ شماره پک نامعتبر است. لطفاً دوباره انتخاب کنید:")
             except ValueError:
-                send_message(chat_id, "❌ لطفاً یک شماره معتبر وارد کنید:")
+                send_message_with_back_button(chat_id, "❌ لطفاً یک شماره معتبر وارد کنید:")
             return True
 
         if step == "pack_name":
@@ -1537,7 +1533,7 @@ def process_user_state(chat_id, text):
             
             # اگر نام تبدیل شده با نام اصلی متفاوت بود، به کاربر اطلاع بده
             if pack_name != original_name.replace(" ", "_"):
-                send_message(chat_id, f"ℹ️ نام پک شما از '{original_name}' به '{pack_name}' تبدیل شد تا با قوانین تلگرام سازگار باشد.")
+                send_message_with_back_button(chat_id, f"ℹ️ نام پک شما از '{original_name}' به '{pack_name}' تبدیل شد تا با قوانین تلگرام سازگار باشد.")
             
             # بررسی اینکه پک با این نام وجود دارد یا نه (اگرچه با شناسه کاربر احتمال تداخل کمه)
             resp = requests.get(API + f"getStickerSet?name={unique_pack_name}").json()
@@ -1562,12 +1558,11 @@ def process_user_state(chat_id, text):
             # اگر کاربر از قالب استفاده کرده، مستقیماً به ساخت استیکر برو
             if user_data[chat_id].get("background_style"):
                 user_data[chat_id]["step"] = "text"
-                send_message_with_back_button(chat_id, f"✅ نام پک '{pack_name}' ثبت شد!\n\n✍️ حالا متن استیکرت رو بفرست:")
+                send_message_with_back_button(chat_id, "✍️ حالا متن استیکرت رو بفرست:")
             else:
-                send_message_with_back_button(chat_id, f"✅ نام پک '{pack_name}' ثبت شد!\n\n📷 یک عکس برای بکگراند استیکرت بفرست:")
                 user_data[chat_id]["step"] = "background"
+                send_message_with_back_button(chat_id, "📷 یک عکس برای بکگراند استیکرت بفرست:")
             
-            # ذخیره فوری
             save_user_data()
             return True
 
@@ -1644,7 +1639,7 @@ def process_user_state(chat_id, text):
             # اگر pack_name نداریم، ابتدا آن را بپرس
             if not user_data[chat_id].get("pack_name"):
                 user_data[chat_id]["step"] = "pack_name"
-                send_message(chat_id, f"✅ تنظیمات ذخیره شد!\n\n📝 حالا یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
+                send_message_with_back_button(chat_id, f"✅ تنظیمات ذخیره شد!\n\n📝 حالا یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
             else:
                 # اگر pack_name داریم، مستقیماً به ساخت استیکر برو
                 user_data[chat_id]["step"] = "text"
@@ -3302,8 +3297,7 @@ def apply_template(chat_id, template_name):
         "😄 خنده‌دار": {"color": "#FFA500", "bg": "templates/funny_bg.png", "font": "📝 فونت فانتزی", "size": "📏 بزرگ"},
         "🔥 هیجان‌انگیز": {"color": "#FF0000", "bg": "templates/exciting_bg.png", "font": "📝 فونت ضخیم", "size": "📏 خیلی بزرگ"},
         "📚 آموزشی": {"color": "#0000FF", "bg": "templates/education_bg.png", "font": "📝 فونت عادی", "size": "📏 متوسط"},
-        # 🔧 رفع مشکل: تغییر رنگ فونت کاری از مشکی به سفید
-        "💼 کاری": {"color": "#FFFFFF", "bg": "templates/work_bg.png", "font": "📝 فونت کلاسیک", "size": "📏 متوسط"},
+        "💼 کاری": {"color": "#000000", "bg": "templates/work_bg.png", "font": "📝 فونت کلاسیک", "size": "📏 متوسط"},
         "🏠 خانوادگی": {"color": "#00FF00", "bg": "templates/family_bg.png", "font": "📝 فونت عادی", "size": "📏 متوسط"}
     }
     
@@ -3347,7 +3341,7 @@ def apply_template(chat_id, template_name):
         # اگر pack_name نداریم، ابتدا آن را بپرس
         if not user_data[chat_id].get("pack_name"):
             user_data[chat_id]["step"] = "pack_name"
-            send_message(chat_id, f"✅ قالب '{template_name}' اعمال شد!\n\n🎨 رنگ: {color_name}\n🖼️ پس‌زمینه: {template['bg']}\n📝 فونت: {template['font']}\n📏 اندازه: {template['size']}\n\n📝 حالا یک نام برای پک استیکر خود انتخاب کن:")
+            send_message_with_back_button(chat_id, f"✅ قالب '{template_name}' اعمال شد!\n\n🎨 رنگ: {color_name}\n🖼️ پس‌زمینه: {template['bg']}\n📝 فونت: {template['font']}\n📏 اندازه: {template['size']}\n\n📝 حالا یک نام برای پک استیکر خود انتخاب کن:")
         else:
             user_data[chat_id]["step"] = "text"
             send_message_with_back_button(chat_id, f"✅ قالب '{template_name}' اعمال شد!\n\n🎨 رنگ: {color_name}\n🖼️ پس‌زمینه: {template['bg']}\n📝 فونت: {template['font']}\n📏 اندازه: {template['size']}\n\nحالا متن خود را بفرستید:")
@@ -3686,22 +3680,14 @@ def show_ai_control_panel(chat_id, current_status):
     })
 
 def handle_ai_toggle(chat_id):
-    """🔧 رفع مشکل: مدیریت تغییر وضعیت هوش مصنوعی با try-catch بهتر"""
+    """مدیریت تغییر وضعیت هوش مصنوعی"""
     if not AI_INTEGRATION_AVAILABLE:
         send_message_with_back_button(chat_id, "❌ سیستم کنترل هوش مصنوعی در دسترس نیست!")
         return
     
     try:
-        # تغییر وضعیت با مدیریت خطا بهتر
-        try:
-            success, message, new_status = toggle_ai()
-        except Exception as toggle_error:
-            logger.error(f"Error in toggle_ai function: {toggle_error}")
-            send_message_with_back_button(chat_id, 
-                f"❌ خطا در تغییر وضعیت هوش مصنوعی!\n\n"
-                f"🔍 جزئیات: {str(toggle_error)[:100]}\n\n"
-                f"💡 لطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید.")
-            return
+        # تغییر وضعیت
+        success, message, new_status = toggle_ai()
         
         if success:
             status_emoji = "✅" if new_status else "❌"
@@ -3716,14 +3702,13 @@ def handle_ai_toggle(chat_id):
 💡 تغییرات بلافاصله اعمال شده‌اند."""
             
             # نمایش پنل جدید
-            send_message(chat_id, response_message)
             show_ai_control_panel(chat_id, new_status)
             
         else:
             send_message_with_back_button(chat_id, f"❌ خطا در تغییر وضعیت: {message}")
             
     except Exception as e:
-        logger.error(f"Error in handle_ai_toggle: {e}")
+        logger.error(f"Error toggling AI: {e}")
         send_message_with_back_button(chat_id,
             "❌ خطا در تغییر وضعیت هوش مصنوعی!\n\n"
             "🔄 لطفاً دوباره تلاش کنید.")
