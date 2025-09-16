@@ -21,6 +21,9 @@ except ImportError:
     AI_INTEGRATION_AVAILABLE = False
     logger = None  # logger هنوز تعریف نشده
 
+# تنظیم URL سرور کنترل هوش مصنوعی
+AI_CONTROL_URL = os.environ.get('AI_CONTROL_URL', 'https://mybot-production-61d8.up.railway.app')
+
 # --- Logger ---
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("bot")
@@ -346,6 +349,197 @@ def api_sticker_status(chat_id):
     except Exception as e:
         logger.error(f"API Status Error: {e}")
         return {"error": f"خطا: {str(e)}"}, 500
+
+# === AI Control API Endpoints ===
+
+@app.route("/api/ai-status", methods=['GET'])
+def get_ai_status_api():
+    """API برای دریافت وضعیت هوش مصنوعی"""
+    try:
+        if not AI_INTEGRATION_AVAILABLE:
+            return {"error": "AI system not available"}, 503
+        
+        # بارگذاری وضعیت از فایل محلی
+        ai_status_file = "ai_status.json"
+        if os.path.exists(ai_status_file):
+            with open(ai_status_file, 'r', encoding='utf-8') as f:
+                status = json.load(f)
+        else:
+            status = {"active": False, "last_updated": time.time(), "updated_by": "system"}
+        
+        return {
+            "active": status.get("active", False),
+            "last_updated": status.get("last_updated", 0),
+            "updated_by": status.get("updated_by", "unknown"),
+            "timestamp": time.time(),
+            "formatted_time": time.strftime("%Y-%m-%d %H:%M:%S")
+        }
+    except Exception as e:
+        logger.error(f"Error getting AI status: {e}")
+        return {"error": str(e)}, 500
+
+@app.route("/api/ai-status", methods=['POST'])
+def set_ai_status_api():
+    """API برای تنظیم وضعیت هوش مصنوعی"""
+    try:
+        if not AI_INTEGRATION_AVAILABLE:
+            return {"error": "AI system not available"}, 503
+        
+        data = request.get_json()
+        if not data:
+            return {"error": "Invalid JSON data"}, 400
+        
+        active = data.get('active')
+        if active is None:
+            return {"error": "Parameter 'active' is required"}, 400
+        
+        # ذخیره وضعیت در فایل محلی
+        ai_status_file = "ai_status.json"
+        status = {
+            "active": bool(active),
+            "last_updated": time.time(),
+            "updated_by": request.remote_addr or "api"
+        }
+        
+        with open(ai_status_file, 'w', encoding='utf-8') as f:
+            json.dump(status, f, ensure_ascii=False, indent=2)
+        
+        return {
+            "success": True,
+            "message": "Status updated successfully",
+            "active": status["active"],
+            "timestamp": status["last_updated"]
+        }
+    except Exception as e:
+        logger.error(f"Error setting AI status: {e}")
+        return {"error": str(e)}, 500
+
+@app.route("/api/toggle", methods=['POST'])
+def toggle_ai_status_api():
+    """API برای تغییر وضعیت هوش مصنوعی"""
+    try:
+        if not AI_INTEGRATION_AVAILABLE:
+            return {"error": "AI system not available"}, 503
+        
+        # بارگذاری وضعیت فعلی
+        ai_status_file = "ai_status.json"
+        if os.path.exists(ai_status_file):
+            with open(ai_status_file, 'r', encoding='utf-8') as f:
+                status = json.load(f)
+        else:
+            status = {"active": False, "last_updated": time.time(), "updated_by": "system"}
+        
+        # تغییر وضعیت
+        status["active"] = not status.get("active", False)
+        status["last_updated"] = time.time()
+        status["updated_by"] = request.remote_addr or "api"
+        
+        # ذخیره وضعیت جدید
+        with open(ai_status_file, 'w', encoding='utf-8') as f:
+            json.dump(status, f, ensure_ascii=False, indent=2)
+        
+        return {
+            "success": True,
+            "message": "Status toggled",
+            "active": status["active"],
+            "timestamp": status["last_updated"]
+        }
+    except Exception as e:
+        logger.error(f"Error toggling AI status: {e}")
+        return {"error": str(e)}, 500
+
+@app.route("/api/check", methods=['GET'])
+def check_ai_status_api():
+    """API ساده برای بررسی وضعیت هوش مصنوعی"""
+    try:
+        ai_status_file = "ai_status.json"
+        if os.path.exists(ai_status_file):
+            with open(ai_status_file, 'r', encoding='utf-8') as f:
+                status = json.load(f)
+                active = status.get("active", False)
+        else:
+            active = False
+        
+        return {
+            "active": active,
+            "status": "فعال" if active else "غیرفعال",
+            "timestamp": time.time()
+        }
+    except Exception as e:
+        logger.error(f"Error checking AI status: {e}")
+        return {"error": str(e)}, 500
+
+@app.route("/webhook/ai-control", methods=['POST'])
+def ai_control_webhook_api():
+    """وب‌هوک برای کنترل هوش مصنوعی"""
+    try:
+        if not AI_INTEGRATION_AVAILABLE:
+            return {"error": "AI system not available"}, 503
+        
+        data = request.get_json()
+        if not data:
+            return {"error": "Invalid JSON data"}, 400
+        
+        # بررسی کلید امنیتی
+        secret_key = data.get('secret_key')
+        expected_key = os.environ.get('AI_CONTROL_SECRET', 'ai_secret_2025')
+        
+        if secret_key != expected_key:
+            return {"error": "Invalid secret key"}, 401
+        
+        action = data.get('action')
+        ai_status_file = "ai_status.json"
+        
+        # بارگذاری وضعیت فعلی
+        if os.path.exists(ai_status_file):
+            with open(ai_status_file, 'r', encoding='utf-8') as f:
+                status = json.load(f)
+        else:
+            status = {"active": False, "last_updated": time.time(), "updated_by": "system"}
+        
+        if action == 'activate':
+            status["active"] = True
+            status["updated_by"] = "webhook"
+            message = "هوش مصنوعی فعال شد"
+        elif action == 'deactivate':
+            status["active"] = False
+            status["updated_by"] = "webhook"
+            message = "هوش مصنوعی غیرفعال شد"
+        elif action == 'toggle':
+            status["active"] = not status.get("active", False)
+            status["updated_by"] = "webhook"
+            message = "وضعیت تغییر کرد"
+        elif action == 'status':
+            return {
+                "active": status.get("active", False),
+                "last_updated": status.get("last_updated", 0),
+                "updated_by": status.get("updated_by", "unknown")
+            }
+        else:
+            return {"error": "Invalid action"}, 400
+        
+        # ذخیره وضعیت جدید
+        status["last_updated"] = time.time()
+        with open(ai_status_file, 'w', encoding='utf-8') as f:
+            json.dump(status, f, ensure_ascii=False, indent=2)
+        
+        return {
+            "success": True,
+            "message": message,
+            "active": status["active"]
+        }
+    except Exception as e:
+        logger.error(f"Error in AI control webhook: {e}")
+        return {"error": str(e)}, 500
+
+@app.route("/health", methods=['GET'])
+def health_check_api():
+    """بررسی سلامت سرور"""
+    return {
+        "status": "healthy",
+        "timestamp": time.time(),
+        "ai_available": AI_INTEGRATION_AVAILABLE
+    }
 
 @app.post(f"/webhook/{WEBHOOK_SECRET}")
 def webhook():
@@ -764,7 +958,7 @@ def webhook():
         # بررسی اینکه آیا هوش مصنوعی باید پاسخ دهد (فقط برای پیام‌های عادی که پردازش نشده‌اند)
         if AI_INTEGRATION_AVAILABLE and not text.startswith('/'):
             try:
-                if not should_ai_respond(chat_id, text):
+                if not should_ai_respond_local(chat_id, text):
                     logger.info(f"AI is inactive - ignoring message from {chat_id}: {text[:50]}")
                     return "ok"
                 else:
@@ -3624,13 +3818,48 @@ def handle_file_processing_error(chat_id, error_type, details=""):
 
 # === توابع کنترل هوش مصنوعی ===
 
+def check_ai_status_local():
+    """بررسی وضعیت هوش مصنوعی از فایل محلی"""
+    try:
+        ai_status_file = "ai_status.json"
+        if os.path.exists(ai_status_file):
+            with open(ai_status_file, 'r', encoding='utf-8') as f:
+                status = json.load(f)
+                return status.get("active", False)
+        else:
+            return False
+    except Exception as e:
+        logger.error(f"Error checking local AI status: {e}")
+        return False
+
+def should_ai_respond_local(chat_id=None, message_text=None):
+    """تعیین اینکه آیا هوش مصنوعی باید پاسخ دهد یا نه (نسخه محلی)"""
+    
+    # بررسی وضعیت کلی هوش مصنوعی
+    if not check_ai_status_local():
+        logger.info("هوش مصنوعی غیرفعال است - پاسخ داده نمی‌شود")
+        return False
+    
+    # قوانین اضافی (اختیاری)
+    if message_text:
+        # اگر پیام دستور ربات است، همیشه پاسخ بده
+        if message_text.startswith('/'):
+            return True
+        
+        # اگر پیام خیلی کوتاه است، ممکن است نیازی به پاسخ هوش مصنوعی نباشد
+        if len(message_text.strip()) < 3:
+            return False
+    
+    logger.info("هوش مصنوعی فعال است - پاسخ داده می‌شود")
+    return True
+
 def get_ai_button_text():
     """دریافت متن دکمه هوش مصنوعی بر اساس وضعیت فعلی"""
     if not AI_INTEGRATION_AVAILABLE:
         return "🤖 هوش مصنوعی (غیرفعال)"
     
     try:
-        is_active = check_ai_status()
+        is_active = check_ai_status_local()
         if is_active:
             return "🤖 هوش مصنوعی ✅"
         else:
@@ -3644,7 +3873,7 @@ def get_ai_status_text():
         return "🤖 هوش مصنوعی: غیردسترس"
     
     try:
-        is_active = check_ai_status()
+        is_active = check_ai_status_local()
         if is_active:
             return "🤖 هوش مصنوعی: فعال ✅"
         else:
@@ -3661,8 +3890,8 @@ def handle_ai_control_button(chat_id):
         return
     
     try:
-        # دریافت وضعیت فعلی
-        current_status = check_ai_status()
+        # دریافت وضعیت فعلی از فایل محلی
+        current_status = check_ai_status_local()
         
         # نمایش پنل کنترل هوش مصنوعی
         show_ai_control_panel(chat_id, current_status)
@@ -3712,50 +3941,40 @@ def handle_ai_toggle(chat_id):
         return
     
     try:
-        # بررسی اتصال به سرور کنترل
-        try:
-            import requests
-            control_url = os.environ.get('AI_CONTROL_URL', 'http://localhost:5000')
-            if not control_url.startswith(('http://', 'https://')):
-                control_url = 'http://' + control_url
-            
-            # تست اتصال
-            response = requests.get(f"{control_url}/health", timeout=5)
-            if response.status_code != 200:
-                raise Exception("سرور کنترل در دسترس نیست")
-                
-        except Exception as conn_error:
-            logger.error(f"خطا در اتصال به سرور کنترل: {conn_error}")
-            send_message_with_back_button(chat_id,
-                "❌ خطا: سرور کنترل هوش مصنوعی در دسترس نیست!\n\n"
-                "💡 راه‌حل‌ها:\n"
-                "• مطمئن شوید سرور کنترل روشن است\n"
-                "• اتصال اینترنت خود را بررسی کنید\n"
-                "• با ادمین تماس بگیرید\n\n"
-                "🔧 برای راه‌اندازی سرور:\n"
-                "python ai_control_server.py")
-            return
+        # استفاده از API محلی به جای سرور خارجی
+        ai_status_file = "ai_status.json"
+        
+        # بارگذاری وضعیت فعلی
+        if os.path.exists(ai_status_file):
+            with open(ai_status_file, 'r', encoding='utf-8') as f:
+                status = json.load(f)
+        else:
+            status = {"active": False, "last_updated": time.time(), "updated_by": "system"}
         
         # تغییر وضعیت
-        success, message, new_status = toggle_ai()
+        old_status = status.get("active", False)
+        status["active"] = not old_status
+        status["last_updated"] = time.time()
+        status["updated_by"] = f"user_{chat_id}"
         
-        if success:
-            status_emoji = "✅" if new_status else "❌"
-            status_text = "فعال" if new_status else "غیرفعال"
-            
-            response_message = f"""🤖 وضعیت هوش مصنوعی تغییر کرد!
+        # ذخیره وضعیت جدید
+        with open(ai_status_file, 'w', encoding='utf-8') as f:
+            json.dump(status, f, ensure_ascii=False, indent=2)
+        
+        new_status = status["active"]
+        status_emoji = "✅" if new_status else "❌"
+        status_text = "فعال" if new_status else "غیرفعال"
+        
+        response_message = f"""🤖 وضعیت هوش مصنوعی تغییر کرد!
 
 📊 وضعیت جدید: {status_text} {status_emoji}
 
-✅ {message}
-
-💡 تغییرات بلافاصله اعمال شده‌اند."""
-            
-            # نمایش پنل جدید
-            show_ai_control_panel(chat_id, new_status)
-            
-        else:
-            send_message_with_back_button(chat_id, f"❌ خطا در تغییر وضعیت: {message}")
+✅ تغییرات بلافاصله اعمال شده‌اند."""
+        
+        send_message(chat_id, response_message)
+        
+        # نمایش پنل جدید
+        show_ai_control_panel(chat_id, new_status)
             
     except Exception as e:
         logger.error(f"Error toggling AI: {e}")
@@ -3768,26 +3987,31 @@ def handle_ai_status_check(chat_id):
         return
     
     try:
-        status_info = ai_manager.get_status() if ai_manager else None
+        # دریافت وضعیت از فایل محلی
+        ai_status_file = "ai_status.json"
+        if os.path.exists(ai_status_file):
+            with open(ai_status_file, 'r', encoding='utf-8') as f:
+                status_info = json.load(f)
+        else:
+            status_info = {"active": False, "last_updated": time.time(), "updated_by": "system"}
         
-        if status_info:
-            status_text = 'فعال ✅' if status_info['active'] else 'غیرفعال ❌'
-            
-            message = f"""📊 گزارش کامل وضعیت هوش مصنوعی
+        status_text = 'فعال ✅' if status_info['active'] else 'غیرفعال ❌'
+        formatted_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(status_info.get('last_updated', time.time())))
+        
+        message = f"""📊 گزارش کامل وضعیت هوش مصنوعی
 
 🤖 وضعیت: {status_text}
-⏰ آخرین به‌روزرسانی: {status_info.get('formatted_time', 'نامشخص')}
+⏰ آخرین به‌روزرسانی: {formatted_time}
 👤 به‌روزرسانی شده توسط: {status_info.get('updated_by', 'نامشخص')}
 
 🔧 عملکرد:
 • پاسخ‌دهی خودکار: {'فعال' if status_info['active'] else 'غیرفعال'}
-• اتصال به سرور: {'برقرار' if status_info['active'] else 'قطع'}
+• ذخیره‌سازی محلی: {'فعال' if os.path.exists(ai_status_file) else 'غیرفعال'}
 
 💡 برای تغییر وضعیت از دکمه‌های زیر استفاده کنید."""
-            
-            show_ai_control_panel(chat_id, status_info['active'])
-        else:
-            send_message_with_back_button(chat_id, "❌ خطا در دریافت اطلاعات وضعیت!")
+        
+        send_message(chat_id, message)
+        show_ai_control_panel(chat_id, status_info['active'])
             
     except Exception as e:
         logger.error(f"Error checking AI status: {e}")
@@ -3829,7 +4053,7 @@ def handle_ai_web_panel(chat_id):
     
     # بازگشت به منوی کنترل
     try:
-        current_status = check_ai_status()
+        current_status = check_ai_status_local()
         show_ai_control_panel(chat_id, current_status)
     except:
         send_message_with_back_button(chat_id, "🔙 برای بازگشت به منو از دکمه بازگشت استفاده کنید.")
