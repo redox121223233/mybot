@@ -244,6 +244,12 @@ load_pending_payments()
 load_feedback_data()
 load_locales()  # بارگذاری فایل‌های ترجمه
 
+# اضافه کردن فیلد ai_sticker_usage به کاربران موجود
+for chat_id in user_data:
+    if "ai_sticker_usage" not in user_data[chat_id]:
+        user_data[chat_id]["ai_sticker_usage"] = []
+save_user_data()
+
 app = Flask(__name__)
 
 @app.route("/")
@@ -958,15 +964,21 @@ def webhook():
         # بررسی اینکه آیا هوش مصنوعی باید پاسخ دهد (فقط برای پیام‌های عادی که پردازش نشده‌اند)
         if AI_INTEGRATION_AVAILABLE and not text.startswith('/'):
             try:
-                if not should_ai_respond_local(chat_id, text):
-                    logger.info(f"AI is inactive - ignoring message from {chat_id}: {text[:50]}")
+                if should_ai_respond_local(chat_id, text):
+                    # بررسی محدودیت هوش مصنوعی
+                    ai_remaining = check_ai_sticker_limit(chat_id)
+                    if ai_remaining <= 0:
+                        send_message(chat_id, "🤖 محدودیت روزانه هوش مصنوعی شما تمام شده!\n\n📊 شما امروز 5 استیکر با هوش مصنوعی ساخته‌اید.\n🔄 فردا دوباره می‌توانید استفاده کنید.\n\n💎 برای استفاده نامحدود، اشتراک تهیه کنید.")
+                        return "ok"
+                    
+                    # پردازش پیام با هوش مصنوعی
+                    handle_ai_message(chat_id, text)
                     return "ok"
                 else:
-                    # اگر هوش مصنوعی فعال است، پیام را به n8n ارسال کن
-                    logger.info(f"AI is active - message will be processed by n8n: {text[:50]}")
+                    logger.info(f"AI is inactive - ignoring message from {chat_id}: {text[:50]}")
                     return "ok"
             except Exception as e:
-                logger.error(f"Error checking AI status: {e}")
+                logger.error(f"Error in AI processing: {e}")
                 # در صورت خطا، ادامه پردازش عادی
 
     # 📌 پردازش عکس
@@ -2036,17 +2048,23 @@ def handle_admin_command(chat_id, text):
     elif command == "stats":
         total_users = len(user_data)
         subscribed_users = len(subscription_data)
-        active_subscriptions = sum(1 for sub in subscription_data.values() 
+        active_subscriptions = sum(1 for sub in subscription_data.values()
                                  if time.time() < sub.get("expires_at", 0))
         
         # محاسبه استیکرهای ساخته شده امروز
         today_stickers = 0
+        today_ai_stickers = 0
         current_time = time.time()
         today_start = current_time - (current_time % (24 * 3600))
         
         for user in user_data.values():
+            # استیکرهای عادی
             usage = user.get("sticker_usage", [])
             today_stickers += sum(1 for timestamp in usage if timestamp >= today_start)
+            
+            # استیکرهای هوش مصنوعی
+            ai_usage = user.get("ai_sticker_usage", [])
+            today_ai_stickers += sum(1 for timestamp in ai_usage if timestamp >= today_start)
         
         # محاسبه آمار بازخورد
         positive_feedbacks = sum(1 for f in feedback_data.values() if f.get("type") == "positive")
@@ -2058,7 +2076,7 @@ def handle_admin_command(chat_id, text):
         ai_status_line = ""
         if AI_INTEGRATION_AVAILABLE:
             try:
-                is_active = check_ai_status()
+                is_active = check_ai_status_local()
                 ai_status_text = "فعال ✅" if is_active else "غیرفعال ❌"
                 ai_status_line = f"\n🤖 هوش مصنوعی: {ai_status_text}"
             except:
@@ -2072,7 +2090,9 @@ def handle_admin_command(chat_id, text):
 ❌ اشتراک‌های منقضی: {subscribed_users - active_subscriptions}{ai_status_line}
 
 📈 آمار امروز:
-🎨 استیکر ساخته شده: {today_stickers}
+🎨 استیکر عادی: {today_stickers}
+🤖 استیکر هوش مصنوعی: {today_ai_stickers}
+📊 کل استیکر: {today_stickers + today_ai_stickers}
 🔔 رسیدهای در انتظار: {len(pending_payments)}
 
 💭 آمار بازخورد:
@@ -3256,7 +3276,12 @@ def show_main_menu(chat_id):
         welcome_message += f"\n\n💎 اشتراک فعال تا: {expires_date}"
     else:
         remaining, _ = check_sticker_limit(chat_id)
-        welcome_message += f"\n\n📊 استیکر باقی مانده: {remaining}/5"
+        welcome_message += f"\n\n📊 استیکر عادی: {remaining}/5"
+        
+        # اضافه کردن محدودیت هوش مصنوعی
+        if AI_INTEGRATION_AVAILABLE:
+            ai_remaining = check_ai_sticker_limit(chat_id)
+            welcome_message += f"\n🤖 استیکر هوش مصنوعی: {ai_remaining}/5"
     
     # اضافه کردن وضعیت هوش مصنوعی
     if AI_INTEGRATION_AVAILABLE:
@@ -3817,6 +3842,208 @@ def handle_file_processing_error(chat_id, error_type, details=""):
     send_message_with_back_button(chat_id, message)
 
 # === توابع کنترل هوش مصنوعی ===
+
+def check_ai_sticker_limit(chat_id):
+    """بررسی محدودیت استیکر هوش مصنوعی (5 عدد در روز)"""
+    # اگر اشتراک فعال دارد، محدودیت ندارد
+    if is_subscribed(chat_id):
+        return 999  # نامحدود
+    
+    if chat_id not in user_data:
+        user_data[chat_id] = {
+            "mode": None, "count": 0, "step": None, "pack_name": None,
+            "background": None, "created_packs": [], "sticker_usage": [],
+            "ai_sticker_usage": [], "last_reset": time.time()
+        }
+    
+    current_time = time.time()
+    user_info = user_data[chat_id]
+    
+    # اطمینان از وجود ai_sticker_usage
+    if "ai_sticker_usage" not in user_info:
+        user_info["ai_sticker_usage"] = []
+    
+    # دریافت زمان آخرین reset
+    last_reset = user_info.get("last_reset", current_time)
+    next_reset = last_reset + 24 * 3600
+    
+    # اگر زمان reset گذشته، reset کن
+    if current_time >= next_reset:
+        user_info["ai_sticker_usage"] = []
+        user_info["last_reset"] = current_time
+        save_user_data()
+        logger.info(f"Reset AI limit for user {chat_id}")
+    
+    # شمارش استیکرهای هوش مصنوعی استفاده شده
+    used_ai_stickers = len(user_info.get("ai_sticker_usage", []))
+    remaining = 5 - used_ai_stickers
+    
+    return max(0, remaining)
+
+def record_ai_sticker_usage(chat_id):
+    """ثبت استفاده از استیکر هوش مصنوعی"""
+    if chat_id not in user_data:
+        user_data[chat_id] = {
+            "mode": None, "count": 0, "step": None, "pack_name": None,
+            "background": None, "created_packs": [], "sticker_usage": [],
+            "ai_sticker_usage": [], "last_reset": time.time()
+        }
+    
+    current_time = time.time()
+    user_info = user_data[chat_id]
+    
+    # اطمینان از وجود ai_sticker_usage
+    if "ai_sticker_usage" not in user_info:
+        user_info["ai_sticker_usage"] = []
+    
+    # اضافه کردن زمان استفاده
+    user_info["ai_sticker_usage"].append(current_time)
+    save_user_data()
+
+def handle_ai_message(chat_id, message_text):
+    """پردازش پیام کاربر با هوش مصنوعی"""
+    try:
+        # ارسال پیام "در حال پردازش"
+        processing_msg = send_message(chat_id, "🤖 هوش مصنوعی در حال پردازش پیام شما...")
+        
+        # شبیه‌سازی پردازش هوش مصنوعی (در آینده با n8n جایگزین می‌شود)
+        ai_response = generate_ai_response(message_text)
+        
+        # اگر هوش مصنوعی تصمیم گرفت استیکر بسازد
+        if ai_response.get("create_sticker"):
+            sticker_text = ai_response.get("sticker_text", message_text)
+            
+            # آماده‌سازی کاربر برای ساخت استیکر هوش مصنوعی
+            if chat_id not in user_data:
+                user_data[chat_id] = {
+                    "mode": None, "count": 0, "step": None, "pack_name": None,
+                    "background": None, "created_packs": [], "sticker_usage": [],
+                    "ai_sticker_usage": [], "last_reset": time.time()
+                }
+            
+            # تنظیم pack_name برای هوش مصنوعی
+            if not user_data[chat_id].get("pack_name"):
+                pack_name = sanitize_pack_name(f"ai_pack_{chat_id}")
+                unique_pack_name = f"{pack_name}_by_{BOT_USERNAME}"
+                user_data[chat_id]["pack_name"] = unique_pack_name
+            
+            # ساخت استیکر
+            success = send_as_sticker(chat_id, sticker_text, None)
+            
+            if success:
+                # ثبت استفاده از هوش مصنوعی
+                record_ai_sticker_usage(chat_id)
+                
+                # نمایش وضعیت محدودیت
+                remaining = check_ai_sticker_limit(chat_id)
+                
+                response_text = f"""🤖 {ai_response.get('response', 'استیکر شما آماده است!')}
+
+📊 محدودیت هوش مصنوعی: {remaining}/5 استیکر باقی مانده
+
+✨ استیکر با هوش مصنوعی ساخته شد!"""
+                
+                send_message(chat_id, response_text)
+            else:
+                send_message(chat_id, f"🤖 {ai_response.get('response', 'متأسفانه نتوانستم استیکر بسازم.')}")
+        else:
+            # فقط پاسخ متنی
+            send_message(chat_id, f"🤖 {ai_response.get('response', 'سلام! چطور می‌تونم کمکتون کنم؟')}")
+            
+    except Exception as e:
+        logger.error(f"Error in AI message handling: {e}")
+        send_message(chat_id, "🤖 متأسفانه خطایی رخ داد. لطفاً دوباره تلاش کنید.")
+
+def generate_ai_response(message_text):
+    """تولید پاسخ هوش مصنوعی (شبیه‌سازی - در آینده با n8n جایگزین می‌شود)"""
+    try:
+        # کلمات کلیدی برای تشخیص درخواست استیکر
+        sticker_keywords = [
+            "استیکر", "sticker", "بساز", "make", "create", "تولید", "درست کن",
+            "می‌خوام", "want", "need", "لازم دارم", "بده", "give me"
+        ]
+        
+        # بررسی اینکه آیا کاربر استیکر می‌خواهد
+        should_create_sticker = any(keyword in message_text.lower() for keyword in sticker_keywords)
+        
+        if should_create_sticker:
+            # استخراج متن استیکر از پیام
+            sticker_text = extract_sticker_text(message_text)
+            
+            responses = [
+                f"حتماً! استیکر '{sticker_text}' رو برات می‌سازم! 🎨",
+                f"عالیه! الان استیکر '{sticker_text}' رو آماده می‌کنم! ✨",
+                f"باشه! استیکر '{sticker_text}' در حال ساخت... 🚀",
+                f"چه ایده قشنگی! استیکر '{sticker_text}' رو برات درست می‌کنم! 🎭"
+            ]
+            
+            import random
+            return {
+                "create_sticker": True,
+                "sticker_text": sticker_text,
+                "response": random.choice(responses)
+            }
+        else:
+            # پاسخ‌های عمومی هوش مصنوعی
+            responses = [
+                "سلام! چطور می‌تونم کمکتون کنم؟ 😊",
+                "چه خبر؟ اگه می‌خواید استیکر بسازم، بهم بگید! 🎨",
+                "سلام عزیز! برای ساخت استیکر کافیه بگید 'استیکر بساز' و متنتون رو بدید! ✨",
+                "چطورید؟ من اینجام تا استیکرهای قشنگ براتون بسازم! 🤖",
+                "سلام! اگه نیاز به استیکر دارید، فقط کافیه بگید چی می‌خواید! 🎭"
+            ]
+            
+            import random
+            return {
+                "create_sticker": False,
+                "response": random.choice(responses)
+            }
+            
+    except Exception as e:
+        logger.error(f"Error generating AI response: {e}")
+        return {
+            "create_sticker": False,
+            "response": "سلام! چطور می‌تونم کمکتون کنم؟ 😊"
+        }
+
+def extract_sticker_text(message):
+    """استخراج متن استیکر از پیام کاربر"""
+    try:
+        # حذف کلمات کلیدی و استخراج متن اصلی
+        keywords_to_remove = [
+            "استیکر", "sticker", "بساز", "make", "create", "تولید", "درست کن",
+            "می‌خوام", "want", "need", "لازم دارم", "بده", "give me", "با متن", "with text"
+        ]
+        
+        text = message.strip()
+        
+        # حذف کلمات کلیدی
+        for keyword in keywords_to_remove:
+            text = text.replace(keyword, "").strip()
+        
+        # حذف کلمات اضافی
+        text = re.sub(r'\s+', ' ', text)  # حذف فاصله‌های اضافی
+        text = text.strip('.,!?؟')  # حذف علائم نگارشی
+        
+        # اگر متن خالی شد، از پیام اصلی استفاده کن
+        if not text or len(text) < 2:
+            # سعی کن متن را از داخل گیومه استخراج کنی
+            import re
+            quotes_match = re.search(r'["\']([^"\']+)["\']', message)
+            if quotes_match:
+                text = quotes_match.group(1)
+            else:
+                text = message.strip()
+        
+        # محدود کردن طول متن
+        if len(text) > 50:
+            text = text[:50] + "..."
+        
+        return text if text else "سلام"
+        
+    except Exception as e:
+        logger.error(f"Error extracting sticker text: {e}")
+        return message[:20] if len(message) > 20 else message
 
 def check_ai_status_local():
     """بررسی وضعیت هوش مصنوعی از فایل محلی"""
