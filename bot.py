@@ -1954,17 +1954,38 @@ def handle_admin_command(chat_id, text):
         success_count = 0
         fail_count = 0
         
-        send_message(chat_id, f"📡 شروع ارسال پیام همگانی به {len(user_data)} کاربر...")
+        # دریافت لیست تمام کاربران از فایل‌های ذخیره شده
+        all_users = set()
         
-        for user_id in user_data.keys():
+        # اضافه کردن کاربران از user_data
+        all_users.update(user_data.keys())
+        
+        # اضافه کردن کاربران از subscription_data
+        all_users.update(subscription_data.keys())
+        
+        # اضافه کردن کاربران از pending_payments
+        for payment in pending_payments.values():
+            all_users.add(payment.get("user_id"))
+        
+        # اضافه کردن کاربران از feedback_data
+        for feedback in feedback_data.values():
+            all_users.add(feedback.get("user_id"))
+        
+        # حذف None values
+        all_users.discard(None)
+        
+        send_message(chat_id, f"📡 شروع ارسال پیام همگانی به {len(all_users)} کاربر...")
+        
+        for user_id in all_users:
             try:
                 send_message(user_id, f"📢 پیام ادمین:\n\n{broadcast_message}")
                 success_count += 1
                 time.sleep(0.05)  # جلوگیری از محدودیت rate limit
-            except:
+            except Exception as e:
+                logger.error(f"Failed to send broadcast to {user_id}: {e}")
                 fail_count += 1
         
-        send_message(chat_id, f"✅ پیام همگانی ارسال شد!\n\n✅ موفق: {success_count}\n❌ ناموفق: {fail_count}")
+        send_message(chat_id, f"✅ پیام همگانی ارسال شد!\n\n✅ موفق: {success_count}\n❌ ناموفق: {fail_count}\n📊 کل کاربران: {len(all_users)}")
     
     # دستورات کنترل هوش مصنوعی
     elif command == "ai_status" and AI_INTEGRATION_AVAILABLE:
@@ -3691,6 +3712,30 @@ def handle_ai_toggle(chat_id):
         return
     
     try:
+        # بررسی اتصال به سرور کنترل
+        try:
+            import requests
+            control_url = os.environ.get('AI_CONTROL_URL', 'http://localhost:5000')
+            if not control_url.startswith(('http://', 'https://')):
+                control_url = 'http://' + control_url
+            
+            # تست اتصال
+            response = requests.get(f"{control_url}/health", timeout=5)
+            if response.status_code != 200:
+                raise Exception("سرور کنترل در دسترس نیست")
+                
+        except Exception as conn_error:
+            logger.error(f"خطا در اتصال به سرور کنترل: {conn_error}")
+            send_message_with_back_button(chat_id,
+                "❌ خطا: سرور کنترل هوش مصنوعی در دسترس نیست!\n\n"
+                "💡 راه‌حل‌ها:\n"
+                "• مطمئن شوید سرور کنترل روشن است\n"
+                "• اتصال اینترنت خود را بررسی کنید\n"
+                "• با ادمین تماس بگیرید\n\n"
+                "🔧 برای راه‌اندازی سرور:\n"
+                "python ai_control_server.py")
+            return
+        
         # تغییر وضعیت
         success, message, new_status = toggle_ai()
         
@@ -3714,9 +3759,7 @@ def handle_ai_toggle(chat_id):
             
     except Exception as e:
         logger.error(f"Error toggling AI: {e}")
-        send_message_with_back_button(chat_id,
-            "❌ خطا در تغییر وضعیت هوش مصنوعی!\n\n"
-            "🔄 لطفاً دوباره تلاش کنید.")
+        send_message_with_back_button(chat_id, f"❌ خطا در تغییر وضعیت: {str(e)}")
 
 def handle_ai_status_check(chat_id):
     """نمایش وضعیت تفصیلی هوش مصنوعی"""
@@ -3753,6 +3796,9 @@ def handle_ai_status_check(chat_id):
 def handle_ai_web_panel(chat_id):
     """ارسال لینک پنل وب کنترل هوش مصنوعی"""
     panel_url = os.environ.get('AI_CONTROL_URL', 'http://localhost:5000')
+    # اصلاح URL اگر scheme نداشته باشد
+    if panel_url and not panel_url.startswith(('http://', 'https://')):
+        panel_url = 'https://' + panel_url
     
     message = f"""🌐 پنل وب کنترل هوش مصنوعی
 
