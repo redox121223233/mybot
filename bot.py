@@ -588,8 +588,11 @@ def webhook():
                     if chat_id:
                         send_message(chat_id, "⚠️ مشکلی در پردازش دکمه رخ داد. لطفاً دوباره تلاش کنید.")
                     # پاسخ به کالبک در صورت خطا
-                    if query_id:
-                        answer_callback_query(query_id, "خطایی رخ داد. لطفاً دوباره تلاش کنید.")
+                    try:
+                        if query_id:
+                            answer_callback_query(query_id, "خطایی رخ داد. لطفاً دوباره تلاش کنید.")
+                    except Exception as e3:
+                        logger.error(f"Failed to answer callback query in error handler: {e3}")
                 
                 # بازگرداندن وضعیت هوش مصنوعی به حالت قبلی (اگر دکمه مربوط به تغییر وضعیت هوش مصنوعی نبود)
                 if data != "ai_activate" and data != "ai_deactivate":
@@ -611,8 +614,11 @@ def webhook():
                     if chat_id:
                         send_message(chat_id, "⚠️ مشکلی در پردازش دکمه رخ داد. لطفاً دوباره تلاش کنید.")
                     # پاسخ به کالبک در صورت خطا
-                    if query_id:
-                        answer_callback_query(query_id, "خطایی رخ داد. لطفاً دوباره تلاش کنید.")
+                    try:
+                        if query_id:
+                            answer_callback_query(query_id, "خطایی رخ داد. لطفاً دوباره تلاش کنید.")
+                    except Exception as e3:
+                        logger.error(f"Failed to answer callback query in error handler: {e3}")
                 
         except Exception as e:
             logger.error(f"Error handling callback query: {e}")
@@ -671,6 +677,14 @@ def handle_callback_query(callback_query):
         # پردازش سایر کالبک‌های استیکرساز
         if ai_manager and process_callback_query(callback_query, ai_manager, answer_callback_query, edit_message_text):
             return
+            
+    # اگر دکمه new_sticker فشرده شده، مرحله کاربر را تنظیم کنیم
+    if data == "new_sticker" and chat_id in user_data:
+        user_data[chat_id]["step"] = "text"
+        save_user_data()
+        # پیام تأیید به کاربر ارسال کنیم
+        send_message(chat_id, "لطفاً متن مورد نظر خود را برای تبدیل به استیکر وارد کنید:")
+        return
     
     # پردازش دکمه‌های استیکرساز هوشمند
     if data == "ai_activate":
@@ -717,13 +731,6 @@ def handle_callback_query(callback_query):
             }
             
             edit_message_text(chat_id, message_id, "🤖 هوش مصنوعی غیرفعال شد!\n\nبرای استفاده از قابلیت هوش مصنوعی، روی دکمه «🤖 فعال کردن هوش مصنوعی» کلیک کنید.", reply_markup=json.dumps(keyboard))
-        return
-        
-    elif data == "new_sticker":
-        # تنظیم حالت کاربر برای دریافت متن استیکر
-        if chat_id in user_data:
-            user_data[chat_id]["step"] = "text"
-            save_user_data()
         return
         
     elif data == "back_to_main":
