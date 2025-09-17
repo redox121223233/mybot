@@ -615,74 +615,75 @@ def health_check_api():
         "ai_available": AI_INTEGRATION_AVAILABLE
     }
 
-@app.route(f"/webhook/{WEBHOOK_SECRET}", methods=['POST'])
-def webhook():
-    update = request.get_json(force=True, silent=True) or {}
-    logger.info(f"Received update: {update}")
-    
-    # پردازش کالبک کوئری - اولویت بالاتر از پردازش پیام
-    if "callback_query" in update:
-        try:
-            # اطمینان از اینکه هوش مصنوعی مداخله نکند
-            callback_query = update["callback_query"]
-            chat_id = callback_query.get('message', {}).get('chat', {}).get('id')
-            query_id = callback_query.get('id')
-            data = callback_query.get('data', '')
+# این تابع webhook حذف شد چون تکراری بود و با تابع webhook در خط 508 تداخل داشت
+# @app.route(f"/webhook/{WEBHOOK_SECRET}", methods=['POST'])
+# def webhook_duplicate():
+#     update = request.get_json(force=True, silent=True) or {}
+#     logger.info(f"Received update: {update}")
+#     
+#     # پردازش کالبک کوئری - اولویت بالاتر از پردازش پیام
+#     if "callback_query" in update:
+#         try:
+#             # اطمینان از اینکه هوش مصنوعی مداخله نکند
+#             callback_query = update["callback_query"]
+#             chat_id = callback_query.get('message', {}).get('chat', {}).get('id')
+#             query_id = callback_query.get('id')
+#             data = callback_query.get('data', '')
             
-            logger.info(f"Processing callback query: ID={query_id}, data={data}, chat_id={chat_id}, from={callback_query.get('from', {}).get('id')}")
-            
-            # پاسخ اولیه به کالبک کوئری
-            try:
-                if query_id:
-                    answer_callback_query(query_id, "در حال پردازش...")
-                    logger.info(f"Sent initial acknowledgment to callback query: {query_id}")
-            except Exception as e:
-                logger.error(f"Failed to send initial acknowledgment to callback query: {e}")
-            
-            # غیرفعال کردن موقت حالت هوش مصنوعی برای پردازش دکمه
-            if chat_id and chat_id in user_data:
-                # ذخیره وضعیت فعلی هوش مصنوعی
-                ai_mode_was_active = user_data[chat_id].get("ai_mode", False)
+#             logger.info(f"Processing callback query: ID={query_id}, data={data}, chat_id={chat_id}, from={callback_query.get('from', {}).get('id')}")
+#             
+#             # پاسخ اولیه به کالبک کوئری
+#             try:
+#                 if query_id:
+#                     answer_callback_query(query_id, "در حال پردازش...")
+#                     logger.info(f"Sent initial acknowledgment to callback query: {query_id}")
+#             except Exception as e:
+#                 logger.error(f"Failed to send initial acknowledgment to callback query: {e}")
+#             
+#             # غیرفعال کردن موقت حالت هوش مصنوعی برای پردازش دکمه
+#             if chat_id and chat_id in user_data:
+#                 # ذخیره وضعیت فعلی هوش مصنوعی
+#                 ai_mode_was_active = user_data[chat_id].get("ai_mode", False)
+#                 
+#                 # غیرفعال کردن موقت هوش مصنوعی
+#                 user_data[chat_id]["ai_mode"] = False
+#                 logger.info(f"Temporarily disabled AI mode for callback processing (was: {ai_mode_was_active})")
                 
-                # غیرفعال کردن موقت هوش مصنوعی
-                user_data[chat_id]["ai_mode"] = False
-                logger.info(f"Temporarily disabled AI mode for callback processing (was: {ai_mode_was_active})")
-                
-                try:
-                    # پردازش دکمه - پاسخ به کالبک در داخل handle_callback_query انجام می‌شود
-                    handle_callback_query(callback_query)
-                    logger.info(f"Successfully processed callback: {data}")
-                except Exception as e:
-                    logger.error(f"Error in handle_callback_query: {e}")
-                    # ارسال پیام خطا به کاربر در صورت مشکل
-                    if chat_id:
-                        send_message(chat_id, "⚠️ مشکلی در پردازش دکمه رخ داد. لطفاً دوباره تلاش کنید.")
-                
-                # بازگرداندن وضعیت هوش مصنوعی به حالت قبلی (اگر دکمه مربوط به تغییر وضعیت هوش مصنوعی نبود)
-                if data != "ai_activate" and data != "ai_deactivate":
-                    user_data[chat_id]["ai_mode"] = ai_mode_was_active
-                    logger.info(f"Restored AI mode to: {ai_mode_was_active}")
-                else:
-                    logger.info(f"AI mode change requested via button, not restoring previous state")
-                
-                # ذخیره تغییرات کاربر
-                save_user_data()
-            else:
-                # اگر اطلاعات کاربر موجود نیست، فقط پردازش کن
-                try:
-                    handle_callback_query(callback_query)
-                    logger.info(f"Processed callback for user without data: {data}")
-                except Exception as e:
-                    logger.error(f"Error in handle_callback_query for user without data: {e}")
-                    # ارسال پیام خطا به کاربر در صورت مشکل
-                    if chat_id:
-                        send_message(chat_id, "⚠️ مشکلی در پردازش دکمه رخ داد. لطفاً دوباره تلاش کنید.")
-                
-        except Exception as e:
-            logger.error(f"Error handling callback query: {e}")
-            logger.exception("Detailed error:")
-                
-        return "ok"
+#                 try:
+#                     # پردازش دکمه - پاسخ به کالبک در داخل handle_callback_query انجام می‌شود
+#                     handle_callback_query(callback_query)
+#                     logger.info(f"Successfully processed callback: {data}")
+#                 except Exception as e:
+#                     logger.error(f"Error in handle_callback_query: {e}")
+#                     # ارسال پیام خطا به کاربر در صورت مشکل
+#                     if chat_id:
+#                         send_message(chat_id, "⚠️ مشکلی در پردازش دکمه رخ داد. لطفاً دوباره تلاش کنید.")
+#                 
+#                 # بازگرداندن وضعیت هوش مصنوعی به حالت قبلی (اگر دکمه مربوط به تغییر وضعیت هوش مصنوعی نبود)
+#                 if data != "ai_activate" and data != "ai_deactivate":
+#                     user_data[chat_id]["ai_mode"] = ai_mode_was_active
+#                     logger.info(f"Restored AI mode to: {ai_mode_was_active}")
+#                 else:
+#                     logger.info(f"AI mode change requested via button, not restoring previous state")
+#                 
+#                 # ذخیره تغییرات کاربر
+#                 save_user_data()
+#             else:
+#                 # اگر اطلاعات کاربر موجود نیست، فقط پردازش کن
+#                 try:
+#                     handle_callback_query(callback_query)
+#                     logger.info(f"Processed callback for user without data: {data}")
+#                 except Exception as e:
+#                     logger.error(f"Error in handle_callback_query for user without data: {e}")
+#                     # ارسال پیام خطا به کاربر در صورت مشکل
+#                     if chat_id:
+#                         send_message(chat_id, "⚠️ مشکلی در پردازش دکمه رخ داد. لطفاً دوباره تلاش کنید.")
+#                 
+#         except Exception as e:
+#             logger.error(f"Error handling callback query: {e}")
+#             logger.exception("Detailed error:")
+#                 
+#         return "ok"
         
     msg = update.get("message")
 
