@@ -516,9 +516,8 @@ def webhook():
         if "callback_query" in data:
             try:
                 callback_query = data["callback_query"]
-                # Acknowledge the callback query immediately
-                requests.post(f"{API}answerCallbackQuery", json={"callback_query_id": callback_query["id"]})
-                # Process the callback query
+                # Process the callback query - پردازش کالبک به تابع handle_callback_query واگذار می‌شود
+                # تابع handle_callback_query خودش پاسخ کالبک را ارسال می‌کند
                 handle_callback_query(callback_query)
                 return "OK"
             except Exception as e:
@@ -719,10 +718,11 @@ def handle_callback_query(callback_query):
     
     logger.info(f"Processing callback query: {data} from chat_id: {chat_id}")
     
-    # ابتدا به کالبک پاسخ دهیم تا تلگرام منتظر نماند
+    # ابتدا به کالبک پاسخ دهیم تا تلگرام منتظر نماند - مستقیماً با API تلگرام
     try:
-        answer_callback_query(query_id, "در حال پردازش...")
-        logger.info(f"Acknowledged callback query: {query_id}")
+        # پاسخ مستقیم به کالبک با API تلگرام
+        requests.post(f"{API}answerCallbackQuery", json={"callback_query_id": query_id, "text": "در حال پردازش..."})
+        logger.info(f"Directly acknowledged callback query: {query_id}")
     except Exception as e:
         logger.error(f"Error acknowledging callback query: {e}")
     
@@ -3899,7 +3899,8 @@ def answer_callback_query(query_id, text=None, show_alert=False):
         data["text"] = text
     if show_alert:
         data["show_alert"] = show_alert
-    
+        
+    # ارسال درخواست به API تلگرام
     try:
         logger.info(f"Sending answer to callback query: {query_id}")
         response = requests.post(API + "answerCallbackQuery", json=data, timeout=10)
