@@ -564,6 +564,10 @@ def webhook():
             # اطمینان از اینکه هوش مصنوعی مداخله نکند
             callback_query = update["callback_query"]
             chat_id = callback_query.get('message', {}).get('chat', {}).get('id')
+            query_id = callback_query.get('id')
+            data = callback_query.get('data', '')
+            
+            logger.info(f"Processing callback query: ID={query_id}, data={data}, chat_id={chat_id}")
             
             # غیرفعال کردن موقت حالت هوش مصنوعی برای پردازش دکمه
             if chat_id and chat_id in user_data:
@@ -577,16 +581,36 @@ def webhook():
                 handle_callback_query(callback_query)
                 
                 # بازگرداندن وضعیت هوش مصنوعی به حالت قبلی (اگر دکمه مربوط به تغییر وضعیت هوش مصنوعی نبود)
-                data = callback_query.get('data', '')
                 if data != "ai_activate" and data != "ai_deactivate":
                     user_data[chat_id]["ai_mode"] = ai_mode_was_active
+                
+                # اطمینان از پاسخ به کالبک کوئری
+                try:
+                    answer_callback_query(query_id)
+                except Exception as e:
+                    logger.error(f"Error answering callback query: {e}")
             else:
                 # اگر اطلاعات کاربر موجود نیست، فقط پردازش کن
                 handle_callback_query(callback_query)
                 
+                # اطمینان از پاسخ به کالبک کوئری
+                try:
+                    answer_callback_query(query_id)
+                except Exception as e:
+                    logger.error(f"Error answering callback query: {e}")
+                
         except Exception as e:
             logger.error(f"Error handling callback query: {e}")
             logger.exception("Detailed error:")
+            
+            # حتی در صورت خطا، سعی کن به کالبک پاسخ دهی
+            try:
+                query_id = update.get("callback_query", {}).get("id")
+                if query_id:
+                    answer_callback_query(query_id, "خطایی رخ داد. لطفاً دوباره تلاش کنید.")
+            except:
+                pass
+                
         return "ok"
         
     msg = update.get("message")
@@ -3783,6 +3807,10 @@ def edit_message_text(chat_id, message_id, text, reply_markup=None):
 
 def answer_callback_query(query_id, text=None, show_alert=False):
     """پاسخ به کالبک کوئری"""
+    if not query_id:
+        logger.error("No callback_query_id provided")
+        return False
+        
     data = {
         "callback_query_id": query_id
     }
@@ -3793,9 +3821,11 @@ def answer_callback_query(query_id, text=None, show_alert=False):
     
     try:
         response = requests.post(API + "answerCallbackQuery", json=data, timeout=5)
-        logger.info(f"Answer callback response: {response.text}")
-        return response.json().get("ok", False)
+        logger.info(f"Answer callback response: {response.status_code} - {response.text}")
+        return response.status_code == 200
     except Exception as e:
+        logger.error(f"Error answering callback query: {e}")
+        return False
         logger.error(f"Error in answer_callback_query: {e}")
         return False
 
