@@ -553,7 +553,7 @@ def health_check_api():
         "ai_available": AI_INTEGRATION_AVAILABLE
     }
 
-@app.post(f"/webhook/{WEBHOOK_SECRET}")
+@app.route(f"/webhook/{WEBHOOK_SECRET}", methods=['POST'])
 def webhook():
     update = request.get_json(force=True, silent=True) or {}
     logger.info(f"Received update: {update}")
@@ -568,6 +568,14 @@ def webhook():
             data = callback_query.get('data', '')
             
             logger.info(f"Processing callback query: ID={query_id}, data={data}, chat_id={chat_id}, from={callback_query.get('from', {}).get('id')}")
+            
+            # پاسخ اولیه به کالبک کوئری
+            try:
+                if query_id:
+                    answer_callback_query(query_id, "در حال پردازش...")
+                    logger.info(f"Sent initial acknowledgment to callback query: {query_id}")
+            except Exception as e:
+                logger.error(f"Failed to send initial acknowledgment to callback query: {e}")
             
             # غیرفعال کردن موقت حالت هوش مصنوعی برای پردازش دکمه
             if chat_id and chat_id in user_data:
@@ -587,12 +595,6 @@ def webhook():
                     # ارسال پیام خطا به کاربر در صورت مشکل
                     if chat_id:
                         send_message(chat_id, "⚠️ مشکلی در پردازش دکمه رخ داد. لطفاً دوباره تلاش کنید.")
-                    # پاسخ به کالبک در صورت خطا
-                    try:
-                        if query_id:
-                            answer_callback_query(query_id, "خطایی رخ داد. لطفاً دوباره تلاش کنید.")
-                    except Exception as e3:
-                        logger.error(f"Failed to answer callback query in error handler: {e3}")
                 
                 # بازگرداندن وضعیت هوش مصنوعی به حالت قبلی (اگر دکمه مربوط به تغییر وضعیت هوش مصنوعی نبود)
                 if data != "ai_activate" and data != "ai_deactivate":
@@ -613,26 +615,10 @@ def webhook():
                     # ارسال پیام خطا به کاربر در صورت مشکل
                     if chat_id:
                         send_message(chat_id, "⚠️ مشکلی در پردازش دکمه رخ داد. لطفاً دوباره تلاش کنید.")
-                    # پاسخ به کالبک در صورت خطا
-                    try:
-                        if query_id:
-                            answer_callback_query(query_id, "خطایی رخ داد. لطفاً دوباره تلاش کنید.")
-                    except Exception as e3:
-                        logger.error(f"Failed to answer callback query in error handler: {e3}")
                 
         except Exception as e:
             logger.error(f"Error handling callback query: {e}")
             logger.exception("Detailed error:")
-            
-            # حتی در صورت خطا، سعی کن به کالبک پاسخ دهی
-            try:
-                query_id = update.get("callback_query", {}).get("id")
-                if query_id:
-                    answer_callback_query(query_id, "خطایی رخ داد. لطفاً دوباره تلاش کنید.")
-            except Exception as e2:
-                logger.error(f"Failed to answer callback query in error handler: {e2}")
-            except:
-                pass
                 
         return "ok"
         
@@ -644,7 +630,18 @@ def webhook():
     chat_id = msg["chat"]["id"]
     
     # پردازش پیام
-    process_message(msg)
+    try:
+        logger.info(f"Processing message from chat_id: {chat_id}")
+        process_message(msg)
+        logger.info(f"Successfully processed message from chat_id: {chat_id}")
+    except Exception as e:
+        logger.error(f"Error processing message: {e}")
+        logger.exception("Detailed error in message processing:")
+        # سعی کن پیام خطا به کاربر ارسال کنی
+        try:
+            send_message(chat_id, "⚠️ مشکلی در پردازش پیام شما رخ داد. لطفاً دوباره تلاش کنید.")
+        except Exception as e2:
+            logger.error(f"Failed to send error message: {e2}")
     
     # همیشه یک پاسخ معتبر برگردان
     return "ok"
