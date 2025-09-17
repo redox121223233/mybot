@@ -626,7 +626,6 @@ def handle_callback_query(callback_query):
     answer_callback_query(query_id, "عملیات نامشخص")
     logger.warning(f"Unknown callback query: {data}")
     return
-                return "ok"
     
     # 📌 پردازش متن
     if "text" in msg:
