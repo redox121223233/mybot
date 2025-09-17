@@ -561,6 +561,27 @@ def webhook():
     if "callback_query" in update:
         handle_callback_query(update["callback_query"])
         return "ok"
+
+# پردازش کالبک‌های تلگرام
+def handle_callback_query(callback_query):
+    """پردازش کالبک‌های دریافتی از تلگرام"""
+    query_id = callback_query.get('id')
+    chat_id = callback_query.get('message', {}).get('chat', {}).get('id')
+    message_id = callback_query.get('message', {}).get('message_id')
+    data = callback_query.get('data', '')
+    
+    # پردازش کالبک‌های استیکرساز
+    if STICKER_MAKER_AVAILABLE and data.startswith('sticker_'):
+        if data == 'sticker_toggle':
+            # فعال/غیرفعال کردن استیکرساز
+            if ai_manager:
+                handle_sticker_maker_toggle(chat_id, message_id, ai_manager, send_message, API)
+                answer_callback_query(query_id, "درخواست شما پردازش شد.")
+                return
+        
+        # پردازش سایر کالبک‌های استیکرساز
+        if ai_manager and process_callback_query(callback_query, ai_manager, answer_callback_query, edit_message_text):
+            return
         
     msg = update.get("message")
 
@@ -573,6 +594,26 @@ def webhook():
     if "text" in msg and msg["text"].startswith("/admin"):
         handle_admin_command(chat_id, msg["text"])
         return "ok"
+        
+    # پردازش ورودی استیکرساز
+    if STICKER_MAKER_AVAILABLE and ai_manager and ai_manager.enabled:
+        # پردازش تصاویر برای استیکرساز
+        if 'photo' in msg:
+            photo = msg['photo'][-1]  # بزرگترین سایز عکس
+            file_id = photo.get('file_id')
+            if file_id:
+                from sticker_handlers import get_file
+                photo_data = get_file(file_id, BOT_TOKEN)
+                if photo_data:
+                    caption = msg.get('caption', '')
+                    handle_sticker_maker_input(chat_id, photo_data.getvalue(), 'image', msg.get('message_id'), caption, ai_manager, send_message)
+                    return "ok"
+        
+        # پردازش متن برای استیکرساز
+        elif 'text' in msg and not msg['text'].startswith('/'):
+            text = msg['text']
+            handle_sticker_maker_input(chat_id, text, 'text', msg.get('message_id'), None, ai_manager, send_message)
+            return "ok"
 
     # پردازش ورودی استیکرساز
     if STICKER_MAKER_AVAILABLE and ai_manager and ai_manager.enabled:
@@ -601,6 +642,16 @@ def webhook():
         text = msg["text"]
 
         # ابتدا دستورات خاص را بررسی کن (قبل از پردازش حالت)
+        if text == "🎭 استیکرساز" and STICKER_MAKER_AVAILABLE:
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+            
+            # شروع فرآیند استیکرساز
+            handle_sticker_maker_toggle(chat_id, ai_manager)
+            return "ok"
+            
         if text == "/start":
             # بررسی عضویت در کانال
             if not check_channel_membership(chat_id):
@@ -3276,15 +3327,16 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
 def show_main_menu(chat_id):
     # بررسی وضعیت اشتراک کاربر
     ai_button_text = get_ai_button_text()
+    sticker_button_text = "🎭 استیکرساز" if STICKER_MAKER_AVAILABLE else "🎭 استیکرساز (غیرفعال)"
     
     if is_subscribed(chat_id):
         keyboard = {
             "keyboard": [
                 ["🎁 تست رایگان", "⭐ اشتراک"],
                 ["🎨 طراحی پیشرفته", "📚 قالب‌های آماده"],
-                [ai_button_text, "📝 تاریخچه"],
-                ["⚙️ تنظیمات", "📞 پشتیبانی"],
-                ["ℹ️ درباره"]
+                [ai_button_text, sticker_button_text],
+                ["📝 تاریخچه", "⚙️ تنظیمات"],
+                ["📞 پشتیبانی", "ℹ️ درباره"]
             ],
             "resize_keyboard": True
         }
@@ -3293,9 +3345,9 @@ def show_main_menu(chat_id):
             "keyboard": [
                 ["🎁 تست رایگان", "⭐ اشتراک"],
                 ["🎨 طراحی پیشرفته", "📚 قالب‌های آماده"],
-                [ai_button_text, "📝 تاریخچه"],
-                ["⚙️ تنظیمات", "📞 پشتیبانی"],
-                ["ℹ️ درباره"]
+                [ai_button_text, sticker_button_text],
+                ["📝 تاریخچه", "⚙️ تنظیمات"],
+                ["📞 پشتیبانی", "ℹ️ درباره"]
             ],
             "resize_keyboard": True
         }
