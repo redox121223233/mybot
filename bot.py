@@ -659,7 +659,8 @@ def handle_callback_query(callback_query):
     elif data == "back_to_main":
         answer_callback_query(query_id, "بازگشت به منوی اصلی")
         
-        # بازگشت به منوی اصلی
+        # بازگشت به منوی اصلی با حذف کیبورد اینلاین
+        edit_message_text(chat_id, message_id, "✅ بازگشت به منوی اصلی")
         show_main_menu(chat_id)
         return
     
@@ -3607,14 +3608,14 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
 def show_main_menu(chat_id):
     # بررسی وضعیت اشتراک کاربر
     sticker_button_text = "🎭 استیکرساز" if STICKER_MAKER_AVAILABLE else "🎭 استیکرساز (غیرفعال)"
-    ai_sticker_button_text = "🤖 استیکرساز هوشمند" if AI_INTEGRATION_AVAILABLE else "🤖 استیکرساز هوشمند (غیرفعال)"
+    # حذف دکمه استیکرساز هوشمند از منو
     
     if is_subscribed(chat_id):
         keyboard = {
             "keyboard": [
                 ["🎁 تست رایگان", "⭐ اشتراک"],
                 ["🎨 طراحی پیشرفته", "📚 قالب‌های آماده"],
-                [sticker_button_text, ai_sticker_button_text],
+                [sticker_button_text],
                 ["📝 تاریخچه", "⚙️ تنظیمات"],
                 ["📞 پشتیبانی", "ℹ️ درباره"]
             ],
@@ -3625,7 +3626,7 @@ def show_main_menu(chat_id):
             "keyboard": [
                 ["🎁 تست رایگان", "⭐ اشتراک"],
                 ["🎨 طراحی پیشرفته", "📚 قالب‌های آماده"],
-                [sticker_button_text, ai_sticker_button_text],
+                [sticker_button_text],
                 ["📝 تاریخچه", "⚙️ تنظیمات"],
                 ["📞 پشتیبانی", "ℹ️ درباره"]
             ],
