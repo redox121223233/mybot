@@ -558,12 +558,35 @@ def webhook():
     update = request.get_json(force=True, silent=True) or {}
     logger.info(f"Received update: {update}")
     
-    # پردازش کالبک کوئری
+    # پردازش کالبک کوئری - اولویت بالاتر از پردازش پیام
     if "callback_query" in update:
         try:
-            handle_callback_query(update["callback_query"])
+            # اطمینان از اینکه هوش مصنوعی مداخله نکند
+            callback_query = update["callback_query"]
+            chat_id = callback_query.get('message', {}).get('chat', {}).get('id')
+            
+            # غیرفعال کردن موقت حالت هوش مصنوعی برای پردازش دکمه
+            if chat_id and chat_id in user_data:
+                # ذخیره وضعیت فعلی هوش مصنوعی
+                ai_mode_was_active = user_data[chat_id].get("ai_mode", False)
+                
+                # غیرفعال کردن موقت هوش مصنوعی
+                user_data[chat_id]["ai_mode"] = False
+                
+                # پردازش دکمه
+                handle_callback_query(callback_query)
+                
+                # بازگرداندن وضعیت هوش مصنوعی به حالت قبلی (اگر دکمه مربوط به تغییر وضعیت هوش مصنوعی نبود)
+                data = callback_query.get('data', '')
+                if data != "ai_activate" and data != "ai_deactivate":
+                    user_data[chat_id]["ai_mode"] = ai_mode_was_active
+            else:
+                # اگر اطلاعات کاربر موجود نیست، فقط پردازش کن
+                handle_callback_query(callback_query)
+                
         except Exception as e:
             logger.error(f"Error handling callback query: {e}")
+            logger.exception("Detailed error:")
         return "ok"
         
     msg = update.get("message")
