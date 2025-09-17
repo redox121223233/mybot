@@ -16,9 +16,13 @@ from bidi.algorithm import get_display
 # اضافه کردن import برای سیستم کنترل هوش مصنوعی
 try:
     from ai_integration import should_ai_respond, AIManager, check_ai_status, activate_ai, deactivate_ai, toggle_ai
+    from sticker_handlers import handle_sticker_maker_toggle, handle_sticker_maker_input, process_callback_query
     AI_INTEGRATION_AVAILABLE = True
+    STICKER_MAKER_AVAILABLE = True
+    print("AI Integration and Sticker Maker available")
 except ImportError:
     AI_INTEGRATION_AVAILABLE = False
+    STICKER_MAKER_AVAILABLE = False
     logger = None  # logger هنوز تعریف نشده
 
 # تنظیم URL سرور کنترل هوش مصنوعی
@@ -62,9 +66,11 @@ if AI_INTEGRATION_AVAILABLE:
         logger.info("✅ AI Manager initialized successfully")
     except Exception as e:
         AI_INTEGRATION_AVAILABLE = False
+        STICKER_MAKER_AVAILABLE = False
         logger.error(f"❌ Failed to initialize AI Manager: {e}")
 else:
     ai_manager = None
+    STICKER_MAKER_AVAILABLE = False
 
 # فایل ذخیره‌سازی داده‌ها
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -550,6 +556,12 @@ def health_check_api():
 @app.post(f"/webhook/{WEBHOOK_SECRET}")
 def webhook():
     update = request.get_json(force=True, silent=True) or {}
+    
+    # پردازش کالبک کوئری
+    if "callback_query" in update:
+        handle_callback_query(update["callback_query"])
+        return "ok"
+        
     msg = update.get("message")
 
     if not msg:
@@ -562,6 +574,28 @@ def webhook():
         handle_admin_command(chat_id, msg["text"])
         return "ok"
 
+    # پردازش ورودی استیکرساز
+    if STICKER_MAKER_AVAILABLE and ai_manager and ai_manager.enabled:
+        # پردازش تصاویر برای استیکرساز
+        if 'photo' in msg:
+            photos = msg['photo']
+            if photos:
+                # انتخاب بزرگترین تصویر
+                photo = photos[-1]
+                file_id = photo.get('file_id')
+                caption = msg.get('caption', '')
+                
+                # پردازش تصویر توسط استیکرساز
+                handle_sticker_maker_input(chat_id, file_id, 'photo', msg.get('message_id'), caption, ai_manager, send_message)
+                return "ok"
+        
+        # پردازش متن برای استیکرساز (اگر در حالت استیکرساز باشد)
+        if "text" in msg and user_data.get(str(chat_id), {}).get("mode") == "sticker_maker":
+            text = msg["text"]
+            if text not in ["/start", "🔙 بازگشت"]:  # دستورات خاص را نادیده بگیر
+                handle_sticker_maker_input(chat_id, text, 'text', msg.get('message_id'), None, ai_manager, send_message)
+                return "ok"
+    
     # 📌 پردازش متن
     if "text" in msg:
         text = msg["text"]
