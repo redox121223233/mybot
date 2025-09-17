@@ -1068,6 +1068,9 @@ def process_message(msg):
         if not chat_id:
             return "no chat_id"
             
+        # تعریف state در ابتدای تابع برای دسترسی در تمام بخش‌های کد
+        state = user_data.get(chat_id, {})
+            
         # بررسی اینکه آیا هوش مصنوعی باید پاسخ دهد (فقط برای پیام‌های عادی که پردازش نشده‌اند)
         if "text" in msg and AI_INTEGRATION_AVAILABLE:
             text = msg["text"]
@@ -1089,8 +1092,6 @@ def process_message(msg):
         
         # 📌 پردازش عکس
         if "photo" in msg:
-            state = user_data.get(chat_id, {})
-            
             # بررسی ارسال رسید
             if state.get("step") == "waiting_receipt":
                 photos = msg.get("photo", [])
