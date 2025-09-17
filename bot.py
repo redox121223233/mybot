@@ -1054,25 +1054,32 @@ def handle_callback_query(callback_query):
     # اضافه کردن return statement نهایی برای اطمینان از برگشت مقدار در همه حالت‌ها
     return "ok"
 
-    # بررسی اینکه آیا هوش مصنوعی باید پاسخ دهد (فقط برای پیام‌های عادی که پردازش نشده‌اند)
-    if AI_INTEGRATION_AVAILABLE and not text.startswith('/'):
-        try:
-            if should_ai_respond_local(chat_id, text):
-                # بررسی محدودیت هوش مصنوعی
-                ai_remaining = check_ai_sticker_limit(chat_id)
-                if ai_remaining <= 0:
-                    send_message(chat_id, "🤖 محدودیت روزانه هوش مصنوعی شما تمام شده!\n\n📊 شما امروز 5 استیکر با هوش مصنوعی ساخته‌اید.\n🔄 فردا دوباره می‌توانید استفاده کنید.\n\n💎 برای استفاده نامحدود، اشتراک تهیه کنید.")
-                    return "ok"
-                    
-                    # پردازش پیام با هوش مصنوعی
-                    handle_ai_message(chat_id, text)
-                    return "ok"
-                else:
-                    logger.info(f"AI is inactive - ignoring message from {chat_id}: {text[:50]}")
-                    return "ok"
-            except Exception as e:
-                logger.error(f"Error in AI processing: {e}")
-                # در صورت خطا، ادامه پردازش عادی
+# تابع اصلی پردازش پیام‌ها
+def process_message(msg):
+    """پردازش پیام‌های دریافتی از تلگرام"""
+    try:
+        chat_id = msg.get("chat", {}).get("id")
+        if not chat_id:
+            return "no chat_id"
+            
+        # بررسی اینکه آیا هوش مصنوعی باید پاسخ دهد (فقط برای پیام‌های عادی که پردازش نشده‌اند)
+        if "text" in msg and AI_INTEGRATION_AVAILABLE:
+            text = msg["text"]
+            if not text.startswith('/'):
+                try:
+                    if should_ai_respond_local(chat_id, text):
+                        # بررسی محدودیت هوش مصنوعی
+                        ai_remaining = check_ai_sticker_limit(chat_id)
+                        if ai_remaining <= 0:
+                            send_message(chat_id, "🤖 محدودیت روزانه هوش مصنوعی شما تمام شده!\n\n📊 شما امروز 5 استیکر با هوش مصنوعی ساخته‌اید.\n🔄 فردا دوباره می‌توانید استفاده کنید.\n\n💎 برای استفاده نامحدود، اشتراک تهیه کنید.")
+                            return "ok"
+                        
+                        # پردازش پیام با هوش مصنوعی
+                        handle_ai_message(chat_id, text)
+                        return "ok"
+                except Exception as e:
+                    logger.error(f"Error in AI processing: {e}")
+                    # در صورت خطا، ادامه پردازش عادی
 
     # 📌 پردازش عکس
     elif "photo" in msg:
