@@ -827,11 +827,6 @@ def handle_callback_query(callback_query):
             
             send_message(chat_id, "🎁 از تست رایگان استفاده کنید!\n\nبا استفاده از دکمه‌های زیر می‌توانید استیکر بسازید:", reply_markup=json.dumps(keyboard))
             return "ok"
-                user_data[chat_id]["pack_name"] = None
-                user_data[chat_id]["background"] = None
-            else:
-                # اگر کاربر قبلاً پکی دارد، مستقیماً به مرحله text برو
-                user_data[chat_id]["step"] = "text"
             
             # نمایش وضعیت محدودیت
             next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
@@ -1168,16 +1163,16 @@ def process_message(msg):
             
             send_message(chat_id, "🤖 استیکرساز هوشمند فعال شد!\n\nلطفاً متن مورد نظر خود را برای تبدیل به استیکر وارد کنید.\n\nبرای بازگشت به منوی اصلی، دکمه «🔙 بازگشت» را بزنید.", reply_markup=json.dumps(keyboard))
             return "ok"
-                
-            elif text == "🔙 بازگشت":
-                # بازگشت به منوی اصلی
-                if chat_id in user_data:
-                    user_data[chat_id]["mode"] = None
-                    user_data[chat_id]["step"] = None
-                    # غیرفعال کردن حالت هوش مصنوعی
-                    if "ai_mode" in user_data[chat_id]:
-                        user_data[chat_id]["ai_mode"] = False
-                    save_user_data()
+            
+        elif text == "🔙 بازگشت":
+            # بازگشت به منوی اصلی
+            if chat_id in user_data:
+                user_data[chat_id]["mode"] = None
+                user_data[chat_id]["step"] = None
+                # غیرفعال کردن حالت هوش مصنوعی
+                if "ai_mode" in user_data[chat_id]:
+                    user_data[chat_id]["ai_mode"] = False
+                save_user_data()
                 show_main_menu(chat_id)
                 return "ok"
                 
