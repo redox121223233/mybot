@@ -556,6 +556,7 @@ def health_check_api():
 @app.post(f"/webhook/{WEBHOOK_SECRET}")
 def webhook():
     update = request.get_json(force=True, silent=True) or {}
+    logger.info(f"Received update: {update}")
     
     # پردازش کالبک کوئری
     if "callback_query" in update:
@@ -583,6 +584,8 @@ def handle_callback_query(callback_query):
     message_id = callback_query.get('message', {}).get('message_id')
     data = callback_query.get('data', '')
     
+    logger.info(f"Processing callback query: {data} from chat_id: {chat_id}")
+    
     # پردازش کالبک‌های استیکرساز
     if STICKER_MAKER_AVAILABLE and data.startswith('sticker_'):
         if data == 'sticker_toggle':
@@ -595,59 +598,34 @@ def handle_callback_query(callback_query):
         # پردازش سایر کالبک‌های استیکرساز
         if ai_manager and process_callback_query(callback_query, ai_manager, answer_callback_query, edit_message_text):
             return
-        
-    msg = update.get("message")
-
-    if not msg:
-        return "ok"
-
-    chat_id = msg["chat"]["id"]
-
-    # 📌 پردازش دستورات ادمین
-    if "text" in msg and msg["text"].startswith("/admin"):
-        handle_admin_command(chat_id, msg["text"])
-        return "ok"
-        
-    # پردازش ورودی استیکرساز
-    if STICKER_MAKER_AVAILABLE and ai_manager and ai_manager.enabled:
-        # پردازش تصاویر برای استیکرساز
-        if 'photo' in msg:
-            photo = msg['photo'][-1]  # بزرگترین سایز عکس
-            file_id = photo.get('file_id')
-            if file_id:
-                from sticker_handlers import get_file
-                photo_data = get_file(file_id, BOT_TOKEN)
-                if photo_data:
-                    caption = msg.get('caption', '')
-                    handle_sticker_maker_input(chat_id, photo_data.getvalue(), 'image', msg.get('message_id'), caption, ai_manager, send_message)
-                    return "ok"
-        
-        # پردازش متن برای استیکرساز
-        elif 'text' in msg and not msg['text'].startswith('/'):
-            text = msg['text']
-            handle_sticker_maker_input(chat_id, text, 'text', msg.get('message_id'), None, ai_manager, send_message)
-            return "ok"
-
-    # پردازش ورودی استیکرساز
-    if STICKER_MAKER_AVAILABLE and ai_manager and ai_manager.enabled:
-        # پردازش تصاویر برای استیکرساز
-        if 'photo' in msg:
-            photos = msg['photo']
-            if photos:
-                # انتخاب بزرگترین تصویر
-                photo = photos[-1]
-                file_id = photo.get('file_id')
-                caption = msg.get('caption', '')
-                
-                # پردازش تصویر توسط استیکرساز
-                handle_sticker_maker_input(chat_id, file_id, 'photo', msg.get('message_id'), caption, ai_manager, send_message)
-                return "ok"
-        
-        # پردازش متن برای استیکرساز (اگر در حالت استیکرساز باشد)
-        if "text" in msg and user_data.get(str(chat_id), {}).get("mode") == "sticker_maker":
-            text = msg["text"]
-            if text not in ["/start", "🔙 بازگشت"]:  # دستورات خاص را نادیده بگیر
-                handle_sticker_maker_input(chat_id, text, 'text', msg.get('message_id'), None, ai_manager, send_message)
+    
+    # پردازش سایر کالبک‌ها
+    if data == 'lang_fa':
+        set_language(chat_id, 'fa')
+        answer_callback_query(query_id, "زبان به فارسی تغییر کرد")
+        edit_message_text(chat_id, message_id, tr(chat_id, "lang_set_fa", "✅ زبان به فارسی تغییر کرد."))
+        show_main_menu(chat_id)
+        return
+    
+    elif data == 'lang_en':
+        set_language(chat_id, 'en')
+        answer_callback_query(query_id, "Language set to English")
+        edit_message_text(chat_id, message_id, tr(chat_id, "lang_set_en", "✅ Language set to English."))
+        show_main_menu(chat_id)
+        return
+    
+    elif data.startswith('sub_'):
+        # پردازش کالبک‌های اشتراک
+        plan = data.replace('sub_', '')
+        if plan in SUBSCRIPTION_PLANS:
+            start_subscription_process(chat_id, plan)
+            answer_callback_query(query_id, "درخواست اشتراک ثبت شد")
+            return
+    
+    # اگر به اینجا رسیدیم، کالبک ناشناخته است
+    answer_callback_query(query_id, "عملیات نامشخص")
+    logger.warning(f"Unknown callback query: {data}")
+    return
                 return "ok"
     
     # 📌 پردازش متن
@@ -1070,6 +1048,84 @@ def process_message(msg):
             
         # تعریف state در ابتدای تابع برای دسترسی در تمام بخش‌های کد
         state = user_data.get(chat_id, {})
+        
+        # پردازش دستورات
+        if "text" in msg:
+            text = msg["text"]
+            
+            # پردازش دستور /start
+            if text == "/start":
+                logger.info(f"Processing /start command for chat_id: {chat_id}")
+                # بررسی عضویت در کانال
+                if not check_channel_membership(chat_id):
+                    send_membership_required_message(chat_id)
+                    return "ok"
+                
+                # همیشه به منوی اصلی برگرد (حتی اگر در حال ساخت استیکر هستید)
+                if chat_id in user_data:
+                    old_data = user_data[chat_id]
+                    user_data[chat_id] = {
+                        "mode": None, 
+                        "count": old_data.get("count", 0), 
+                        "step": None, 
+                        "pack_name": old_data.get("pack_name"), 
+                        "background": None, 
+                        "created_packs": old_data.get("created_packs", []),  # حفظ پک‌های ساخته شده
+                        "sticker_usage": old_data.get("sticker_usage", []),  # حفظ محدودیت
+                        "last_reset": old_data.get("last_reset", time.time()),  # حفظ زمان reset
+                        "ai_sticker_usage": old_data.get("ai_sticker_usage", [])  # حفظ استفاده از هوش مصنوعی
+                    }
+                else:
+                    user_data[chat_id] = {
+                        "mode": None, 
+                        "count": 0, 
+                        "step": None, 
+                        "pack_name": None, 
+                        "background": None, 
+                        "created_packs": [],
+                        "sticker_usage": [],
+                        "last_reset": time.time(),
+                        "ai_sticker_usage": []
+                    }
+                save_user_data()
+                show_main_menu(chat_id)
+                return "ok"
+                
+            # پردازش دستورات ادمین
+            elif text.startswith("/admin"):
+                handle_admin_command(chat_id, text)
+                return "ok"
+                
+            # پردازش دکمه‌های منو
+            elif text == "🎭 استیکرساز" and STICKER_MAKER_AVAILABLE:
+                # بررسی عضویت در کانال
+                if not check_channel_membership(chat_id):
+                    send_membership_required_message(chat_id)
+                    return "ok"
+                
+                # شروع فرآیند استیکرساز
+                handle_sticker_maker_toggle(chat_id, None, ai_manager, send_message, API)
+                return "ok"
+                
+            elif text == "🔙 بازگشت":
+                # بازگشت به منوی اصلی
+                if chat_id in user_data:
+                    user_data[chat_id]["mode"] = None
+                    user_data[chat_id]["step"] = None
+                show_main_menu(chat_id)
+                return "ok"
+                
+            elif text == "💰 خرید اشتراک":
+                show_subscription_plans(chat_id)
+                return "ok"
+                
+            elif text == "❓ راهنما":
+                show_help(chat_id)
+                return "ok"
+                
+            elif text == "🌍 زبان":
+                show_language_menu(chat_id)
+                return "ok"
             
         # بررسی اینکه آیا هوش مصنوعی باید پاسخ دهد (فقط برای پیام‌های عادی که پردازش نشده‌اند)
         if "text" in msg and AI_INTEGRATION_AVAILABLE:
