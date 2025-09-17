@@ -3886,18 +3886,35 @@ def edit_message_text(chat_id, message_id, text, reply_markup=None):
         return False
 
 def answer_callback_query(query_id, text=None, show_alert=False):
-    """پاسخ به کالبک کوئری"""
+    """ارسال پاسخ به کالبک کوئری"""
     if not query_id:
-        logger.error("No callback_query_id provided")
+        logger.error("No query_id provided for answer_callback_query")
         return False
+    
+    try:
+        data = {"callback_query_id": query_id}
+        if text:
+            data["text"] = text
+        if show_alert:
+            data["show_alert"] = show_alert
         
-    data = {
-        "callback_query_id": query_id
-    }
-    if text:
-        data["text"] = text
-    if show_alert:
-        data["show_alert"] = show_alert
+        # ارسال درخواست به API تلگرام
+        response = requests.post(f"{API}answerCallbackQuery", json=data)
+        
+        # بررسی پاسخ
+        if response.status_code == 200:
+            result = response.json()
+            if result.get("ok"):
+                return True
+            else:
+                logger.error(f"Telegram API error: {result}")
+                return False
+        else:
+            logger.error(f"HTTP error: {response.status_code}")
+            return False
+    except Exception as e:
+        logger.error(f"Error in answer_callback_query: {e}")
+        return False
     
     # ارسال درخواست به API تلگرام
     try:
