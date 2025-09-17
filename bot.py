@@ -1080,24 +1080,24 @@ def process_message(msg):
                 except Exception as e:
                     logger.error(f"Error in AI processing: {e}")
                     # در صورت خطا، ادامه پردازش عادی
-
-    # 📌 پردازش عکس
-    elif "photo" in msg:
-        state = user_data.get(chat_id, {})
         
-        # بررسی ارسال رسید
-        if state.get("step") == "waiting_receipt":
-            photos = msg.get("photo", [])
-            if photos:
-                file_id = photos[-1].get("file_id")
-                if file_id:
-                    # ذخیره رسید در پرداخت‌های در انتظار
-                    payment_id = f"{chat_id}_{int(time.time())}"
-                    user_info = requests.get(API + f"getChat?chat_id={chat_id}").json()
-                    username = user_info.get("result", {}).get("username", f"user_{chat_id}")
-                    first_name = user_info.get("result", {}).get("first_name", "User")
-                    
-                    pending_payments[payment_id] = {
+        # 📌 پردازش عکس
+        if "photo" in msg:
+            state = user_data.get(chat_id, {})
+            
+            # بررسی ارسال رسید
+            if state.get("step") == "waiting_receipt":
+                photos = msg.get("photo", [])
+                if photos:
+                    file_id = photos[-1].get("file_id")
+                    if file_id:
+                        # ذخیره رسید در پرداخت‌های در انتظار
+                        payment_id = f"{chat_id}_{int(time.time())}"
+                        user_info = requests.get(API + f"getChat?chat_id={chat_id}").json()
+                        username = user_info.get("result", {}).get("username", f"user_{chat_id}")
+                        first_name = user_info.get("result", {}).get("first_name", "User")
+                        
+                        pending_payments[payment_id] = {
                         "user_id": chat_id,
                         "username": username,
                         "first_name": first_name,
@@ -1176,26 +1176,29 @@ def process_message(msg):
         # پردازش عکس برای قابلیت‌های اشتراکی
         handle_premium_file(chat_id, "photo", msg.get("photo", []))
 
-    # 📌 پردازش استیکر
-    elif "sticker" in msg:
-        handle_premium_file(chat_id, "sticker", msg["sticker"])
+        # 📌 پردازش استیکر
+        if "sticker" in msg:
+            handle_premium_file(chat_id, "sticker", msg["sticker"])
 
-    # 📌 پردازش ویدیو
-    elif "video" in msg:
-        handle_premium_file(chat_id, "video", msg["video"])
+        # 📌 پردازش ویدیو
+        if "video" in msg:
+            handle_premium_file(chat_id, "video", msg["video"])
 
-    # 📌 پردازش انیمیشن (GIF)
-    elif "animation" in msg:
-        handle_premium_file(chat_id, "animation", msg["animation"])
+        # 📌 پردازش انیمیشن (GIF)
+        if "animation" in msg:
+            handle_premium_file(chat_id, "animation", msg["animation"])
 
-    # 📌 پردازش ویدیو نوت
-    elif "video_note" in msg:
-        handle_premium_file(chat_id, "video_note", msg["video_note"])
+        # 📌 پردازش ویدیو نوت
+        if "video_note" in msg:
+            handle_premium_file(chat_id, "video_note", msg["video_note"])
 
-    # 📌 پردازش فایل
-    elif "document" in msg:
-        handle_premium_file(chat_id, "document", msg["document"])
+        # 📌 پردازش فایل
+        if "document" in msg:
+            handle_premium_file(chat_id, "document", msg["document"])
 
+    except Exception as e:
+        logger.error(f"Error processing message: {e}")
+        
     return "ok"
 
 def handle_premium_feature(chat_id, feature):
