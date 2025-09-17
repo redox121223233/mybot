@@ -560,7 +560,10 @@ def webhook():
     
     # پردازش کالبک کوئری
     if "callback_query" in update:
-        handle_callback_query(update["callback_query"])
+        try:
+            handle_callback_query(update["callback_query"])
+        except Exception as e:
+            logger.error(f"Error handling callback query: {e}")
         return "ok"
         
     msg = update.get("message")
@@ -3718,21 +3721,42 @@ def send_membership_required_message(chat_id):
         "reply_markup": keyboard
     })
 
-def send_message(chat_id, text):
-    requests.post(API + "sendMessage", json={"chat_id": chat_id, "text": text})
+def send_message(chat_id, text, reply_markup=None):
+    """ارسال پیام به کاربر"""
+    data = {
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML"
+    }
+    if reply_markup:
+        data["reply_markup"] = reply_markup
+    
+    try:
+        response = requests.post(API + "sendMessage", json=data, timeout=5)
+        logger.info(f"Send message response: {response.text}")
+        return response.json().get("ok", False)
+    except Exception as e:
+        logger.error(f"Error in send_message: {e}")
+        return False
 
 def edit_message_text(chat_id, message_id, text, reply_markup=None):
     """ویرایش متن پیام"""
     data = {
         "chat_id": chat_id,
         "message_id": message_id,
-        "text": text
+        "text": text,
+        "parse_mode": "HTML"
     }
     if reply_markup:
         data["reply_markup"] = reply_markup
     
-    response = requests.post(API + "editMessageText", json=data)
-    return response.json().get("ok", False)
+    try:
+        response = requests.post(API + "editMessageText", json=data, timeout=5)
+        logger.info(f"Edit message response: {response.text}")
+        return response.json().get("ok", False)
+    except Exception as e:
+        logger.error(f"Error in edit_message_text: {e}")
+        return False
 
 def answer_callback_query(query_id, text=None, show_alert=False):
     """پاسخ به کالبک کوئری"""
@@ -3744,8 +3768,13 @@ def answer_callback_query(query_id, text=None, show_alert=False):
     if show_alert:
         data["show_alert"] = show_alert
     
-    response = requests.post(API + "answerCallbackQuery", json=data)
-    return response.json().get("ok", False)
+    try:
+        response = requests.post(API + "answerCallbackQuery", json=data, timeout=5)
+        logger.info(f"Answer callback response: {response.text}")
+        return response.json().get("ok", False)
+    except Exception as e:
+        logger.error(f"Error in answer_callback_query: {e}")
+        return False
 
 def send_message_with_back_button(chat_id, text):
     """ارسال پیام با دکمه بازگشت"""
