@@ -4413,17 +4413,31 @@ def should_ai_respond_local(chat_id=None, message_text=None):
         logger.info("هوش مصنوعی غیرفعال است - پاسخ داده نمی‌شود")
         return False
     
+    # بررسی اینکه آیا کاربر حالت هوش مصنوعی را فعال کرده است
+    if chat_id and chat_id in user_data:
+        if not user_data[chat_id].get("ai_mode", False):
+            logger.info(f"هوش مصنوعی برای کاربر {chat_id} غیرفعال است - پاسخ داده نمی‌شود")
+            return False
+        
+        # فقط در حالت استیکرساز هوشمند به پیام‌ها پاسخ بده
+        if user_data[chat_id].get("mode") != "ai_sticker":
+            logger.info(f"کاربر {chat_id} در حالت استیکرساز هوشمند نیست - پاسخ داده نمی‌شود")
+            return False
+    else:
+        # اگر اطلاعات کاربر موجود نیست، پاسخ نده
+        return False
+    
     # قوانین اضافی (اختیاری)
     if message_text:
-        # اگر پیام دستور ربات است، همیشه پاسخ بده
+        # اگر پیام دستور ربات است، پاسخ نده
         if message_text.startswith('/'):
-            return True
+            return False
         
         # اگر پیام خیلی کوتاه است، ممکن است نیازی به پاسخ هوش مصنوعی نباشد
         if len(message_text.strip()) < 3:
             return False
     
-    logger.info("هوش مصنوعی فعال است - پاسخ داده می‌شود")
+    logger.info(f"هوش مصنوعی برای کاربر {chat_id} فعال است - پاسخ داده می‌شود")
     return True
 
 def get_ai_button_text():
