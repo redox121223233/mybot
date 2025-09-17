@@ -795,7 +795,8 @@ def handle_callback_query(callback_query):
                     "background": None, 
                     "created_packs": [],
                     "sticker_usage": [],
-                    "last_reset": time.time()
+                    "last_reset": time.time(),
+                    "ai_mode": False
                 }
             else:
                 # اگر کاربر قبلاً وجود دارد، created_packs را حفظ کن
@@ -805,6 +806,8 @@ def handle_callback_query(callback_query):
                     user_data[chat_id]["sticker_usage"] = []
                 if "last_reset" not in user_data[chat_id]:
                     user_data[chat_id]["last_reset"] = time.time()
+                if "ai_mode" not in user_data[chat_id]:
+                    user_data[chat_id]["ai_mode"] = False
             
             # بررسی محدودیت استیکر
             remaining, next_reset = check_sticker_limit(chat_id)
@@ -813,11 +816,17 @@ def handle_callback_query(callback_query):
                 send_message(chat_id, f"⏰ محدودیت روزانه شما تمام شده!\n\n🔄 زمان بعدی: {next_reset_time}\n\n💎 برای ساخت استیکر نامحدود، اشتراک تهیه کنید.")
                 return "ok"
             
-            user_data[chat_id]["mode"] = "free"
-            # مهم: count, pack_name و background را reset نکن اگر کاربر قبلاً پکی دارد
-            if not user_data[chat_id].get("pack_name"):
-                user_data[chat_id]["count"] = 0
-                user_data[chat_id]["step"] = "ask_pack_choice"
+            # ارسال منوی تست رایگان
+            keyboard = {
+                "keyboard": [
+                    ["🎭 استیکرساز", "🤖 استیکرساز هوشمند"],
+                    ["🔙 بازگشت"]
+                ],
+                "resize_keyboard": True
+            }
+            
+            send_message(chat_id, "🎁 از تست رایگان استفاده کنید!\n\nبا استفاده از دکمه‌های زیر می‌توانید استیکر بسازید:", reply_markup=json.dumps(keyboard))
+            return "ok"
                 user_data[chat_id]["pack_name"] = None
                 user_data[chat_id]["background"] = None
             else:
@@ -845,14 +854,14 @@ def handle_callback_query(callback_query):
         if text == "🎨 انتخاب رنگ متن":
             # تنظیم حالت طراحی پیشرفته
             if chat_id not in user_data:
-                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time(), "ai_mode": False}
             user_data[chat_id]["mode"] = "advanced_design"
             user_data[chat_id]["step"] = "color_selection"
             show_color_menu(chat_id)
             return "ok"
         elif text == "📝 انتخاب فونت":
             if chat_id not in user_data:
-                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time(), "ai_mode": False}
             user_data[chat_id]["mode"] = "advanced_design"
             user_data[chat_id]["step"] = "font_selection"
             show_font_menu(chat_id)
@@ -1048,6 +1057,21 @@ def process_message(msg):
         # تعریف state در ابتدای تابع برای دسترسی در تمام بخش‌های کد
         state = user_data.get(chat_id, {})
         
+        # اگر کاربر جدید است، اطلاعات اولیه را تنظیم کن
+        if chat_id not in user_data:
+            user_data[chat_id] = {
+                "mode": None,
+                "count": 0,
+                "step": None,
+                "pack_name": None,
+                "background": None,
+                "created_packs": [],
+                "sticker_usage": [],
+                "last_reset": time.time(),
+                "ai_mode": False  # هوش مصنوعی به صورت پیش‌فرض غیرفعال است
+            }
+            save_user_data()
+        
         # پردازش دستورات
         if "text" in msg:
             text = msg["text"]
@@ -1095,45 +1119,55 @@ def process_message(msg):
                 handle_admin_command(chat_id, text)
                 return "ok"
                 
-            # پردازش دکمه‌های منو
-            elif text == "🎭 استیکرساز" and STICKER_MAKER_AVAILABLE:
-                # بررسی عضویت در کانال
-                if not check_channel_membership(chat_id):
-                    send_membership_required_message(chat_id)
-                    return "ok"
-                
-                # شروع فرآیند استیکرساز معمولی
-                handle_sticker_maker_toggle(chat_id, None, ai_manager, send_message, API)
+            # پردازش دکمه‌های منوی تست رایگان
+        elif text == "🎭 استیکرساز":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
                 return "ok"
-                
-            elif text == "🤖 استیکرساز هوشمند" and AI_INTEGRATION_AVAILABLE:
-                # بررسی عضویت در کانال
-                if not check_channel_membership(chat_id):
-                    send_membership_required_message(chat_id)
-                    return "ok"
-                
-                # بررسی محدودیت استفاده از هوش مصنوعی
-                if not is_subscribed(chat_id):
-                    remaining, next_reset = check_ai_sticker_limit(chat_id)
-                    if remaining <= 0:
-                        next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
-                        send_message(chat_id, f"⚠️ محدودیت روزانه استفاده از استیکرساز هوشمند شما تمام شده است!\n\nزمان بازنشانی: {next_reset_time}\n\nبرای استفاده نامحدود اشتراک تهیه کنید.")
-                        show_subscription_plans(chat_id)
-                        return "ok"
-                
-                # فعال کردن حالت هوش مصنوعی
-                if chat_id in user_data:
-                    user_data[chat_id]["ai_mode"] = True
-                    user_data[chat_id]["mode"] = "ai_sticker"
-                    save_user_data()
-                
-                keyboard = {
-                    "keyboard": [["🔙 بازگشت"]],
-                    "resize_keyboard": True
-                }
-                
-                send_message(chat_id, "🤖 استیکرساز هوشمند فعال شد!\n\nلطفاً متن مورد نظر خود را برای تبدیل به استیکر وارد کنید.\n\nبرای بازگشت به منوی اصلی، دکمه «🔙 بازگشت» را بزنید.", reply_markup=json.dumps(keyboard))
+            
+            # شروع فرآیند استیکرساز معمولی
+            user_data[chat_id]["mode"] = "free"
+            user_data[chat_id]["ai_mode"] = False
+            # مهم: count, pack_name و background را reset نکن اگر کاربر قبلاً پکی دارد
+            if not user_data[chat_id].get("pack_name"):
+                user_data[chat_id]["count"] = 0
+                user_data[chat_id]["step"] = "ask_pack_choice"
+                user_data[chat_id]["pack_name"] = None
+                user_data[chat_id]["background"] = None
+            save_user_data()
+            
+            handle_sticker_maker_toggle(chat_id, None, ai_manager, send_message, API)
+            return "ok"
+            
+        elif text == "🤖 استیکرساز هوشمند" and AI_INTEGRATION_AVAILABLE:
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
                 return "ok"
+            
+            # بررسی محدودیت استفاده از هوش مصنوعی
+            if not is_subscribed(chat_id):
+                remaining, next_reset = check_ai_sticker_limit(chat_id)
+                if remaining <= 0:
+                    next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
+                    send_message(chat_id, f"⚠️ محدودیت روزانه استفاده از استیکرساز هوشمند شما تمام شده است!\n\nزمان بازنشانی: {next_reset_time}\n\nبرای استفاده نامحدود اشتراک تهیه کنید.")
+                    show_subscription_plans(chat_id)
+                    return "ok"
+            
+            # فعال کردن حالت هوش مصنوعی
+            if chat_id in user_data:
+                user_data[chat_id]["ai_mode"] = True
+                user_data[chat_id]["mode"] = "ai_sticker"
+                save_user_data()
+            
+            keyboard = {
+                "keyboard": [["🔙 بازگشت"]],
+                "resize_keyboard": True
+            }
+            
+            send_message(chat_id, "🤖 استیکرساز هوشمند فعال شد!\n\nلطفاً متن مورد نظر خود را برای تبدیل به استیکر وارد کنید.\n\nبرای بازگشت به منوی اصلی، دکمه «🔙 بازگشت» را بزنید.", reply_markup=json.dumps(keyboard))
+            return "ok"
                 
             elif text == "🔙 بازگشت":
                 # بازگشت به منوی اصلی
