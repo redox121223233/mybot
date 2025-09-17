@@ -561,6 +561,13 @@ def webhook():
     if "callback_query" in update:
         handle_callback_query(update["callback_query"])
         return "ok"
+        
+    msg = update.get("message")
+
+    if not msg:
+        return "ok"  # اگر پیامی نباشد، پاسخ ok برگردان
+        
+    chat_id = msg["chat"]["id"]
 
 # پردازش کالبک‌های تلگرام
 def handle_callback_query(callback_query):
@@ -1014,12 +1021,14 @@ def handle_callback_query(callback_query):
                 send_membership_required_message(chat_id)
                 return "ok"
             send_message(chat_id, "ℹ️ این ربات برای ساخت استیکر متنی است. نسخه فعلی رایگان است.")
+            return "ok"
         elif text == "📞 پشتیبانی":
             # بررسی عضویت در کانال
             if not check_channel_membership(chat_id):
                 send_membership_required_message(chat_id)
                 return "ok"
             send_message(chat_id, f"📞 برای پشتیبانی با {SUPPORT_ID} در تماس باش.\n\nاگر مشکلی پیش آمد، حتماً پیوی بزنید!")
+            return "ok"
 
         # مدیریت دکمه‌های هوش مصنوعی
         elif text in ["🤖 هوش مصنوعی ✅", "🤖 هوش مصنوعی ❌", "🤖 هوش مصنوعی ⚠️", "🤖 هوش مصنوعی (غیرفعال)"]:
@@ -1041,10 +1050,9 @@ def handle_callback_query(callback_query):
         elif text == "🔗 پنل وب":
             handle_ai_web_panel(chat_id)
             return "ok"
-
-        # پردازش حالت کاربر (بعد از دکمه‌ها)
-        if process_user_state(chat_id, text):
-            return "ok"
+            
+    # اضافه کردن return statement نهایی برای اطمینان از برگشت مقدار در همه حالت‌ها
+    return "ok"
 
         # بررسی اینکه آیا هوش مصنوعی باید پاسخ دهد (فقط برای پیام‌های عادی که پردازش نشده‌اند)
         if AI_INTEGRATION_AVAILABLE and not text.startswith('/'):
