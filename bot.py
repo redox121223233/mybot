@@ -1102,8 +1102,37 @@ def process_message(msg):
                     send_membership_required_message(chat_id)
                     return "ok"
                 
-                # شروع فرآیند استیکرساز
+                # شروع فرآیند استیکرساز معمولی
                 handle_sticker_maker_toggle(chat_id, None, ai_manager, send_message, API)
+                return "ok"
+                
+            elif text == "🤖 استیکرساز هوشمند" and AI_INTEGRATION_AVAILABLE:
+                # بررسی عضویت در کانال
+                if not check_channel_membership(chat_id):
+                    send_membership_required_message(chat_id)
+                    return "ok"
+                
+                # بررسی محدودیت استفاده از هوش مصنوعی
+                if not is_subscribed(chat_id):
+                    remaining, next_reset = check_ai_sticker_limit(chat_id)
+                    if remaining <= 0:
+                        next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
+                        send_message(chat_id, f"⚠️ محدودیت روزانه استفاده از استیکرساز هوشمند شما تمام شده است!\n\nزمان بازنشانی: {next_reset_time}\n\nبرای استفاده نامحدود اشتراک تهیه کنید.")
+                        show_subscription_plans(chat_id)
+                        return "ok"
+                
+                # فعال کردن حالت هوش مصنوعی
+                if chat_id in user_data:
+                    user_data[chat_id]["ai_mode"] = True
+                    user_data[chat_id]["mode"] = "ai_sticker"
+                    save_user_data()
+                
+                keyboard = {
+                    "keyboard": [["🔙 بازگشت"]],
+                    "resize_keyboard": True
+                }
+                
+                send_message(chat_id, "🤖 استیکرساز هوشمند فعال شد!\n\nلطفاً متن مورد نظر خود را برای تبدیل به استیکر وارد کنید.\n\nبرای بازگشت به منوی اصلی، دکمه «🔙 بازگشت» را بزنید.", reply_markup=json.dumps(keyboard))
                 return "ok"
                 
             elif text == "🔙 بازگشت":
@@ -1111,6 +1140,10 @@ def process_message(msg):
                 if chat_id in user_data:
                     user_data[chat_id]["mode"] = None
                     user_data[chat_id]["step"] = None
+                    # غیرفعال کردن حالت هوش مصنوعی
+                    if "ai_mode" in user_data[chat_id]:
+                        user_data[chat_id]["ai_mode"] = False
+                    save_user_data()
                 show_main_menu(chat_id)
                 return "ok"
                 
@@ -3406,15 +3439,15 @@ def make_text_sticker(text, path, background_file_id=None, user_settings=None):
 
 def show_main_menu(chat_id):
     # بررسی وضعیت اشتراک کاربر
-    ai_button_text = get_ai_button_text()
     sticker_button_text = "🎭 استیکرساز" if STICKER_MAKER_AVAILABLE else "🎭 استیکرساز (غیرفعال)"
+    ai_sticker_button_text = "🤖 استیکرساز هوشمند" if AI_INTEGRATION_AVAILABLE else "🤖 استیکرساز هوشمند (غیرفعال)"
     
     if is_subscribed(chat_id):
         keyboard = {
             "keyboard": [
                 ["🎁 تست رایگان", "⭐ اشتراک"],
                 ["🎨 طراحی پیشرفته", "📚 قالب‌های آماده"],
-                [ai_button_text, sticker_button_text],
+                [sticker_button_text, ai_sticker_button_text],
                 ["📝 تاریخچه", "⚙️ تنظیمات"],
                 ["📞 پشتیبانی", "ℹ️ درباره"]
             ],
@@ -3425,7 +3458,7 @@ def show_main_menu(chat_id):
             "keyboard": [
                 ["🎁 تست رایگان", "⭐ اشتراک"],
                 ["🎨 طراحی پیشرفته", "📚 قالب‌های آماده"],
-                [ai_button_text, sticker_button_text],
+                [sticker_button_text, ai_sticker_button_text],
                 ["📝 تاریخچه", "⚙️ تنظیمات"],
                 ["📞 پشتیبانی", "ℹ️ درباره"]
             ],
