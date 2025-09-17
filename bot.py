@@ -3897,9 +3897,19 @@ def answer_callback_query(query_id, text=None, show_alert=False):
             data["text"] = text
         if show_alert:
             data["show_alert"] = show_alert
-        
+            
         # ارسال درخواست به API تلگرام
         response = requests.post(f"{API}answerCallbackQuery", json=data)
+        result = response.json()
+        
+        if result.get("ok"):
+            return True
+        else:
+            logger.error(f"Error answering callback query: {result}")
+            return False
+    except Exception as e:
+        logger.error(f"Exception in answer_callback_query: {e}")
+        return False
         
         # بررسی پاسخ
         if response.status_code == 200:
