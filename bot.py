@@ -1114,7 +1114,7 @@ def process_message(msg):
                 handle_admin_command(chat_id, text)
                 return "ok"
                 
-            # پردازش دکمه‌های منوی تست رایگان
+            # پردازش دکمه‌های منوی اصلی
         elif text == "🎭 استیکرساز":
             # بررسی عضویت در کانال
             if not check_channel_membership(chat_id):
@@ -1122,17 +1122,35 @@ def process_message(msg):
                 return "ok"
             
             # شروع فرآیند استیکرساز معمولی
-            user_data[chat_id]["mode"] = "free"
-            user_data[chat_id]["ai_mode"] = False
-            # مهم: count, pack_name و background را reset نکن اگر کاربر قبلاً پکی دارد
-            if not user_data[chat_id].get("pack_name"):
-                user_data[chat_id]["count"] = 0
-                user_data[chat_id]["step"] = "ask_pack_choice"
-                user_data[chat_id]["pack_name"] = None
-                user_data[chat_id]["background"] = None
+            if chat_id not in user_data:
+                user_data[chat_id] = {
+                    "mode": "sticker",
+                    "ai_mode": False,
+                    "count": 0,
+                    "step": None,
+                    "pack_name": None,
+                    "background": None,
+                    "created_packs": [],
+                    "sticker_usage": [],
+                    "last_reset": time.time()
+                }
+            else:
+                user_data[chat_id]["mode"] = "sticker"
+                user_data[chat_id]["ai_mode"] = False
+                user_data[chat_id]["step"] = None
+            
             save_user_data()
             
-            handle_sticker_maker_toggle(chat_id, None, ai_manager, send_message, API)
+            # نمایش منوی استیکرساز
+            keyboard = {
+                "keyboard": [
+                    ["🔄 ساخت استیکر جدید"],
+                    ["🔙 بازگشت"]
+                ],
+                "resize_keyboard": True
+            }
+            
+            send_message(chat_id, "🎭 استیکرساز فعال شد!\n\nلطفاً متن مورد نظر خود را برای تبدیل به استیکر وارد کنید یا از دکمه‌های زیر استفاده کنید.", reply_markup=json.dumps(keyboard))
             return "ok"
             
         elif text == "🤖 استیکرساز هوشمند" and AI_INTEGRATION_AVAILABLE:
@@ -1151,17 +1169,54 @@ def process_message(msg):
                     return "ok"
             
             # فعال کردن حالت هوش مصنوعی
-            if chat_id in user_data:
-                user_data[chat_id]["ai_mode"] = True
+            if chat_id not in user_data:
+                user_data[chat_id] = {
+                    "mode": "ai_sticker",
+                    "ai_mode": True,
+                    "count": 0,
+                    "step": None,
+                    "pack_name": None,
+                    "background": None,
+                    "created_packs": [],
+                    "sticker_usage": [],
+                    "last_reset": time.time()
+                }
+            else:
                 user_data[chat_id]["mode"] = "ai_sticker"
-                save_user_data()
+                user_data[chat_id]["ai_mode"] = True
+                user_data[chat_id]["step"] = None
+            
+            save_user_data()
             
             keyboard = {
-                "keyboard": [["🔙 بازگشت"]],
+                "keyboard": [
+                    ["🤖 فعال/غیرفعال کردن هوش مصنوعی"],
+                    ["🔙 بازگشت"]
+                ],
                 "resize_keyboard": True
             }
             
             send_message(chat_id, "🤖 استیکرساز هوشمند فعال شد!\n\nلطفاً متن مورد نظر خود را برای تبدیل به استیکر وارد کنید.\n\nبرای بازگشت به منوی اصلی، دکمه «🔙 بازگشت» را بزنید.", reply_markup=json.dumps(keyboard))
+            return "ok"
+            
+        elif text == "🤖 فعال/غیرفعال کردن هوش مصنوعی":
+            if chat_id in user_data:
+                # تغییر وضعیت هوش مصنوعی
+                current_state = user_data[chat_id].get("ai_mode", False)
+                user_data[chat_id]["ai_mode"] = not current_state
+                save_user_data()
+                
+                new_state = "فعال" if user_data[chat_id]["ai_mode"] else "غیرفعال"
+                send_message(chat_id, f"✅ هوش مصنوعی {new_state} شد.")
+            return "ok"
+            
+        elif text == "🔄 ساخت استیکر جدید":
+            if chat_id in user_data:
+                # آماده‌سازی برای ساخت استیکر جدید
+                user_data[chat_id]["step"] = "text"
+                save_user_data()
+                
+                send_message(chat_id, "لطفاً متن مورد نظر خود را برای تبدیل به استیکر وارد کنید:")
             return "ok"
             
         elif text == "🔙 بازگشت":
