@@ -599,6 +599,79 @@ def handle_callback_query(callback_query):
         if ai_manager and process_callback_query(callback_query, ai_manager, answer_callback_query, edit_message_text):
             return
     
+    # پردازش دکمه‌های استیکرساز هوشمند
+    if data == "ai_activate":
+        if chat_id in user_data:
+            user_data[chat_id]["ai_mode"] = True
+            save_user_data()
+            answer_callback_query(query_id, "هوش مصنوعی فعال شد")
+            
+            # ارسال پیام تأیید فعال‌سازی هوش مصنوعی
+            keyboard = {
+                "inline_keyboard": [
+                    [
+                        {"text": "🤖 غیرفعال کردن هوش مصنوعی", "callback_data": "ai_deactivate"}
+                    ],
+                    [
+                        {"text": "🔄 ساخت استیکر جدید", "callback_data": "new_sticker"}
+                    ],
+                    [
+                        {"text": "🔙 بازگشت", "callback_data": "back_to_main"}
+                    ]
+                ]
+            }
+            
+            edit_message_text(chat_id, message_id, "🤖 هوش مصنوعی فعال شد!\n\nاکنون می‌توانید متن مورد نظر خود را برای تبدیل به استیکر وارد کنید.", reply_markup=json.dumps(keyboard))
+        else:
+            answer_callback_query(query_id, "خطا در فعال‌سازی هوش مصنوعی")
+        return
+        
+    elif data == "ai_deactivate":
+        if chat_id in user_data:
+            user_data[chat_id]["ai_mode"] = False
+            save_user_data()
+            answer_callback_query(query_id, "هوش مصنوعی غیرفعال شد")
+            
+            # ارسال پیام تأیید غیرفعال‌سازی هوش مصنوعی
+            keyboard = {
+                "inline_keyboard": [
+                    [
+                        {"text": "🤖 فعال کردن هوش مصنوعی", "callback_data": "ai_activate"}
+                    ],
+                    [
+                        {"text": "🔄 ساخت استیکر جدید", "callback_data": "new_sticker"}
+                    ],
+                    [
+                        {"text": "🔙 بازگشت", "callback_data": "back_to_main"}
+                    ]
+                ]
+            }
+            
+            edit_message_text(chat_id, message_id, "🤖 هوش مصنوعی غیرفعال شد!\n\nبرای استفاده از قابلیت هوش مصنوعی، روی دکمه «🤖 فعال کردن هوش مصنوعی» کلیک کنید.", reply_markup=json.dumps(keyboard))
+        else:
+            answer_callback_query(query_id, "خطا در غیرفعال‌سازی هوش مصنوعی")
+        return
+        
+    elif data == "new_sticker":
+        answer_callback_query(query_id, "لطفاً متن مورد نظر خود را وارد کنید")
+        return
+        
+    elif data == "back_to_main":
+        answer_callback_query(query_id, "بازگشت به منوی اصلی")
+        
+        # بازگشت به منوی اصلی
+        keyboard = {
+            "keyboard": [
+                ["🎁 تست رایگان", "💎 خرید اشتراک"],
+                ["🔰 راهنما", "👤 حساب کاربری"],
+                ["📊 آمار", "⚙️ تنظیمات"]
+            ],
+            "resize_keyboard": True
+        }
+        
+        send_message(chat_id, "به ربات استیکرساز خوش آمدید! لطفاً یکی از گزینه‌های زیر را انتخاب کنید:", reply_markup=json.dumps(keyboard))
+        return
+    
     # پردازش سایر کالبک‌ها
     if data == 'lang_fa':
         set_language(chat_id, 'fa')
@@ -1188,27 +1261,42 @@ def process_message(msg):
             
             save_user_data()
             
+            # استفاده از دکمه‌های شیشه‌ای برای فعال‌سازی هوش مصنوعی
             keyboard = {
-                "keyboard": [
-                    ["🤖 فعال/غیرفعال کردن هوش مصنوعی"],
-                    ["🔄 ساخت استیکر جدید"],
-                    ["🔙 بازگشت"]
-                ],
-                "resize_keyboard": True
+                "inline_keyboard": [
+                    [
+                        {"text": "🤖 فعال کردن هوش مصنوعی", "callback_data": "ai_activate"}
+                    ],
+                    [
+                        {"text": "🔄 ساخت استیکر جدید", "callback_data": "new_sticker"}
+                    ],
+                    [
+                        {"text": "🔙 بازگشت", "callback_data": "back_to_main"}
+                    ]
+                ]
             }
             
-            send_message(chat_id, "🤖 استیکرساز هوشمند فعال شد!\n\nبرای استفاده از قابلیت هوش مصنوعی، ابتدا دکمه «🤖 فعال/غیرفعال کردن هوش مصنوعی» را بزنید.\n\nسپس متن مورد نظر خود را برای تبدیل به استیکر وارد کنید.", reply_markup=json.dumps(keyboard))
+            send_message(chat_id, "🤖 استیکرساز هوشمند فعال شد!\n\nبرای استفاده از قابلیت هوش مصنوعی، روی دکمه «🤖 فعال کردن هوش مصنوعی» کلیک کنید.\n\nسپس متن مورد نظر خود را برای تبدیل به استیکر وارد کنید.", reply_markup=json.dumps(keyboard))
             return "ok"
             
         elif text == "🤖 فعال/غیرفعال کردن هوش مصنوعی":
-            if chat_id in user_data:
-                # تغییر وضعیت هوش مصنوعی
-                current_state = user_data[chat_id].get("ai_mode", False)
-                user_data[chat_id]["ai_mode"] = not current_state
-                save_user_data()
-                
-                new_state = "فعال" if user_data[chat_id]["ai_mode"] else "غیرفعال"
-                send_message(chat_id, f"✅ هوش مصنوعی {new_state} شد.")
+            # این دکمه دیگر استفاده نمی‌شود و با دکمه‌های شیشه‌ای جایگزین شده است
+            # ارسال پیام راهنما برای استفاده از دکمه‌های شیشه‌ای
+            keyboard = {
+                "inline_keyboard": [
+                    [
+                        {"text": "🤖 فعال کردن هوش مصنوعی", "callback_data": "ai_activate"}
+                    ],
+                    [
+                        {"text": "🔄 ساخت استیکر جدید", "callback_data": "new_sticker"}
+                    ],
+                    [
+                        {"text": "🔙 بازگشت", "callback_data": "back_to_main"}
+                    ]
+                ]
+            }
+            
+            send_message(chat_id, "🤖 استیکرساز هوشمند به‌روزرسانی شده است!\n\nبرای استفاده از قابلیت هوش مصنوعی، روی دکمه «🤖 فعال کردن هوش مصنوعی» کلیک کنید.", reply_markup=json.dumps(keyboard))
             return "ok"
             
         elif text == "🔄 ساخت استیکر جدید":
@@ -1247,13 +1335,16 @@ def process_message(msg):
         # بررسی اینکه آیا هوش مصنوعی باید پاسخ دهد (فقط برای پیام‌های عادی که پردازش نشده‌اند)
         if "text" in msg and AI_INTEGRATION_AVAILABLE:
             text = msg["text"]
-            if not text.startswith('/'):
+            # هوش مصنوعی فقط در حالت استیکرساز هوشمند و با فعال‌سازی دستی کاربر پاسخ می‌دهد
+            if not text.startswith('/') and chat_id in user_data:
                 try:
-                    if should_ai_respond_local(chat_id, text):
+                    # فقط اگر کاربر در حالت استیکرساز هوشمند باشد و هوش مصنوعی را فعال کرده باشد
+                    if user_data[chat_id].get("mode") == "ai_sticker" and user_data[chat_id].get("ai_mode", False):
                         # بررسی محدودیت هوش مصنوعی
-                        ai_remaining = check_ai_sticker_limit(chat_id)
-                        if ai_remaining <= 0:
-                            send_message(chat_id, "🤖 محدودیت روزانه هوش مصنوعی شما تمام شده!\n\n📊 شما امروز 5 استیکر با هوش مصنوعی ساخته‌اید.\n🔄 فردا دوباره می‌توانید استفاده کنید.\n\n💎 برای استفاده نامحدود، اشتراک تهیه کنید.")
+                        ai_remaining, next_reset = check_ai_sticker_limit(chat_id)
+                        if ai_remaining <= 0 and not is_subscribed(chat_id):
+                            next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
+                            send_message(chat_id, f"🤖 محدودیت روزانه هوش مصنوعی شما تمام شده!\n\n📊 شما امروز 5 استیکر با هوش مصنوعی ساخته‌اید.\n🔄 زمان بازنشانی: {next_reset_time}\n\n💎 برای استفاده نامحدود، اشتراک تهیه کنید.")
                             return "ok"
                         
                         # پردازش پیام با هوش مصنوعی
