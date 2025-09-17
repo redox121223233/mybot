@@ -745,14 +745,8 @@ def handle_callback_query(callback_query):
         send_message(chat_id, "لطفاً متن مورد نظر خود را برای تبدیل به استیکر وارد کنید:")
         return
     
-    # پردازش دکمه‌های استیکرساز هوشمند
-    if data == "ai_activate":
-        if chat_id in user_data:
-            user_data[chat_id]["ai_mode"] = True
-            save_user_data()
-            
-            # ارسال پیام تأیید فعال‌سازی هوش مصنوعی
-            keyboard = {
+    # کد مربوط به هوش مصنوعی موقتاً غیرفعال شده است
+    keyboard = {
                 "inline_keyboard": [
                     [
                         {"text": "🤖 غیرفعال کردن هوش مصنوعی", "callback_data": "ai_deactivate"}
@@ -766,20 +760,11 @@ def handle_callback_query(callback_query):
                 ]
             }
             
-            edit_message_text(chat_id, message_id, "🤖 هوش مصنوعی فعال شد!\n\nاکنون می‌توانید متن مورد نظر خود را برای تبدیل به استیکر وارد کنید.", reply_markup=json.dumps(keyboard))
-        return
-        
-    elif data == "ai_deactivate":
-        if chat_id in user_data:
-            user_data[chat_id]["ai_mode"] = False
-            save_user_data()
-            
-            # ارسال پیام تأیید غیرفعال‌سازی هوش مصنوعی
-            keyboard = {
+    # پردازش دکمه‌های اینلاین
+    if data == "new_sticker":
+        # پردازش ساخت استیکر جدید
+        keyboard = {
                 "inline_keyboard": [
-                    [
-                        {"text": "🤖 فعال کردن هوش مصنوعی", "callback_data": "ai_activate"}
-                    ],
                     [
                         {"text": "🔄 ساخت استیکر جدید", "callback_data": "new_sticker"}
                     ],
@@ -3886,11 +3871,7 @@ def edit_message_text(chat_id, message_id, text, reply_markup=None):
         return False
 
 def answer_callback_query(query_id, text=None, show_alert=False):
-    """ارسال پاسخ به کالبک کوئری"""
-    if not query_id:
-        logger.error("No query_id provided for answer_callback_query")
-        return False
-    
+    """پاسخ به کالبک کوئری - اصلاح شده"""
     try:
         data = {"callback_query_id": query_id}
         if text:
@@ -3903,34 +3884,7 @@ def answer_callback_query(query_id, text=None, show_alert=False):
         result = response.json()
         
         if result.get("ok"):
-            return True
-        else:
-            logger.error(f"Error answering callback query: {result}")
-            return False
-    except Exception as e:
-        logger.error(f"Exception in answer_callback_query: {e}")
-        return False
-        
-        # بررسی پاسخ
-        if response.status_code == 200:
-            result = response.json()
-            if result.get("ok"):
-                return True
-            else:
-                logger.error(f"Telegram API error: {result}")
-                return False
-        else:
-            logger.error(f"HTTP error: {response.status_code}")
-            return False
-    except Exception as e:
-        logger.error(f"Error in answer_callback_query: {e}")
-        return False
-    
-    # ارسال درخواست به API تلگرام
-    try:
-        response = requests.post(f"{API}answerCallbackQuery", json=data)
-        result = response.json()
-        if result.get("ok"):
+            logger.info(f"Callback query answered: {query_id}")
             return True
         else:
             logger.error(f"Error answering callback query: {result}")
