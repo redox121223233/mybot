@@ -567,7 +567,18 @@ def webhook():
             query_id = callback_query.get('id')
             data = callback_query.get('data', '')
             
-            logger.info(f"Processing callback query: ID={query_id}, data={data}, chat_id={chat_id}")
+            logger.info(f"Processing callback query: ID={query_id}, data={data}, chat_id={chat_id}, from={callback_query.get('from', {}).get('id')}")
+            
+            # اطمینان از پاسخ به کالبک کوئری در ابتدا
+            if query_id:
+                try:
+                    answer_callback_query(query_id)
+                    logger.info(f"Successfully acknowledged callback query: {query_id}")
+                except Exception as e:
+                    logger.error(f"Error answering callback query: {e}")
+                    # ارسال پیام خطا به کاربر در صورت مشکل
+                    if chat_id:
+                        send_message(chat_id, "⚠️ مشکلی در پردازش دکمه رخ داد. لطفاً دوباره تلاش کنید.")
             
             # غیرفعال کردن موقت حالت هوش مصنوعی برای پردازش دکمه
             if chat_id and chat_id in user_data:
@@ -576,28 +587,37 @@ def webhook():
                 
                 # غیرفعال کردن موقت هوش مصنوعی
                 user_data[chat_id]["ai_mode"] = False
+                logger.info(f"Temporarily disabled AI mode for callback processing (was: {ai_mode_was_active})")
                 
-                # پردازش دکمه
-                handle_callback_query(callback_query)
+                try:
+                    # پردازش دکمه
+                    handle_callback_query(callback_query)
+                    logger.info(f"Successfully processed callback: {data}")
+                except Exception as e:
+                    logger.error(f"Error in handle_callback_query: {e}")
+                    # ارسال پیام خطا به کاربر در صورت مشکل
+                    if chat_id:
+                        send_message(chat_id, "⚠️ مشکلی در پردازش دکمه رخ داد. لطفاً دوباره تلاش کنید.")
                 
                 # بازگرداندن وضعیت هوش مصنوعی به حالت قبلی (اگر دکمه مربوط به تغییر وضعیت هوش مصنوعی نبود)
                 if data != "ai_activate" and data != "ai_deactivate":
                     user_data[chat_id]["ai_mode"] = ai_mode_was_active
+                    logger.info(f"Restored AI mode to: {ai_mode_was_active}")
+                else:
+                    logger.info(f"AI mode change requested via button, not restoring previous state")
                 
-                # اطمینان از پاسخ به کالبک کوئری
-                try:
-                    answer_callback_query(query_id)
-                except Exception as e:
-                    logger.error(f"Error answering callback query: {e}")
+                # ذخیره تغییرات کاربر
+                save_user_data()
             else:
                 # اگر اطلاعات کاربر موجود نیست، فقط پردازش کن
-                handle_callback_query(callback_query)
-                
-                # اطمینان از پاسخ به کالبک کوئری
                 try:
-                    answer_callback_query(query_id)
+                    handle_callback_query(callback_query)
+                    logger.info(f"Processed callback for user without data: {data}")
                 except Exception as e:
-                    logger.error(f"Error answering callback query: {e}")
+                    logger.error(f"Error in handle_callback_query for user without data: {e}")
+                    # ارسال پیام خطا به کاربر در صورت مشکل
+                    if chat_id:
+                        send_message(chat_id, "⚠️ مشکلی در پردازش دکمه رخ داد. لطفاً دوباره تلاش کنید.")
                 
         except Exception as e:
             logger.error(f"Error handling callback query: {e}")
@@ -3820,11 +3840,21 @@ def answer_callback_query(query_id, text=None, show_alert=False):
         data["show_alert"] = show_alert
     
     try:
-        response = requests.post(API + "answerCallbackQuery", json=data, timeout=5)
+        logger.info(f"Sending answer to callback query: {query_id}")
+        response = requests.post(API + "answerCallbackQuery", json=data, timeout=10)
         logger.info(f"Answer callback response: {response.status_code} - {response.text}")
-        return response.status_code == 200
+        
+        if response.status_code == 200:
+            return True
+        else:
+            logger.error(f"Failed to answer callback query. Status: {response.status_code}, Response: {response.text}")
+            return False
+    except requests.exceptions.Timeout:
+        logger.error(f"Timeout answering callback query: {query_id}")
+        return False
     except Exception as e:
         logger.error(f"Error answering callback query: {e}")
+        return False
         return False
         logger.error(f"Error in answer_callback_query: {e}")
         return False
