@@ -569,17 +569,6 @@ def webhook():
             
             logger.info(f"Processing callback query: ID={query_id}, data={data}, chat_id={chat_id}, from={callback_query.get('from', {}).get('id')}")
             
-            # اطمینان از پاسخ به کالبک کوئری در ابتدا
-            if query_id:
-                try:
-                    answer_callback_query(query_id)
-                    logger.info(f"Successfully acknowledged callback query: {query_id}")
-                except Exception as e:
-                    logger.error(f"Error answering callback query: {e}")
-                    # ارسال پیام خطا به کاربر در صورت مشکل
-                    if chat_id:
-                        send_message(chat_id, "⚠️ مشکلی در پردازش دکمه رخ داد. لطفاً دوباره تلاش کنید.")
-            
             # غیرفعال کردن موقت حالت هوش مصنوعی برای پردازش دکمه
             if chat_id and chat_id in user_data:
                 # ذخیره وضعیت فعلی هوش مصنوعی
@@ -590,7 +579,7 @@ def webhook():
                 logger.info(f"Temporarily disabled AI mode for callback processing (was: {ai_mode_was_active})")
                 
                 try:
-                    # پردازش دکمه
+                    # پردازش دکمه - پاسخ به کالبک در داخل handle_callback_query انجام می‌شود
                     handle_callback_query(callback_query)
                     logger.info(f"Successfully processed callback: {data}")
                 except Exception as e:
@@ -598,6 +587,9 @@ def webhook():
                     # ارسال پیام خطا به کاربر در صورت مشکل
                     if chat_id:
                         send_message(chat_id, "⚠️ مشکلی در پردازش دکمه رخ داد. لطفاً دوباره تلاش کنید.")
+                    # پاسخ به کالبک در صورت خطا
+                    if query_id:
+                        answer_callback_query(query_id, "خطایی رخ داد. لطفاً دوباره تلاش کنید.")
                 
                 # بازگرداندن وضعیت هوش مصنوعی به حالت قبلی (اگر دکمه مربوط به تغییر وضعیت هوش مصنوعی نبود)
                 if data != "ai_activate" and data != "ai_deactivate":
@@ -618,6 +610,9 @@ def webhook():
                     # ارسال پیام خطا به کاربر در صورت مشکل
                     if chat_id:
                         send_message(chat_id, "⚠️ مشکلی در پردازش دکمه رخ داد. لطفاً دوباره تلاش کنید.")
+                    # پاسخ به کالبک در صورت خطا
+                    if query_id:
+                        answer_callback_query(query_id, "خطایی رخ داد. لطفاً دوباره تلاش کنید.")
                 
         except Exception as e:
             logger.error(f"Error handling callback query: {e}")
@@ -628,6 +623,8 @@ def webhook():
                 query_id = update.get("callback_query", {}).get("id")
                 if query_id:
                     answer_callback_query(query_id, "خطایی رخ داد. لطفاً دوباره تلاش کنید.")
+            except Exception as e2:
+                logger.error(f"Failed to answer callback query in error handler: {e2}")
             except:
                 pass
                 
@@ -656,13 +653,19 @@ def handle_callback_query(callback_query):
     
     logger.info(f"Processing callback query: {data} from chat_id: {chat_id}")
     
+    # ابتدا به کالبک پاسخ دهیم تا تلگرام منتظر نماند
+    try:
+        answer_callback_query(query_id, "در حال پردازش...")
+        logger.info(f"Acknowledged callback query: {query_id}")
+    except Exception as e:
+        logger.error(f"Error acknowledging callback query: {e}")
+    
     # پردازش کالبک‌های استیکرساز
     if STICKER_MAKER_AVAILABLE and data.startswith('sticker_'):
         if data == 'sticker_toggle':
             # فعال/غیرفعال کردن استیکرساز
             if ai_manager:
                 handle_sticker_maker_toggle(chat_id, message_id, ai_manager, send_message, API)
-                answer_callback_query(query_id, "درخواست شما پردازش شد.")
                 return
         
         # پردازش سایر کالبک‌های استیکرساز
@@ -674,7 +677,6 @@ def handle_callback_query(callback_query):
         if chat_id in user_data:
             user_data[chat_id]["ai_mode"] = True
             save_user_data()
-            answer_callback_query(query_id, "هوش مصنوعی فعال شد")
             
             # ارسال پیام تأیید فعال‌سازی هوش مصنوعی
             keyboard = {
@@ -692,15 +694,12 @@ def handle_callback_query(callback_query):
             }
             
             edit_message_text(chat_id, message_id, "🤖 هوش مصنوعی فعال شد!\n\nاکنون می‌توانید متن مورد نظر خود را برای تبدیل به استیکر وارد کنید.", reply_markup=json.dumps(keyboard))
-        else:
-            answer_callback_query(query_id, "خطا در فعال‌سازی هوش مصنوعی")
         return
         
     elif data == "ai_deactivate":
         if chat_id in user_data:
             user_data[chat_id]["ai_mode"] = False
             save_user_data()
-            answer_callback_query(query_id, "هوش مصنوعی غیرفعال شد")
             
             # ارسال پیام تأیید غیرفعال‌سازی هوش مصنوعی
             keyboard = {
@@ -718,17 +717,16 @@ def handle_callback_query(callback_query):
             }
             
             edit_message_text(chat_id, message_id, "🤖 هوش مصنوعی غیرفعال شد!\n\nبرای استفاده از قابلیت هوش مصنوعی، روی دکمه «🤖 فعال کردن هوش مصنوعی» کلیک کنید.", reply_markup=json.dumps(keyboard))
-        else:
-            answer_callback_query(query_id, "خطا در غیرفعال‌سازی هوش مصنوعی")
         return
         
     elif data == "new_sticker":
-        answer_callback_query(query_id, "لطفاً متن مورد نظر خود را وارد کنید")
+        # تنظیم حالت کاربر برای دریافت متن استیکر
+        if chat_id in user_data:
+            user_data[chat_id]["step"] = "text"
+            save_user_data()
         return
         
     elif data == "back_to_main":
-        answer_callback_query(query_id, "بازگشت به منوی اصلی")
-        
         # بازگشت به منوی اصلی با حذف کیبورد اینلاین
         edit_message_text(chat_id, message_id, "✅ بازگشت به منوی اصلی")
         show_main_menu(chat_id)
@@ -737,14 +735,12 @@ def handle_callback_query(callback_query):
     # پردازش سایر کالبک‌ها
     if data == 'lang_fa':
         set_language(chat_id, 'fa')
-        answer_callback_query(query_id, "زبان به فارسی تغییر کرد")
         edit_message_text(chat_id, message_id, tr(chat_id, "lang_set_fa", "✅ زبان به فارسی تغییر کرد."))
         show_main_menu(chat_id)
         return
     
     elif data == 'lang_en':
         set_language(chat_id, 'en')
-        answer_callback_query(query_id, "Language set to English")
         edit_message_text(chat_id, message_id, tr(chat_id, "lang_set_en", "✅ Language set to English."))
         show_main_menu(chat_id)
         return
@@ -754,11 +750,9 @@ def handle_callback_query(callback_query):
         plan = data.replace('sub_', '')
         if plan in SUBSCRIPTION_PLANS:
             start_subscription_process(chat_id, plan)
-            answer_callback_query(query_id, "درخواست اشتراک ثبت شد")
             return
     
     # اگر به اینجا رسیدیم، کالبک ناشناخته است
-    answer_callback_query(query_id, "عملیات نامشخص")
     logger.warning(f"Unknown callback query: {data}")
     return
     
