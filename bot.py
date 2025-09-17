@@ -568,6 +568,12 @@ def webhook():
         return "ok"  # اگر پیامی نباشد، پاسخ ok برگردان
         
     chat_id = msg["chat"]["id"]
+    
+    # پردازش پیام
+    process_message(msg)
+    
+    # همیشه یک پاسخ معتبر برگردان
+    return "ok"
 
 # پردازش کالبک‌های تلگرام
 def handle_callback_query(callback_query):
