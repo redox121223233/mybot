@@ -3721,6 +3721,32 @@ def send_membership_required_message(chat_id):
 def send_message(chat_id, text):
     requests.post(API + "sendMessage", json={"chat_id": chat_id, "text": text})
 
+def edit_message_text(chat_id, message_id, text, reply_markup=None):
+    """ویرایش متن پیام"""
+    data = {
+        "chat_id": chat_id,
+        "message_id": message_id,
+        "text": text
+    }
+    if reply_markup:
+        data["reply_markup"] = reply_markup
+    
+    response = requests.post(API + "editMessageText", json=data)
+    return response.json().get("ok", False)
+
+def answer_callback_query(query_id, text=None, show_alert=False):
+    """پاسخ به کالبک کوئری"""
+    data = {
+        "callback_query_id": query_id
+    }
+    if text:
+        data["text"] = text
+    if show_alert:
+        data["show_alert"] = show_alert
+    
+    response = requests.post(API + "answerCallbackQuery", json=data)
+    return response.json().get("ok", False)
+
 def send_message_with_back_button(chat_id, text):
     """ارسال پیام با دکمه بازگشت"""
     keyboard = {
