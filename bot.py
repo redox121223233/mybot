@@ -262,6 +262,30 @@ app = Flask(__name__)
 def home():
     return "✅ Bot is running!"
 
+def register_webhook():
+    """Register webhook with Telegram"""
+    try:
+        webhook_url = f"{APP_URL}/webhook/{WEBHOOK_SECRET}"
+        logger.info(f"Registering webhook: {webhook_url}")
+        
+        data = {
+            "url": webhook_url,
+            "allowed_updates": ["message", "callback_query"]
+        }
+        
+        response = requests.post(f"{API}setWebhook", json=data)
+        result = response.json()
+        
+        if result.get("ok"):
+            logger.info(f"✅ Webhook registered successfully: {result}")
+            return True
+        else:
+            logger.error(f"❌ Failed to register webhook: {result}")
+            return False
+    except Exception as e:
+        logger.error(f"❌ Error registering webhook: {e}")
+        return False
+
 @app.route("/api/create-sticker", methods=["POST"])
 def api_create_sticker():
     """API endpoint برای ساخت استیکر از n8n"""
@@ -480,6 +504,44 @@ def check_ai_status_api():
     except Exception as e:
         logger.error(f"Error checking AI status: {e}")
         return {"error": str(e)}, 500
+
+@app.route(f"/webhook/{WEBHOOK_SECRET}", methods=['POST'])
+def webhook():
+    """Main webhook endpoint for Telegram updates"""
+    try:
+        data = request.get_json()
+        logger.info(f"Received update: {data}")
+        
+        # Handle callback queries with priority
+        if "callback_query" in data:
+            try:
+                callback_query = data["callback_query"]
+                # Acknowledge the callback query immediately
+                requests.post(f"{API}answerCallbackQuery", json={"callback_query_id": callback_query["id"]})
+                # Process the callback query
+                handle_callback_query(callback_query)
+                return "OK"
+            except Exception as e:
+                logger.error(f"Error processing callback query: {e}")
+                return "Error", 500
+        
+        # Process regular messages
+        if "message" in data:
+            try:
+                message = data["message"]
+                chat_id = message["chat"]["id"]
+                process_message(message)
+                return "OK"
+            except Exception as e:
+                logger.error(f"Error processing message: {e}")
+                # Notify user of error
+                send_message(chat_id, "⚠️ خطایی رخ داد. لطفاً دوباره تلاش کنید.")
+                return "Error", 500
+        
+        return "OK"
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return "Error", 500
 
 @app.route("/webhook/ai-control", methods=['POST'])
 def ai_control_webhook_api():
@@ -4869,8 +4931,23 @@ if __name__ == "__main__":
     if APP_URL:
         webhook_url = f"{APP_URL}/webhook/{WEBHOOK_SECRET}"
         try:
-            resp = requests.get(API + f"setWebhook?url={webhook_url}")
-            logger.info(f"setWebhook: {resp.json()}")
+            # Use POST with JSON data for more reliable webhook registration
+            data = {
+                "url": webhook_url,
+                "allowed_updates": ["message", "callback_query"]
+            }
+            resp = requests.post(f"{API}setWebhook", json=data)
+            result = resp.json()
+            
+            if result.get("ok"):
+                logger.info(f"✅ Webhook registered successfully: {result}")
+            else:
+                logger.error(f"❌ Failed to register webhook: {result}")
+                
+            # Get current webhook info to verify
+            info_resp = requests.get(f"{API}getWebhookInfo")
+            logger.info(f"Current webhook info: {info_resp.json()}")
+            
         except requests.exceptions.ConnectionError as e:
             logger.error(f"Failed to set webhook due to network error: {e}")
             logger.info("Bot will start without webhook registration. Webhook can be set later when network is available.")
@@ -4878,6 +4955,12 @@ if __name__ == "__main__":
             logger.error(f"Unexpected error setting webhook: {e}")
     else:
         logger.warning("⚠️ APP_URL is not set. Webhook not registered.")
+        logger.info("Please set the APP_URL environment variable to your server's public URL")
 
+    # Print startup information
+    logger.info(f"🤖 Bot starting up with username: {BOT_USERNAME}")
+    logger.info(f"🌐 Webhook URL: {webhook_url if APP_URL else 'Not set'}")
+    
     port = int(os.environ.get("PORT", 8080))
+    logger.info(f"🚀 Starting server on port {port}")
     serve(app, host="0.0.0.0", port=port)
