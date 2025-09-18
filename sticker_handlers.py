@@ -233,8 +233,10 @@ def create_sticker_from_text(text, template_id=None, font_name=None, font_size=N
         reshaped_text = arabic_reshaper.reshape(text)
         bidi_text = get_display(reshaped_text)
         
-        # محاسبه اندازه متن
-        text_width, text_height = draw.textsize(bidi_text, font=font)
+        # محاسبه اندازه متن با استفاده از getbbox (جایگزین textsize که منسوخ شده)
+        bbox = draw.textbbox((0, 0), bidi_text, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
         
         # محاسبه موقعیت متن (وسط تصویر)
         position = ((width - text_width) / 2, (height - text_height) / 2)
