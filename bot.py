@@ -3682,70 +3682,70 @@ def edit_message_text(chat_id, message_id, text, reply_markup=None):
 
         # ارسال درخواست به API تلگرام
         response = requests.post(f"{API}answerCallbackQuery", json=data)
-        result =
-    def handle_callback_query(update, context):
-    from menu_handlers import MenuManager
-    from sticker_handlers import start_new_sticker, ai_sticker_handler
-
-
-    query = update.callback_query
-    chat_id = query.message.chat_id
-    data = query.data
-
-
-    ogger.info(f"Callback query received: {data}")
-
-
-    menu = MenuManager(api_url=context.bot.api_url, bot_token=context.bot.token)
-
-
-    if data == "back_to_main":
-    menu.show_main_menu(chat_id, query.message.message_id)
-
-
-    elif data == "show_subscription":
-    menu.show_subscription_menu(chat_id, query.message.message_id)
-
-
-    elif data == "show_trial":
-    menu.show_free_trial_menu(chat_id, query.message.message_id)
-
-
-    elif data == "show_templates":
-        menu.show_templates_menu(chat_id, query.message.message_id)
-
-
-    elif data.startswith("sub_"):
+        result = None  # auto-fixed: was incomplete assignment
+#     def handle_callback_query(update, context):
+#     from menu_handlers import MenuManager
+#     from sticker_handlers import start_new_sticker, ai_sticker_handler
+# 
+# 
+#     query = update.callback_query
+#     chat_id = query.message.chat_id
+#     data = query.data
+# 
+# 
+#     ogger.info(f"Callback query received: {data}")
+# 
+# 
+#     menu = MenuManager(api_url=context.bot.api_url, bot_token=context.bot.token)
+# 
+# 
+#     if data == "back_to_main":
+#     menu.show_main_menu(chat_id, query.message.message_id)
+# 
+# 
+#     elif data == "show_subscription":
+#     menu.show_subscription_menu(chat_id, query.message.message_id)
+# 
+# 
+#     elif data == "show_trial":
+#     menu.show_free_trial_menu(chat_id, query.message.message_id)
+# 
+# 
+#     elif data == "show_templates":
+#         menu.show_templates_menu(chat_id, query.message.message_id)
+# 
+# 
+#     elif data.startswith("sub_"):
 # خرید اشتراک
-    plan_id = data.split("_")[1]
+#     plan_id = data.split("_")[1]
 # اینجا می‌تونی تابع فعال‌سازی اشتراک رو صدا بزنی
-    query.answer(text=f"طرح {plan_id} انتخاب شد ✅", show_alert=True)
-
-
-    elif data == "activate_trial":
+#     query.answer(text=f"طرح {plan_id} انتخاب شد ✅", show_alert=True)
+# 
+# 
+#     elif data == "activate_trial":
 # فعال‌سازی دوره آزمایشی
-    query.answer(text="دوره آزمایشی فعال شد ✅", show_alert=True)
-
-
-    elif data == "new_sticker":
-    query.answer()
-    start_new_sticker(update, context)
-
-
-    elif data == "ai_sticker":
-    query.answer()
-    ai_sticker_handler(update, context)
-
-
-    elif data.startswith("template_"):
-    template_id = data.split("_")[1]
+#     query.answer(text="دوره آزمایشی فعال شد ✅", show_alert=True)
+# 
+# 
+#     elif data == "new_sticker":
+#     query.answer()
+#     start_new_sticker(update, context)
+# 
+# 
+#     elif data == "ai_sticker":
+#     query.answer()
+#     ai_sticker_handler(update, context)
+# 
+# 
+#     elif data.startswith("template_"):
+#     template_id = data.split("_")[1]
 # اینجا می‌تونی هندلر مربوط به قالب‌ها رو اضافه کنی
-    query.answer(text=f"قالب {template_id} انتخاب شد ✅")
-
-
-    else:
-    query.answer(text="دکمه ناشناخته ❓")
-
+#     query.answer(text=f"قالب {template_id} انتخاب شد ✅")
+# 
+# 
+#     else:
+#     query.answer(text="دکمه ناشناخته ❓")
+# 
 def send_message_with_back_button(chat_id, text):
     """ارسال پیام با دکمه بازگشت"""
     keyboard = {
