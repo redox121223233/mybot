@@ -729,24 +729,20 @@ def handle_callback_query(callback_query):
     if STICKER_MAKER_AVAILABLE and data.startswith('sticker_'):
         if data == 'sticker_toggle':
             # فعال/غیرفعال کردن استیکرساز
-            if ai_manager:
-                handle_sticker_maker_toggle(chat_id, message_id, ai_manager, send_message, API)
-                return
+            handle_sticker_maker_toggle(chat_id, message_id, None, send_message, API)
+            return
         
         # پردازش سایر کالبک‌های استیکرساز
-        if ai_manager and process_callback_query(callback_query, ai_manager, answer_callback_query, edit_message_text):
+        if process_callback_query(callback_query, None, answer_callback_query, edit_message_text):
             return
-            
-    # اگر دکمه new_sticker فشرده شده، مرحله کاربر را تنظیم کنیم
-    if data == "new_sticker" and chat_id in user_data:
-        user_data[chat_id]["step"] = "text"
-        save_user_data()
-        # پیام تأیید به کاربر ارسال کنیم
-        send_message(chat_id, "لطفاً متن مورد نظر خود را برای تبدیل به استیکر وارد کنید:")
-        return
     
     # پردازش دکمه‌های اینلاین
     if data == "new_sticker":
+        # تنظیم مرحله کاربر
+        if chat_id in user_data:
+            user_data[chat_id]["step"] = "text"
+            save_user_data()
+        
         # پردازش ساخت استیکر جدید
         keyboard = {
             "inline_keyboard": [
@@ -787,6 +783,19 @@ def handle_callback_query(callback_query):
         if plan in SUBSCRIPTION_PLANS:
             start_subscription_process(chat_id, plan)
             return
+    
+    # پردازش دکمه‌های اشتراک و تست رایگان
+    elif data == "subscription":
+        show_subscription_menu(chat_id, message_id)
+        return
+    
+    elif data == "free_trial":
+        show_free_trial_menu(chat_id, message_id)
+        return
+    
+    elif data == "templates":
+        show_templates_menu(chat_id, message_id)
+        return
     
     # اگر به اینجا رسیدیم، کالبک ناشناخته است
     logger.warning(f"Unknown callback query: {data}")
