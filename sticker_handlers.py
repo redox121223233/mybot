@@ -12,10 +12,10 @@ logger = logging.getLogger("sticker_handlers")
 
 # --- Sticker Maker Handlers ---
 
-def handle_sticker_maker_toggle(chat_id, message_id=None, ai_manager=None, send_message=None, API=None):
+def handle_sticker_maker_toggle(chat_id, message_id=None, ai_manager=None, api=None):
     """فعال یا غیرفعال کردن استیکرساز"""
     if not ai_manager:
-        send_message(chat_id, "⚠️ سیستم استیکرساز در دسترس نیست.", reply_to=message_id)
+        api.send_message(chat_id, "⚠️ سیستم استیکرساز در دسترس نیست.")
         return
     
     # فعال یا غیرفعال کردن استیکرساز
@@ -25,11 +25,11 @@ def handle_sticker_maker_toggle(chat_id, message_id=None, ai_manager=None, send_
     if is_enabled:
         # دریافت پیام خوش‌آمدگویی
         greeting = ai_manager.get_greeting()
-        send_message(chat_id, f"✅ استیکرساز فعال شد!\n\n{greeting}", reply_to=message_id)
+        api.send_message(chat_id, f"✅ استیکرساز فعال شد!\n\n{greeting}")
     else:
-        send_message(chat_id, "❌ استیکرساز غیرفعال شد.", reply_to=message_id)
+        api.send_message(chat_id, "❌ استیکرساز غیرفعال شد.")
 
-def handle_sticker_maker_input(chat_id, input_data, input_type, message_id=None, caption=None, ai_manager=None, send_message=None):
+def handle_sticker_maker_input(chat_id, input_data, input_type, message_id=None, caption=None, ai_manager=None, api=None):
     """پردازش ورودی برای استیکرساز"""
     if not ai_manager:
         return
