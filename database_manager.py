@@ -242,11 +242,16 @@ class DatabaseManager:
         except Exception as e:
             logger.error(f"Error cleaning up backups: {e}")
             
-    def save_data(self, key: str, data: Dict[str, Any]):
+    def save_data(self, key: str, data: Dict[str, Any] = None):
         """ذخیره داده‌ها برای کلید مشخص شده"""
         try:
             if key in self.data:
-                self.data[key] = data
+                # اگر data ارسال نشده باشد، از داده موجود استفاده می‌کنیم
+                if data is None:
+                    data = self.data[key]
+                else:
+                    self.data[key] = data
+                    
                 self.save_json_file(key, data)
                 logger.info(f"Data saved for key: {key}")
                 return True
