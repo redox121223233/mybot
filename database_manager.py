@@ -241,3 +241,18 @@ class DatabaseManager:
                         logger.info(f"Removed old backup: {filename}")
         except Exception as e:
             logger.error(f"Error cleaning up backups: {e}")
+            
+    def save_data(self, key: str, data: Dict[str, Any]):
+        """ذخیره داده‌ها برای کلید مشخص شده"""
+        try:
+            if key in self.data:
+                self.data[key] = data
+                self.save_json_file(key, data)
+                logger.info(f"Data saved for key: {key}")
+                return True
+            else:
+                logger.error(f"Invalid key for save_data: {key}")
+                return False
+        except Exception as e:
+            logger.error(f"Error in save_data for key {key}: {e}")
+            return False
