@@ -13,10 +13,7 @@ logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("sticker_bot")
 
 # --- ماژول‌های داخلی ---
-try:
-    # مدیریت دیتابیس
-    from database_manager import DatabaseManager
-    
+
     # مدیریت API تلگرام
     from api_handlers import TelegramAPI
     
@@ -5506,3 +5503,4 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     logger.info(f"🚀 Starting server on port {port}")
     serve(app, host="0.0.0.0", port=port)
+
