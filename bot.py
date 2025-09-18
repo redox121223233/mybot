@@ -285,6 +285,7 @@ def handle_callback_query(callback_query):
             
         # پردازش دکمه‌های استیکر
         elif AI_INTEGRATION_AVAILABLE:
+            from sticker_handlers import process_callback_query
             process_callback_query(
                 callback_query, 
                 ai_manager=ai_manager, 
@@ -568,91 +569,9 @@ if AI_INTEGRATION_AVAILABLE:
         logger.error(f"❌ Failed to initialize AI Manager: {e}")
 
 # --- راه‌اندازی وب‌هوک ---
-@app.route(f'/{WEBHOOK_SECRET}', methods=['POST'])
-def webhook():
-    """مدیریت درخواست‌های وب‌هوک"""
-    if request.method == 'POST':
-        try:
-            update = request.get_json()
-            
-            # پردازش پیام
-            if 'message' in update:
-                process_message(update['message'])
-            
-            # پردازش کوئری دکمه‌های شیشه‌ای
-            elif 'callback_query' in update:
-                handle_callback_query(update['callback_query'])
-            
-            return 'ok'
-        except Exception as e:
-            logger.error(f"Error in webhook: {e}")
-            return str(e), 500
-    return 'Method not allowed', 405
-
-# --- اجرای برنامه ---
-if __name__ == '__main__':
-    # بارگذاری داده‌های کاربران
-    db_manager.load_all_data()
-    
-    # تنظیم وب‌هوک
-    webhook_url = f"{APP_URL}/{WEBHOOK_SECRET}"
-    api.set_webhook(webhook_url)
-    logger.info(f"✅ Webhook set to {webhook_url}")
-    
-    # اجرای برنامه
-    app.run(host='0.0.0.0', port=int(os.environ.get('PORT', 8443)), debug=False)
-
-CARD_NUMBER = os.environ.get("CARD_NUMBER", "1234-5678-9012-3456")  # شماره کارت
-CARD_NAME = os.environ.get("CARD_NAME", "نام شما")  # نام صاحب کارت
-
-# دیتابیس ساده در حافظه
-user_data = {}
-subscription_data = {}  # داده‌های اشتراک
-pending_payments = {}   # پرداخت‌های در انتظار
-feedback_data = {}      # بازخوردهای کاربران
-
-# ایجاد نمونه مدیر هوش مصنوعی
-if AI_INTEGRATION_AVAILABLE:
-    try:
-        ai_manager = AIManager()
-        logger.info("✅ AI Manager initialized successfully")
-    except Exception as e:
-        AI_INTEGRATION_AVAILABLE = False
-        STICKER_MAKER_AVAILABLE = False
-        logger.error(f"❌ Failed to initialize AI Manager: {e}")
-else:
-    ai_manager = None
-    STICKER_MAKER_AVAILABLE = False
-
-# فایل ذخیره‌سازی داده‌ها
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-DATA_FILE = os.path.join(BASE_DIR, "user_data.json")
-SUBSCRIPTION_FILE = os.path.join(BASE_DIR, "subscriptions.json")
-PAYMENTS_FILE = os.path.join(BASE_DIR, "pending_payments.json")
-FEEDBACK_FILE = os.path.join(BASE_DIR, "feedback_data.json")
-
-# --- Simple i18n ---
-LOCALES = {
-    "fa": {
-        "main_menu": "👋 خوش اومدی! یکی از گزینه‌ها رو انتخاب کن:",
-        "lang_set_fa": "✅ زبان به فارسی تغییر کرد.",
-        "lang_set_en": "✅ Language set to English.",
-        "choose_lang": "🌍 انتخاب زبان:\n\nانتخاب کنید:",
-    },
-    "en": {
-        "main_menu": "👋 Welcome! Choose an option:",
-        "lang_set_fa": "✅ زبان به فارسی تغییر کرد.",
-        "lang_set_en": "✅ Language set to English.",
-        "choose_lang": "🌍 Choose language:\n\nSelect:",
-    }
-}
-
-# طرح‌های اشتراک
-SUBSCRIPTION_PLANS = {
-    "1month": {"price": 100, "days": 30, "title": "یک ماهه"},
-    "3months": {"price": 250, "days": 90, "title": "سه ماهه"},
-    "12months": {"price": 350, "days": 365, "title": "یک ساله"}
-}
+# --- DUPLICATE BLOCK REMOVED BY CLEANUP ---
+# Original lines 572-657 removed to prevent duplicate definitions (preserved elsewhere).
+# If you need the removed code back, check the original bot.py or contact the maintainer.
 
 def load_locales():
     """Optionally override LOCALES with files in locales/*.json"""
@@ -1094,68 +1013,9 @@ def webhook():
         logger.error(f"Webhook error: {e}")
         return "Error", 500
 
-@app.route("/webhook/ai-control", methods=['POST'])
-def ai_control_webhook_api():
-    """وب‌هوک برای کنترل هوش مصنوعی"""
-    try:
-        if not AI_INTEGRATION_AVAILABLE:
-            return {"error": "AI system not available"}, 503
-        
-        data = request.get_json()
-        if not data:
-            return {"error": "Invalid JSON data"}, 400
-        
-        # بررسی کلید امنیتی
-        secret_key = data.get('secret_key')
-        expected_key = os.environ.get('AI_CONTROL_SECRET', 'ai_secret_2025')
-        
-        if secret_key != expected_key:
-            return {"error": "Invalid secret key"}, 401
-        
-        action = data.get('action')
-        ai_status_file = "ai_status.json"
-        
-        # بارگذاری وضعیت فعلی
-        if os.path.exists(ai_status_file):
-            with open(ai_status_file, 'r', encoding='utf-8') as f:
-                status = json.load(f)
-        else:
-            status = {"active": False, "last_updated": time.time(), "updated_by": "system"}
-        
-        if action == 'activate':
-            status["active"] = True
-            status["updated_by"] = "webhook"
-            message = "هوش مصنوعی فعال شد"
-        elif action == 'deactivate':
-            status["active"] = False
-            status["updated_by"] = "webhook"
-            message = "هوش مصنوعی غیرفعال شد"
-        elif action == 'toggle':
-            status["active"] = not status.get("active", False)
-            status["updated_by"] = "webhook"
-            message = "وضعیت تغییر کرد"
-        elif action == 'status':
-            return {
-                "active": status.get("active", False),
-                "last_updated": status.get("last_updated", 0),
-                "updated_by": status.get("updated_by", "unknown")
-            }
-        else:
-            return {"error": "Invalid action"}, 400
-        
-        # ذخیره وضعیت جدید
-        status["last_updated"] = time.time()
-        with open(ai_status_file, 'w', encoding='utf-8') as f:
-            json.dump(status, f, ensure_ascii=False, indent=2)
-        
-        return {
-            "success": True,
-            "message": message,
-            "active": status["active"]
-        }
-    except Exception as e:
-        logger.error(f"Error in AI control webhook: {e}")
-        return {"error": str(e)}, 500
+# --- DUPLICATE BLOCK REMOVED BY CLEANUP ---
+# Original lines 1098-1160 removed to prevent duplicate definitions (preserved elsewhere).
+# If you need the removed code back, check the original bot.py or contact the maintainer.
 
 @app.route("/health", methods=['GET'])
 def health_check_api():
@@ -1167,607 +1027,10 @@ def health_check_api():
     }
 
 # این تابع webhook حذف شد چون تکراری بود و با تابع webhook در خط 508 تداخل داشت
-# @app.route(f"/webhook/{WEBHOOK_SECRET}", methods=['POST'])
-# def webhook_duplicate():
-#     update = request.get_json(force=True, silent=True) or {}
-#     logger.info(f"Received update: {update}")
-#     
-#     # پردازش کالبک کوئری - اولویت بالاتر از پردازش پیام
-#     if "callback_query" in update:
-#         try:
-#             # اطمینان از اینکه هوش مصنوعی مداخله نکند
-#             callback_query = update["callback_query"]
-#             chat_id = callback_query.get('message', {}).get('chat', {}).get('id')
-#             query_id = callback_query.get('id')
-#             data = callback_query.get('data', '')
-            
-#             logger.info(f"Processing callback query: ID={query_id}, data={data}, chat_id={chat_id}, from={callback_query.get('from', {}).get('id')}")
-#             
-#             # پاسخ اولیه به کالبک کوئری
-#             try:
-#                 if query_id:
-#                     answer_callback_query(query_id, "در حال پردازش...")
-#                     logger.info(f"Sent initial acknowledgment to callback query: {query_id}")
-#             except Exception as e:
-#                 logger.error(f"Failed to send initial acknowledgment to callback query: {e}")
-#             
-#             # غیرفعال کردن موقت حالت هوش مصنوعی برای پردازش دکمه
-#             if chat_id and chat_id in user_data:
-#                 # ذخیره وضعیت فعلی هوش مصنوعی
-#                 ai_mode_was_active = user_data[chat_id].get("ai_mode", False)
-#                 
-#                 # غیرفعال کردن موقت هوش مصنوعی
-#                 user_data[chat_id]["ai_mode"] = False
-#                 logger.info(f"Temporarily disabled AI mode for callback processing (was: {ai_mode_was_active})")
-                
-#                 try:
-#                     # پردازش دکمه - پاسخ به کالبک در داخل handle_callback_query انجام می‌شود
-#                     handle_callback_query(callback_query)
-#                     logger.info(f"Successfully processed callback: {data}")
-#                 except Exception as e:
-#                     logger.error(f"Error in handle_callback_query: {e}")
-#                     # ارسال پیام خطا به کاربر در صورت مشکل
-#                     if chat_id:
-#                         send_message(chat_id, "⚠️ مشکلی در پردازش دکمه رخ داد. لطفاً دوباره تلاش کنید.")
-#                 
-#                 # بازگرداندن وضعیت هوش مصنوعی به حالت قبلی (اگر دکمه مربوط به تغییر وضعیت هوش مصنوعی نبود)
-#                 if data != "ai_activate" and data != "ai_deactivate":
-#                     user_data[chat_id]["ai_mode"] = ai_mode_was_active
-#                     logger.info(f"Restored AI mode to: {ai_mode_was_active}")
-#                 else:
-#                     logger.info(f"AI mode change requested via button, not restoring previous state")
-#                 
-#                 # ذخیره تغییرات کاربر
-#                 save_user_data()
-#             else:
-#                 # اگر اطلاعات کاربر موجود نیست، فقط پردازش کن
-#                 try:
-#                     handle_callback_query(callback_query)
-#                     logger.info(f"Processed callback for user without data: {data}")
-#                 except Exception as e:
-#                     logger.error(f"Error in handle_callback_query for user without data: {e}")
-#                     # ارسال پیام خطا به کاربر در صورت مشکل
-#                     if chat_id:
-#                         send_message(chat_id, "⚠️ مشکلی در پردازش دکمه رخ داد. لطفاً دوباره تلاش کنید.")
-#                 
-#         except Exception as e:
-#             logger.error(f"Error handling callback query: {e}")
-#             logger.exception("Detailed error:")
-#                 
-#         return "ok"
-        
-    msg = update.get("message")
+# --- DUPLICATE BLOCK REMOVED BY CLEANUP ---
+# Original lines 1171-1771 removed to prevent duplicate definitions (preserved elsewhere).
+# If you need the removed code back, check the original bot.py or contact the maintainer.
 
-    if not msg:
-        return "ok"  # اگر پیامی نباشد، پاسخ ok برگردان
-        
-    chat_id = msg["chat"]["id"]
-    
-    # پردازش پیام
-    try:
-        logger.info(f"Processing message from chat_id: {chat_id}")
-        process_message(msg)
-        logger.info(f"Successfully processed message from chat_id: {chat_id}")
-    except Exception as e:
-        logger.error(f"Error processing message: {e}")
-        logger.exception("Detailed error in message processing:")
-        # سعی کن پیام خطا به کاربر ارسال کنی
-        try:
-            send_message(chat_id, "⚠️ مشکلی در پردازش پیام شما رخ داد. لطفاً دوباره تلاش کنید.")
-        except Exception as e2:
-            logger.error(f"Failed to send error message: {e2}")
-    
-    # همیشه یک پاسخ معتبر برگردان
-    return "ok"
-
-# پردازش کالبک‌های تلگرام
-def handle_callback_query(callback_query):
-    """پردازش کالبک‌های دریافتی از تلگرام"""
-    query_id = callback_query.get('id')
-    chat_id = callback_query.get('message', {}).get('chat', {}).get('id')
-    message_id = callback_query.get('message', {}).get('message_id')
-    data = callback_query.get('data', '')
-    
-    logger.info(f"Processing callback query: {data} from chat_id: {chat_id}")
-    
-    # ابتدا به کالبک پاسخ دهیم تا تلگرام منتظر نماند
-    try:
-        answer_callback_query(query_id, "در حال پردازش...")
-        logger.info(f"Acknowledged callback query: {query_id}")
-    except Exception as e:
-        logger.error(f"Error acknowledging callback query: {e}")
-    
-    # پردازش کالبک‌های استیکرساز
-    if STICKER_MAKER_AVAILABLE and data.startswith('sticker_'):
-        if data == 'sticker_toggle':
-            # فعال/غیرفعال کردن استیکرساز
-            handle_sticker_maker_toggle(chat_id, message_id, None, send_message, API)
-            return
-        
-        # پردازش سایر کالبک‌های استیکرساز
-        if process_callback_query(callback_query, None, answer_callback_query, edit_message_text):
-            return
-    
-    # پردازش دکمه‌های اینلاین
-    if data == "new_sticker":
-        # تنظیم مرحله کاربر
-        if chat_id in user_data:
-            user_data[chat_id]["step"] = "text"
-            save_user_data()
-        
-        # پردازش ساخت استیکر جدید
-        keyboard = {
-            "inline_keyboard": [
-                [
-                    {"text": "🔄 ساخت استیکر جدید", "callback_data": "new_sticker"}
-                ],
-                [
-                    {"text": "🔙 بازگشت", "callback_data": "back_to_main"}
-                ]
-            ]
-        }
-        
-        edit_message_text(chat_id, message_id, "لطفاً متن مورد نظر خود را برای تبدیل به استیکر وارد کنید:", reply_markup=json.dumps(keyboard))
-        return
-        
-    elif data == "back_to_main":
-        # بازگشت به منوی اصلی با حذف کیبورد اینلاین
-        edit_message_text(chat_id, message_id, "✅ بازگشت به منوی اصلی")
-        show_main_menu(chat_id)
-        return
-    
-    # پردازش سایر کالبک‌ها
-    if data == 'lang_fa':
-        set_language(chat_id, 'fa')
-        edit_message_text(chat_id, message_id, tr(chat_id, "lang_set_fa", "✅ زبان به فارسی تغییر کرد."))
-        show_main_menu(chat_id)
-        return
-    
-    elif data == 'lang_en':
-        set_language(chat_id, 'en')
-        edit_message_text(chat_id, message_id, tr(chat_id, "lang_set_en", "✅ Language set to English."))
-        show_main_menu(chat_id)
-        return
-    
-    elif data.startswith('sub_'):
-        # پردازش کالبک‌های اشتراک
-        plan = data.replace('sub_', '')
-        if plan in SUBSCRIPTION_PLANS:
-            start_subscription_process(chat_id, plan)
-            return
-    
-    # پردازش دکمه‌های اشتراک و تست رایگان
-    elif data == "subscription":
-        show_subscription_menu(chat_id, message_id)
-        return
-    
-    elif data == "free_trial":
-        show_free_trial_menu(chat_id, message_id)
-        return
-    
-    elif data == "templates":
-        show_templates_menu(chat_id, message_id)
-        return
-    
-    # اگر به اینجا رسیدیم، کالبک ناشناخته است
-    logger.warning(f"Unknown callback query: {data}")
-    return
-    
-    # 📌 پردازش متن
-    if "text" in msg:
-        text = msg["text"]
-
-        # ابتدا دستورات خاص را بررسی کن (قبل از پردازش حالت)
-        if text == "🎭 استیکرساز" and STICKER_MAKER_AVAILABLE:
-            # بررسی عضویت در کانال
-            if not check_channel_membership(chat_id):
-                send_membership_required_message(chat_id)
-                return "ok"
-            
-            # شروع فرآیند استیکرساز
-            handle_sticker_maker_toggle(chat_id, ai_manager)
-            return "ok"
-            
-        if text == "/start":
-            # بررسی عضویت در کانال
-            if not check_channel_membership(chat_id):
-                send_membership_required_message(chat_id)
-                return "ok"
-            
-            # همیشه به منوی اصلی برگرد (حتی اگر در حال ساخت استیکر هستید)
-            if chat_id in user_data:
-                old_data = user_data[chat_id]
-                user_data[chat_id] = {
-                    "mode": None, 
-                    "count": 0, 
-                    "step": None, 
-                    "pack_name": None, 
-                    "background": None, 
-                    "created_packs": old_data.get("created_packs", []),  # حفظ پک‌های ساخته شده
-                    "sticker_usage": old_data.get("sticker_usage", []),  # حفظ محدودیت
-                    "last_reset": old_data.get("last_reset", time.time())  # حفظ زمان reset
-                }
-            else:
-                user_data[chat_id] = {
-                    "mode": None, 
-                    "count": 0, 
-                    "step": None, 
-                    "pack_name": None, 
-                    "background": None, 
-                    "created_packs": [],
-                    "sticker_usage": [],
-                    "last_reset": time.time()
-                }
-            show_main_menu(chat_id)
-            return "ok"
-
-        # دکمه بازگشت - همیشه به منوی اصلی برگرد و reset کن
-        if text == "🔙 بازگشت":
-            # بررسی عضویت در کانال
-            if not check_channel_membership(chat_id):
-                send_membership_required_message(chat_id)
-                return "ok"
-            
-            # همیشه reset کن (جز محدودیت و پک‌های ساخته شده)
-            if chat_id in user_data:
-                old_data = user_data[chat_id]
-                user_data[chat_id] = {
-                    "mode": None, 
-                    "count": 0, 
-                    "step": None, 
-                    "pack_name": None, 
-                    "background": None, 
-                    "created_packs": old_data.get("created_packs", []),  # حفظ پک‌های ساخته شده
-                    "sticker_usage": old_data.get("sticker_usage", []),  # حفظ محدودیت
-                    "last_reset": old_data.get("last_reset", time.time())  # حفظ زمان reset
-                }
-            else:
-                user_data[chat_id] = {
-                    "mode": None, 
-                    "count": 0, 
-                    "step": None, 
-                    "pack_name": None, 
-                    "background": None, 
-                    "created_packs": [],
-                    "sticker_usage": [],
-                    "last_reset": time.time()
-                }
-            show_main_menu(chat_id)
-            return "ok"
-
-        # 📌 پردازش دکمه‌های اشتراک
-        if text == "⭐ اشتراک":
-            # بررسی عضویت در کانال
-            if not check_channel_membership(chat_id):
-                send_membership_required_message(chat_id)
-                return "ok"
-            show_subscription_menu(chat_id)
-            return "ok"
-        
-        # پردازش دکمه‌های طرح اشتراک
-        if text in ["📦 یک ماهه - ۱۰۰ تومان", "📦 سه ماهه - ۲۵۰ تومان", "📦 یک ساله - ۳۵۰ تومان"]:
-            if "یک ماهه" in text:
-                plan = "1month"
-            elif "سه ماهه" in text:
-                plan = "3months" 
-            else:
-                plan = "12months"
-            show_payment_info(chat_id, plan)
-            return "ok"
-
-        # دکمه‌های قابلیت‌های اشتراکی
-        if text in ["🎞 تبدیل استیکر ویدیویی به گیف", "🎥 تبدیل گیف به استیکر ویدیویی", 
-                   "🖼 تبدیل عکس به استیکر", "📂 تبدیل استیکر به عکس", 
-                   "🌃 تبدیل PNG به استیکر", "🗂 تبدیل فایل ویدیو", "🎥 تبدیل ویدیو مسیج"]:
-            if not is_subscribed(chat_id):
-                send_message(chat_id, "⭐ این قابلیت فقط برای کاربران اشتراکی است!\n\nبرای خرید اشتراک از منوی اصلی استفاده کنید.")
-                return "ok"
-            handle_premium_feature(chat_id, text)
-            return "ok"
-
-        # دکمه ارسال رسید
-        if text == "📸 ارسال رسید":
-            user_data[chat_id] = user_data.get(chat_id, {})
-            user_data[chat_id]["step"] = "waiting_receipt"
-            send_message_with_back_button(chat_id, "📸 لطفاً عکس رسید پرداخت را ارسال کنید:")
-            return "ok"
-
-        # پردازش بازخورد
-        if text in ["👍 عالی بود!", "👎 خوب نبود"]:
-            handle_feedback(chat_id, text)
-            return "ok"
-        
-        # دکمه‌های اضافی بعد از بازخورد
-        if text == "✍️ متن بعدی":
-            # بررسی عضویت در کانال
-            if not check_channel_membership(chat_id):
-                send_membership_required_message(chat_id)
-                return "ok"
-            
-            # بررسی محدودیت استیکر
-            remaining, next_reset = check_sticker_limit(chat_id)
-            if remaining <= 0:
-                next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
-                send_message(chat_id, f"⏰ محدودیت روزانه شما تمام شده!\n\n🔄 زمان بعدی: {next_reset_time}\n\n💎 برای ساخت استیکر نامحدود، اشتراک تهیه کنید.")
-                return "ok"
-            
-            send_message_with_back_button(chat_id, "✍️ متن استیکر بعدی را بفرست:")
-            return "ok"
-        
-        if text == "📷 تغییر بکگراند":
-            # بررسی عضویت در کانال
-            if not check_channel_membership(chat_id):
-                send_membership_required_message(chat_id)
-                return "ok"
-            
-            send_message_with_back_button(chat_id, "📷 عکس جدید برای بکگراند بفرست:")
-            if chat_id in user_data:
-                user_data[chat_id]["step"] = "background"
-            return "ok"
-
-        # پردازش دکمه‌های اصلی (قبل از پردازش حالت‌ها)
-        if text == "🎁 تست رایگان":
-            # بررسی عضویت در کانال
-            if not check_channel_membership(chat_id):
-                send_membership_required_message(chat_id)
-                return "ok"
-                
-            if chat_id not in user_data:
-                user_data[chat_id] = {
-                    "mode": None, 
-                    "count": 0, 
-                    "step": None, 
-                    "pack_name": None, 
-                    "background": None, 
-                    "created_packs": [],
-                    "sticker_usage": [],
-                    "last_reset": time.time(),
-                    "ai_mode": False
-                }
-            else:
-                # اگر کاربر قبلاً وجود دارد، created_packs را حفظ کن
-                if "created_packs" not in user_data[chat_id]:
-                    user_data[chat_id]["created_packs"] = []
-                if "sticker_usage" not in user_data[chat_id]:
-                    user_data[chat_id]["sticker_usage"] = []
-                if "last_reset" not in user_data[chat_id]:
-                    user_data[chat_id]["last_reset"] = time.time()
-                if "ai_mode" not in user_data[chat_id]:
-                    user_data[chat_id]["ai_mode"] = False
-            
-            # بررسی محدودیت استیکر
-            remaining, next_reset = check_sticker_limit(chat_id)
-            if remaining <= 0:
-                next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
-                send_message(chat_id, f"⏰ محدودیت روزانه شما تمام شده!\n\n🔄 زمان بعدی: {next_reset_time}\n\n💎 برای ساخت استیکر نامحدود، اشتراک تهیه کنید.")
-                return "ok"
-            
-            # ارسال منوی تست رایگان
-            keyboard = {
-                "keyboard": [
-                    ["🎭 استیکرساز"],
-                    ["🔙 بازگشت"]
-                ],
-                "resize_keyboard": True
-            }
-            
-            send_message(chat_id, "🎁 از تست رایگان استفاده کنید!\n\nبا استفاده از دکمه‌های زیر می‌توانید استیکر بسازید:", reply_markup=json.dumps(keyboard))
-            return "ok"
-            
-            # نمایش وضعیت محدودیت
-            next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
-            limit_info = f"📊 وضعیت شما: {remaining}/5 استیکر باقی مانده\n🔄 زمان بعدی: {next_reset_time}\n\n"
-            
-            # بررسی پک‌های موجود
-            created_packs = user_data[chat_id].get("created_packs", [])
-            if user_data[chat_id].get("pack_name"):
-                # اگر کاربر قبلاً پکی دارد، مستقیماً به ساخت استیکر ادامه دهد
-                pack_name = user_data[chat_id]["pack_name"]
-                send_message_with_back_button(chat_id, limit_info + f"✅ ادامه ساخت استیکر در پک فعلی\n✍️ متن استیکر بعدی را بفرست:\n\n📷 یا عکس جدید برای تغییر بکگراند بفرست:")
-            elif created_packs:
-                send_message(chat_id, limit_info + "📝 آیا می‌خواهید پک جدید بسازید یا به پک قبلی اضافه کنید؟\n1. ساخت پک جدید\n2. اضافه کردن به پک قبلی")
-            else:
-                send_message(chat_id, limit_info + "📝 شما هنوز پکی ندارید. لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
-                user_data[chat_id]["step"] = "pack_name"
-            return "ok"
-
-        # پردازش دکمه‌های طراحی پیشرفته
-        if text == "🎨 انتخاب رنگ متن":
-            # تنظیم حالت طراحی پیشرفته
-            if chat_id not in user_data:
-                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time(), "ai_mode": False}
-            user_data[chat_id]["mode"] = "advanced_design"
-            user_data[chat_id]["step"] = "color_selection"
-            show_color_menu(chat_id)
-            return "ok"
-        elif text == "📝 انتخاب فونت":
-            if chat_id not in user_data:
-                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time(), "ai_mode": False}
-            user_data[chat_id]["mode"] = "advanced_design"
-            user_data[chat_id]["step"] = "font_selection"
-            show_font_menu(chat_id)
-            return "ok"
-        elif text == "📏 اندازه متن":
-            if chat_id not in user_data:
-                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
-            user_data[chat_id]["mode"] = "advanced_design"
-            user_data[chat_id]["step"] = "size_selection"
-            show_size_menu(chat_id)
-            return "ok"
-        elif text == "📍 موقعیت متن":
-            if chat_id not in user_data:
-                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
-            user_data[chat_id]["mode"] = "advanced_design"
-            user_data[chat_id]["step"] = "position_selection"
-            show_position_menu(chat_id)
-            return "ok"
-        elif text == "🖼️ رنگ پس‌زمینه":
-            if chat_id not in user_data:
-                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
-            user_data[chat_id]["mode"] = "advanced_design"
-            user_data[chat_id]["step"] = "background_color_selection"
-            show_background_color_menu(chat_id)
-            return "ok"
-        elif text == "✨ افکت‌های ویژه":
-            if chat_id not in user_data:
-                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
-            user_data[chat_id]["mode"] = "advanced_design"
-            user_data[chat_id]["step"] = "effect_selection"
-            show_effects_menu(chat_id)
-            return "ok"
-
-        # پردازش دکمه‌های رنگ
-        if text in ["🔴 قرمز", "🔵 آبی", "🟢 سبز", "🟡 زرد", "🟣 بنفش", "🟠 نارنجی", "🩷 صورتی", "⚫ مشکی", "⚪ سفید", "🔘 خاکستری"]:
-            if chat_id not in user_data:
-                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
-            user_data[chat_id]["text_color"] = text.split(" ")[1]  # استخراج نام رنگ
-            user_data[chat_id]["mode"] = "free"
-            if not user_data[chat_id].get("pack_name"):
-                user_data[chat_id]["step"] = "pack_name"
-                send_message(chat_id, f"✅ رنگ {text.split(' ')[1]} انتخاب شد!\n\n📝 حالا یک نام برای پک استیکر خود انتخاب کن:")
-            else:
-                user_data[chat_id]["step"] = "text"
-                send_message_with_back_button(chat_id, f"✅ رنگ {text.split(' ')[1]} انتخاب شد!\n\n✍️ حالا متن استیکرت رو بفرست:")
-            return "ok"
-
-        # پردازش دکمه‌های فونت
-        if text in ["📝 فونت عادی", "📝 فونت ضخیم", "📝 فونت نازک", "📝 فونت کج", "📝 فونت فانتزی", "📝 فونت کلاسیک"]:
-            if chat_id not in user_data:
-                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
-            user_data[chat_id]["font_style"] = text
-            user_data[chat_id]["mode"] = "free"
-            if not user_data[chat_id].get("pack_name"):
-                user_data[chat_id]["step"] = "pack_name"
-                send_message(chat_id, f"✅ {text} انتخاب شد!\n\n📝 حالا یک نام برای پک استیکر خود انتخاب کن:")
-            else:
-                user_data[chat_id]["step"] = "text"
-                send_message_with_back_button(chat_id, f"✅ {text} انتخاب شد!\n\n✍️ حالا متن استیکرت رو بفرست:")
-            return "ok"
-
-        # پردازش دکمه‌های اندازه
-        if text in ["📏 کوچک", "📏 متوسط", "📏 بزرگ", "📏 خیلی کوچک", "📏 خیلی بزرگ"]:
-            if chat_id not in user_data:
-                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
-            user_data[chat_id]["text_size"] = text
-            user_data[chat_id]["mode"] = "free"
-            if not user_data[chat_id].get("pack_name"):
-                user_data[chat_id]["step"] = "pack_name"
-                send_message(chat_id, f"✅ اندازه {text.split(' ')[1]} انتخاب شد!\n\n📝 حالا یک نام برای پک استیکر خود انتخاب کن:")
-            else:
-                user_data[chat_id]["step"] = "text"
-                send_message_with_back_button(chat_id, f"✅ اندازه {text.split(' ')[1]} انتخاب شد!\n\n✍️ حالا متن استیکرت رو بفرست:")
-            return "ok"
-
-        # پردازش دکمه‌های افکت‌های ویژه
-        if text in ["✨ سایه", "✨ نور", "✨ براق", "✨ مات", "✨ شفاف", "✨ انعکاس", "✨ چرخش", "✨ موج", "✨ پرش"]:
-            if chat_id not in user_data:
-                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
-            user_data[chat_id]["text_effect"] = text
-            user_data[chat_id]["mode"] = "free"
-            if not user_data[chat_id].get("pack_name"):
-                user_data[chat_id]["step"] = "pack_name"
-                send_message(chat_id, f"✅ افکت {text} انتخاب شد!\n\n📝 حالا یک نام برای پک استیکر خود انتخاب کن:")
-            else:
-                user_data[chat_id]["step"] = "text"
-                send_message_with_back_button(chat_id, f"✅ افکت {text} انتخاب شد!\n\n✍️ حالا متن استیکرت رو بفرست:")
-            return "ok"
-
-        # پردازش دکمه‌های قالب‌های آماده
-        if text in ["🎉 تولد", "💒 عروسی", "🎊 جشن", "💝 عاشقانه", "😄 خنده‌دار", "🔥 هیجان‌انگیز", "📚 آموزشی", "💼 کاری", "🏠 خانوادگی"]:
-            apply_template(chat_id, text)
-            return "ok"
-
-        # پردازش دکمه‌های تنظیمات
-        if text == "🌙 حالت تاریک":
-            set_dark_mode(chat_id, True)
-            return "ok"
-        elif text == "🌍 زبان":
-            show_language_menu(chat_id)
-            return "ok"
-        elif text in ["🇮🇷 فارسی", "🇺🇸 انگلیسی"]:
-            if chat_id not in user_data:
-                user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
-            user_data[chat_id]["lang"] = "fa" if "🇮🇷" in text else "en"
-            save_user_data()
-            msg = tr(chat_id, "lang_set_fa", "✅ زبان به فارسی تغییر کرد.") if user_data[chat_id]["lang"] == "fa" else tr(chat_id, "lang_set_en", "✅ Language set to English.")
-            send_message_with_back_button(chat_id, msg)
-            return "ok"
-        elif text == "💾 ذخیره قالب":
-            save_template(chat_id)
-            return "ok"
-        elif text == "📤 اشتراک‌گذاری":
-            share_sticker(chat_id)
-            return "ok"
-
-        # دکمه‌های منو
-        if text == "🎨 طراحی پیشرفته":
-            # بررسی عضویت در کانال
-            if not check_channel_membership(chat_id):
-                send_membership_required_message(chat_id)
-                return "ok"
-            show_advanced_design_menu(chat_id)
-            return "ok"
-        elif text == "📚 قالب‌های آماده":
-            # بررسی عضویت در کانال
-            if not check_channel_membership(chat_id):
-                send_membership_required_message(chat_id)
-                return "ok"
-            show_template_menu(chat_id)
-            return "ok"
-        elif text == "📝 تاریخچه":
-            # بررسی عضویت در کانال
-            if not check_channel_membership(chat_id):
-                send_membership_required_message(chat_id)
-                return "ok"
-            show_history(chat_id)
-            return "ok"
-        elif text == "⚙️ تنظیمات":
-            # بررسی عضویت در کانال
-            if not check_channel_membership(chat_id):
-                send_membership_required_message(chat_id)
-                return "ok"
-            show_settings_menu(chat_id)
-            return "ok"
-        elif text == "ℹ️ درباره":
-            # بررسی عضویت در کانال
-            if not check_channel_membership(chat_id):
-                send_membership_required_message(chat_id)
-                return "ok"
-            send_message(chat_id, "ℹ️ این ربات برای ساخت استیکر متنی است. نسخه فعلی رایگان است.")
-            return "ok"
-        elif text == "📞 پشتیبانی":
-            # بررسی عضویت در کانال
-            if not check_channel_membership(chat_id):
-                send_membership_required_message(chat_id)
-                return "ok"
-            send_message(chat_id, f"📞 برای پشتیبانی با {SUPPORT_ID} در تماس باش.\n\nاگر مشکلی پیش آمد، حتماً پیوی بزنید!")
-            return "ok"
-
-        # مدیریت دکمه‌های هوش مصنوعی
-        elif text in ["🤖 هوش مصنوعی ✅", "🤖 هوش مصنوعی ❌", "🤖 هوش مصنوعی ⚠️", "🤖 هوش مصنوعی (غیرفعال)"]:
-            # بررسی عضویت در کانال
-            if not check_channel_membership(chat_id):
-                send_membership_required_message(chat_id)
-                return "ok"
-            handle_ai_control_button(chat_id)
-            return "ok"
-        
-        elif text.startswith("🚀 فعال کردن هوش مصنوعی") or text.startswith("⏸️ غیرفعال کردن هوش مصنوعی"):
-            handle_ai_toggle(chat_id)
-            return "ok"
-        
-        elif text == "📊 وضعیت هوش مصنوعی":
-            handle_ai_status_check(chat_id)
-            return "ok"
-        
-        elif text == "🔗 پنل وب":
-            handle_ai_web_panel(chat_id)
-            return "ok"
-            
-    # اضافه کردن return statement نهایی برای اطمینان از برگشت مقدار در همه حالت‌ها
-    return "ok"
-
-# تابع اصلی پردازش پیام‌ها
 def process_message(msg):
     """پردازش پیام‌های دریافتی از تلگرام"""
     try:
@@ -4416,49 +3679,72 @@ def edit_message_text(chat_id, message_id, text, reply_markup=None):
         logger.error(f"Error in edit_message_text: {e}")
         return False
 
-def answer_callback_query(query_id, text=None, show_alert=False):
-    """پاسخ به کالبک کوئری - اصلاح شده"""
-    try:
-        data = {"callback_query_id": query_id}
-        if text:
-            data["text"] = text
-        if show_alert:
-            data["show_alert"] = show_alert
-            
+
         # ارسال درخواست به API تلگرام
         response = requests.post(f"{API}answerCallbackQuery", json=data)
-        result = response.json()
-        
-        if result.get("ok"):
-            logger.info(f"Callback query answered: {query_id}")
-            return True
-        else:
-            logger.error(f"Error answering callback query: {result}")
-            return False
-    except Exception as e:
-        logger.error(f"Exception in answer_callback_query: {e}")
-        return False
-        
-    # ارسال درخواست به API تلگرام
-    try:
-        logger.info(f"Sending answer to callback query: {query_id}")
-        response = requests.post(API + "answerCallbackQuery", json=data, timeout=10)
-        logger.info(f"Answer callback response: {response.status_code} - {response.text}")
-        
-        if response.status_code == 200:
-            return True
-        else:
-            logger.error(f"Failed to answer callback query. Status: {response.status_code}, Response: {response.text}")
-            return False
-    except requests.exceptions.Timeout:
-        logger.error(f"Timeout answering callback query: {query_id}")
-        return False
-    except Exception as e:
-        logger.error(f"Error answering callback query: {e}")
-        return False
-        return False
-        logger.error(f"Error in answer_callback_query: {e}")
-        return False
+        result =
+    def handle_callback_query(update, context):
+    from menu_handlers import MenuManager
+    from sticker_handlers import start_new_sticker, ai_sticker_handler
+
+
+    query = update.callback_query
+    chat_id = query.message.chat_id
+    data = query.data
+
+
+    ogger.info(f"Callback query received: {data}")
+
+
+    menu = MenuManager(api_url=context.bot.api_url, bot_token=context.bot.token)
+
+
+    if data == "back_to_main":
+    menu.show_main_menu(chat_id, query.message.message_id)
+
+
+    elif data == "show_subscription":
+    menu.show_subscription_menu(chat_id, query.message.message_id)
+
+
+    elif data == "show_trial":
+    menu.show_free_trial_menu(chat_id, query.message.message_id)
+
+
+    elif data == "show_templates":
+        menu.show_templates_menu(chat_id, query.message.message_id)
+
+
+    elif data.startswith("sub_"):
+# خرید اشتراک
+    plan_id = data.split("_")[1]
+# اینجا می‌تونی تابع فعال‌سازی اشتراک رو صدا بزنی
+    query.answer(text=f"طرح {plan_id} انتخاب شد ✅", show_alert=True)
+
+
+    elif data == "activate_trial":
+# فعال‌سازی دوره آزمایشی
+    query.answer(text="دوره آزمایشی فعال شد ✅", show_alert=True)
+
+
+    elif data == "new_sticker":
+    query.answer()
+    start_new_sticker(update, context)
+
+
+    elif data == "ai_sticker":
+    query.answer()
+    ai_sticker_handler(update, context)
+
+
+    elif data.startswith("template_"):
+    template_id = data.split("_")[1]
+# اینجا می‌تونی هندلر مربوط به قالب‌ها رو اضافه کنی
+    query.answer(text=f"قالب {template_id} انتخاب شد ✅")
+
+
+    else:
+    query.answer(text="دکمه ناشناخته ❓")
 
 def send_message_with_back_button(chat_id, text):
     """ارسال پیام با دکمه بازگشت"""
