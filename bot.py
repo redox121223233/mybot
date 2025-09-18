@@ -5,6 +5,9 @@ import time
 from flask import Flask, request
 from waitress import serve
 
+# تنظیم مسیر پایه پروژه
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
 # تنظیم لاگر
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("sticker_bot")
@@ -53,11 +56,17 @@ except ImportError as e:
     raise
 
 # --- تنظیمات اصلی ---
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-if not BOT_TOKEN:
-    raise ValueError("❌ BOT_TOKEN is not set!")
+# تنظیم توکن ربات
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")  # برای تست، توکن خود را اینجا قرار دهید
+if not BOT_TOKEN or BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
+    logger.warning("⚠️ استفاده از توکن پیش‌فرض - لطفاً توکن واقعی را تنظیم کنید")
+    # برای اجرای واقعی، خط زیر را فعال کنید
+    # raise ValueError("❌ BOT_TOKEN is not set!")
 
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "secret").strip()
+
+# ایجاد اپلیکیشن Flask
+app = Flask(__name__)
 APP_URL = os.environ.get("APP_URL")
 if APP_URL:
     APP_URL = APP_URL.strip().rstrip('/')
@@ -583,7 +592,7 @@ def webhook():
 # --- اجرای برنامه ---
 if __name__ == '__main__':
     # بارگذاری داده‌های کاربران
-    db_manager.load_data('users')
+    db_manager.load_all_data()
     
     # تنظیم وب‌هوک
     webhook_url = f"{APP_URL}/{WEBHOOK_SECRET}"
