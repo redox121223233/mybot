@@ -176,6 +176,82 @@ def get_file(file_id, bot_token):
         logger.error(f"Error in get_file: {e}")
         return None
 
+def create_sticker_from_text(text, template_id=None, font_name=None, font_size=None, font_color=None, bg_color=None):
+    """ساخت استیکر از متن"""
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        import arabic_reshaper
+        from bidi.algorithm import get_display
+        import os
+        import random
+        
+        # تنظیمات پیش‌فرض
+        if not font_name:
+            # انتخاب یک فونت فارسی تصادفی
+            fonts_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fonts')
+            available_fonts = [f for f in os.listdir(fonts_dir) if f.endswith('.ttf')]
+            if available_fonts:
+                font_name = os.path.join(fonts_dir, random.choice(available_fonts))
+            else:
+                font_name = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'arial.ttf')
+        
+        if not font_size:
+            font_size = 60
+        
+        if not font_color:
+            font_color = (255, 255, 255)  # سفید
+        
+        if not bg_color:
+            bg_color = (0, 0, 0, 0)  # شفاف
+        
+        # اندازه استیکر
+        width, height = 512, 512
+        
+        # ایجاد تصویر
+        if template_id:
+            # استفاده از قالب
+            templates_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'templates')
+            template_file = os.path.join(templates_dir, f"{template_id}_bg.png")
+            if not os.path.exists(template_file):
+                template_file = os.path.join(templates_dir, f"{template_id}_bg.jpg")
+            
+            if os.path.exists(template_file):
+                img = Image.open(template_file).convert("RGBA")
+                img = img.resize((width, height))
+            else:
+                img = Image.new('RGBA', (width, height), bg_color)
+        else:
+            img = Image.new('RGBA', (width, height), bg_color)
+        
+        # ایجاد شیء طراحی
+        draw = ImageDraw.Draw(img)
+        
+        # بارگذاری فونت
+        font = ImageFont.truetype(font_name, font_size)
+        
+        # تبدیل متن فارسی به شکل صحیح
+        reshaped_text = arabic_reshaper.reshape(text)
+        bidi_text = get_display(reshaped_text)
+        
+        # محاسبه اندازه متن
+        text_width, text_height = draw.textsize(bidi_text, font=font)
+        
+        # محاسبه موقعیت متن (وسط تصویر)
+        position = ((width - text_width) / 2, (height - text_height) / 2)
+        
+        # رسم متن روی تصویر
+        draw.text(position, bidi_text, font=font, fill=font_color)
+        
+        # تبدیل تصویر به بایت‌ها
+        from io import BytesIO
+        output = BytesIO()
+        img.save(output, format='PNG')
+        
+        return output.getvalue()
+    except Exception as e:
+        logger.error(f"Error creating sticker from text: {e}")
+        return None
+
 def process_callback_query(callback_query, ai_manager=None, answer_callback_query=None, edit_message=None):
     """پردازش کالبک کوئری‌های مربوط به استیکرساز"""
     query_id = callback_query.get('id')
@@ -197,6 +273,6 @@ def process_callback_query(callback_query, ai_manager=None, answer_callback_quer
     elif data == 'sticker_toggle':
         # این مورد باید در فایل اصلی ربات پردازش شود
         return False
-    
+        
     # اگر کالبک کوئری مربوط به استیکرساز نبود
     return False
