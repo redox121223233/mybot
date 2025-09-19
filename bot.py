@@ -4483,9 +4483,6 @@ def extract_sticker_text(message):
         # اگر متن خالی شد، از پیام اصلی استفاده کن
         if not text or len(text) < 2:
             # سعی کن متن را از داخل گیومه استخراج کنی
-            import re
-import requests
-import json
             quotes_match = re.search(r'["\']([^"\']+)["\']', message)
             if quotes_match:
                 text = quotes_match.group(1)
