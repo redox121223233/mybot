@@ -67,6 +67,25 @@ class TelegramAPI:
         return requests.post(f"{self.base_url}/answerCallbackQuery", json=data).json()
 
 # -----------------------------
+# کلاس MenuManager
+# -----------------------------
+class MenuManager:
+    def __init__(self, base_url, token):
+        self.base_url = base_url
+        self.token = token
+
+    def get_main_menu(self):
+        return {
+            "keyboard": [
+                [{"text": "🎭 استیکرساز"}],
+                [{"text": "🤖 استیکر هوش مصنوعی"}],
+                [{"text": "⭐ اشتراک"}, {"text": "🎁 تست رایگان"}],
+                [{"text": "⚙️ تنظیمات"}]
+            ],
+            "resize_keyboard": True
+        }
+
+# -----------------------------
 # اینجا بقیه کد legacy.py اصلی‌ات قرار می‌گیرد
 # -----------------------------
 
