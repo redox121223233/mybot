@@ -672,7 +672,7 @@ def load_pending_payments():
     """بارگذاری پرداخت‌های در انتظار از فایل"""
     global pending_payments
     try:
-        if os.path.exists(db_manager.files['payments'])  # replaced PAYMENTS_FILE):
+        if os.path.exists(db_manager.files['payments']):  # replaced PAYMENTS_FILE)
             with open(db_manager.files['payments'],'r', encoding='utf-8') as f:  # replaced PAYMENTS_FILE, 'r', encoding='utf-8') as f:
                 pending_payments = json.load(f)
                 logger.info(f"Loaded pending payments: {len(pending_payments)} payments")
@@ -695,7 +695,7 @@ def load_feedback_data():
     """بارگذاری بازخوردهای کاربران از فایل"""
     global feedback_data
     try:
-        if os.path.exists(db_manager.files['feedback'])  # replaced FEEDBACK_FILE):
+        if os.path.exists(db_manager.files['feedback']):  # replaced FEEDBACK_FILE):
             with open(db_manager.files['feedback'], 'r', encoding='utf-8') as f:  # replaced FEEDBACK_FILE, 'r', encoding='utf-8') as f:
                 feedback_data = json.load(f)
                 logger.info(f"Loaded feedback data: {len(feedback_data)} feedbacks")
