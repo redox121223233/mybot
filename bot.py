@@ -65,6 +65,9 @@ if not BOT_TOKEN or BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
     # برای اجرای واقعی، خط زیر را فعال کنید
     # raise ValueError("❌ BOT_TOKEN is not set!")
 
+# تنظیم دسترسی به قابلیت‌ها
+STICKER_MAKER_AVAILABLE = True  # فعال بودن قابلیت استیکرساز
+
 WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "secret").strip()
 
 # ایجاد اپلیکیشن Flask
