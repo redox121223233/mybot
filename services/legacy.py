@@ -16,7 +16,7 @@ api = TelegramAPI(BOT_TOKEN)
 db_manager = DatabaseManager(BASE_DIR)
 
 # ساخت Subscription Manager
-subscription_manager = SubscriptionManager(db_manager, "subscriptions.json")
+subscription_manager = SubscriptionManager(db_manager, ("subscriptions.json")
 
 # ساخت Menu Manager
 menu_manager = MenuManager(api, BOT_TOKEN)
