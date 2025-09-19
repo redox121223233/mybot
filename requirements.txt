@@ -1,6 +1,0 @@
-flask==3.0.0
-requests==2.31.0
-pillow==10.1.0
-waitress==2.1.2
-arabic-reshaper==3.0.0
-python-bidi==0.4.2
