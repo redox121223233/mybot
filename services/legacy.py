@@ -1,27 +1,32 @@
 import os
-import json
 import logging
 from utils.telegram_api import TelegramAPI
 from services.menu_manager import MenuManager
 from services.subscription_manager import SubscriptionManager
 from services.database_manager import DatabaseManager
-
-# ✅ ایمپورت از فایل config
 from config import BOT_TOKEN, BASE_DIR
 
-# اطمینان از وجود دایرکتوری دیتابیس
-if not os.path.exists(BASE_DIR):
-    os.makedirs(BASE_DIR)
+# راه‌اندازی لاگ‌ها
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:%(message)s")
 
-# راه‌اندازی Logger
-logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-# ساخت نمونه‌های اصلی
-db_manager = DatabaseManager(BASE_DIR)
+# ساخت API
 api = TelegramAPI(BOT_TOKEN)
-menu_manager = MenuManager(api, BOT_TOKEN)
+
+# ساخت Database Manager
+db_manager = DatabaseManager(BASE_DIR)
+
+# ساخت Subscription Manager
 subscription_manager = SubscriptionManager(db_manager, "subscriptions.json")
+
+# ساخت Menu Manager
+menu_manager = MenuManager(api, BOT_TOKEN)
+
+# اینجا می‌تونی سرویس‌های دیگه مثل UserManager یا PaymentManager رو هم اضافه کنی
+# مثال:
+# user_manager = UserManager(db_manager, "users.json")
+# payment_manager = PaymentManager(db_manager, "pending_payments.json")
+
+logging.info("Legacy services initialized successfully.")
 
 
 
