@@ -30,14 +30,14 @@ def handle_message(msg):
         # در کد واقعی باید file_id را گرفته، با getFile و دانلود ذخیره کنی.
         # اینجا برای سادگی از document یا photo بررسی می‌کنیم:
         file_path = None
-        if "photo" in msg:
-            # دریافت file_id و دانلود لازم است — placeholder:
-            file_path = "/tmp/uploaded_image.jpg"  # replace with real download
-        elif msg.get("document"):
-            file_path = "/tmp/uploaded_doc.jpg"
-        if not file_path:
-            api.send_message(chat_id, "عکسی یافت نشد. لطفاً یک عکس ارسال کنید.")
-            return
+       if "photo" in msg:
+    # photo list has different sizes, pick the biggest
+    file_id = msg["photo"][-1]["file_id"]
+    file_path = api.get_file(file_id, save_dir="/app/data/tmp")
+elif msg.get("document"):
+    file_id = msg["document"]["file_id"]
+    file_path = api.get_file(file_id, save_dir="/app/data/tmp")
+
         # ذخیرهٔ مسیر موقت در state و درخواست دستورالعمل
         state["tmp_image"] = file_path
         state["awaiting"] = "instructions"
