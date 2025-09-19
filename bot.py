@@ -4,8 +4,6 @@ import re
 import time
 from flask import Flask, request
 from waitress import serve
-import requests
-import json
 
 # تنظیم مسیر پایه پروژه
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -628,8 +626,9 @@ def load_user_data():
     """بارگذاری داده‌های کاربر از فایل"""
     global user_data
     try:
-        if os.path.exists(db_manager.files['users']):# replaced DATA_FILE):
-         with open(db_manager.files['users'], 'r', encoding='utf-8') as f:  # replaced DATA_FILE
+        if os.path.exists(db_manager.files['users']):
+            with open(db_manager.files['users'], 'w', encoding='utf-8') as f:  # replaced DATA_FILE
+
                 user_data = json.load(f)
                 logger.info(f"Loaded user data: {len(user_data)} users")
         else:
@@ -641,9 +640,9 @@ def load_user_data():
 def save_user_data():
     """ذخیره داده‌های کاربر در فایل"""
     try:
-       with open(db_manager.files['users'], 'w', encoding='utf-8') as f:  # replaced DATA_FILE
+        with open(db_manager.files['users']  # replaced DATA_FILE, 'w', encoding='utf-8') as f:
             json.dump(user_data, f, ensure_ascii=False, indent=2)
-            logger.info(f"Saved user data: {len(user_data)} users")
+        logger.info(f"Saved user data: {len(user_data)} users")
     except Exception as e:
         logger.error(f"Error saving user data: {e}")
 
@@ -651,8 +650,8 @@ def load_subscription_data():
     """بارگذاری داده‌های اشتراک از فایل"""
     global subscription_data
     try:
-        if os.path.exists(db_manager.files['subscriptions']):  # replaced SUBSCRIPTION_FILE)
-            with open(db_manager.files['subscriptions'], 'r', encoding='utf-8') as f:  # replaced SUBSCRIPTION_FILE, 'r', encoding='utf-8') as f:
+        if os.path.exists(db_manager.files['subscriptions']  # replaced SUBSCRIPTION_FILE):
+            with open(db_manager.files['subscriptions']  # replaced SUBSCRIPTION_FILE, 'r', encoding='utf-8') as f:
                 subscription_data = json.load(f)
                 logger.info(f"Loaded subscription data: {len(subscription_data)} users")
         else:
@@ -664,7 +663,7 @@ def load_subscription_data():
 def save_subscription_data():
     """ذخیره داده‌های اشتراک در فایل"""
     try:
-        with open(db_manager.files['subscriptions'], 'w', encoding='utf-8') as f:  # replaced SUBSCRIPTION_FILE
+        with open(db_manager.files['subscriptions']  # replaced SUBSCRIPTION_FILE, 'w', encoding='utf-8') as f:
             json.dump(subscription_data, f, ensure_ascii=False, indent=2)
         logger.info(f"Saved subscription data: {len(subscription_data)} users")
     except Exception as e:
@@ -674,8 +673,8 @@ def load_pending_payments():
     """بارگذاری پرداخت‌های در انتظار از فایل"""
     global pending_payments
     try:
-        if os.path.exists(db_manager.files['payments']):  # replaced PAYMENTS_FILE)
-            with open(db_manager.files['payments'],'r', encoding='utf-8') as f:  # replaced PAYMENTS_FILE, 'r', encoding='utf-8') as f:
+        if os.path.exists(db_manager.files['payments']  # replaced PAYMENTS_FILE):
+            with open(db_manager.files['payments']  # replaced PAYMENTS_FILE, 'r', encoding='utf-8') as f:
                 pending_payments = json.load(f)
                 logger.info(f"Loaded pending payments: {len(pending_payments)} payments")
         else:
@@ -687,7 +686,7 @@ def load_pending_payments():
 def save_pending_payments():
     """ذخیره پرداخت‌های در انتظار در فایل"""
     try:
-        with open(db_manager.files['payments'], 'w', encoding='utf-8') as f:  # replaced PAYMENTS_FILE, 'w', encoding='utf-8') as f:
+        with open(db_manager.files['payments']  # replaced PAYMENTS_FILE, 'w', encoding='utf-8') as f:
             json.dump(pending_payments, f, ensure_ascii=False, indent=2)
         logger.info(f"Saved pending payments: {len(pending_payments)} payments")
     except Exception as e:
@@ -697,8 +696,8 @@ def load_feedback_data():
     """بارگذاری بازخوردهای کاربران از فایل"""
     global feedback_data
     try:
-        if os.path.exists(db_manager.files['feedback']):  # replaced FEEDBACK_FILE):
-            with open(db_manager.files['feedback'], 'r', encoding='utf-8') as f:  # replaced FEEDBACK_FILE, 'r', encoding='utf-8') as f:
+        if os.path.exists(db_manager.files['feedback']  # replaced FEEDBACK_FILE):
+            with open(db_manager.files['feedback']  # replaced FEEDBACK_FILE, 'r', encoding='utf-8') as f:
                 feedback_data = json.load(f)
                 logger.info(f"Loaded feedback data: {len(feedback_data)} feedbacks")
         else:
@@ -710,7 +709,7 @@ def load_feedback_data():
 def save_feedback_data():
     """ذخیره بازخوردهای کاربران در فایل"""
     try:
-        with open(db_manager.files['feedback'], 'w', encoding='utf-8') as f:   # replaced FEEDBACK_FILE, 'w', encoding='utf-8') as f:
+        with open(db_manager.files['feedback']  # replaced FEEDBACK_FILE, 'w', encoding='utf-8') as f:
             json.dump(feedback_data, f, ensure_ascii=False, indent=2)
         logger.info(f"Saved feedback data: {len(feedback_data)} feedbacks")
     except Exception as e:
@@ -4137,17 +4136,15 @@ def check_system_status():
         status_message += "📝 فونت‌های فارسی: ❌ هیچ فونت فارسی پیدا نشد\n"
     
     status_message += "\n"
+    
     # بررسی فایل‌های داده
     data_files = [
-        ("user_data.json", db_manager.files['users']),  # replaced DATA_FILE
-        ("subscriptions.json", db_manager.files['subscriptions']),  # replaced SUBSCRIPTION_FILE
-        ("pending_payments.json", db_manager.files['payments']),  # replaced PAYMENTS_FILE
-        ("feedback_data.json", db_manager.files['feedback'])  # replaced FEEDBACK_FILE
-+        ("user_data.json", db_manager.files['users']),  # replaced DATA_FILE
-+        ("subscriptions.json", db_manager.files['subscriptions']),  # replaced SUBSCRIPTION_FILE
-+        ("pending_payments.json", db_manager.files['payments']),  # replaced PAYMENTS_FILE
-+        ("feedback_data.json", db_manager.files['feedback'])  # replaced FEEDBACK_FILE
+        ["user_data.json", db_manager.files['users']],  # replaced DATA_FILE
+        ["subscriptions.json", db_manager.files['subscriptions']],  # replaced SUBSCRIPTION_FILE
+        ["pending_payments.json", db_manager.files['payments']],  # replaced PAYMENTS_FILE
+        ["feedback_data.json", db_manager.files['feedback']]  # replaced FEEDBACK_FILE
     ]
+    
     status_message += "💾 فایل‌های داده:\n"
     for name, path in data_files:
         if os.path.exists(path):
@@ -4486,6 +4483,9 @@ def extract_sticker_text(message):
         # اگر متن خالی شد، از پیام اصلی استفاده کن
         if not text or len(text) < 2:
             # سعی کن متن را از داخل گیومه استخراج کنی
+            import re
+import requests
+import json
             quotes_match = re.search(r'["\']([^"\']+)["\']', message)
             if quotes_match:
                 text = quotes_match.group(1)
