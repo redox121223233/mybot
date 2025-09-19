@@ -116,7 +116,10 @@ class MenuManager:
 # -----------------------------
 class SubscriptionManager:
     def __init__(self, db_manager, filename="subscriptions.json"):
-        self.db_manager = db_manager
+        if isinstance(db_manager, DatabaseManager):
+            self.db_manager = db_manager
+        else:
+            raise ValueError("db_manager باید یک شی از DatabaseManager باشد.")
         self.filename = filename
         self.subscriptions = self._load()
 
