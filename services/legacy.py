@@ -1,156 +1,33 @@
 import os
-import json
-import time
-import requests
+from utils.logger import logger
+from utils.telegram_api import TelegramAPI
+from services.database_manager import DatabaseManager
+from services.menu_manager import MenuManager
+from services.subscription_manager import SubscriptionManager
 
-# -----------------------------
-# تنظیمات پایه
-# -----------------------------
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(BASE_DIR, "data")
+# ثابت‌ها
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-if not os.path.exists(DATA_DIR):
-    os.makedirs(DATA_DIR)
-
-BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN")
-APP_URL = os.getenv("APP_URL", "http://localhost:8080")
-
-# -----------------------------
-# کلاس DatabaseManager
-# -----------------------------
-class DatabaseManager:
-    def __init__(self, base_dir):
-        self.base_dir = base_dir
-        self.data_dir = os.path.join(base_dir, "data")
-        if not os.path.exists(self.data_dir):
-            os.makedirs(self.data_dir)
-
-    def _path(self, filename):
-        return os.path.join(self.data_dir, filename)
-
-    def load(self, filename):
-        path = self._path(filename)
-        if not os.path.exists(path):
-            return {}
-        with open(path, "r", encoding="utf-8") as f:
-            try:
-                return json.load(f)
-            except json.JSONDecodeError:
-                return {}
-
-    def save(self, filename, data):
-        path = self._path(filename)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-
-# -----------------------------
-# دیتابیس منیجر
-# -----------------------------
+# ساخت DatabaseManager
 db_manager = DatabaseManager(BASE_DIR)
 
-# -----------------------------
-# مدیریت کاربران
-# -----------------------------
-USER_DATA_FILE = os.path.join(DATA_DIR, "users.json")
+# ساخت API تلگرام
+api = TelegramAPI(BOT_TOKEN)
 
-try:
-    with open(USER_DATA_FILE, "r", encoding="utf-8") as f:
-        user_data = json.load(f)
-except FileNotFoundError:
-    user_data = {}
+# ساخت MenuManager
+menu_manager = MenuManager(
+    base_url=f"https://api.telegram.org/bot{BOT_TOKEN}/",
+    bot_token=BOT_TOKEN
+)
 
-def save_user_data():
-    with open(USER_DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(user_data, f, ensure_ascii=False, indent=2)
+# ساخت SubscriptionManager
+subscription_manager = SubscriptionManager(
+    db_manager=db_manager,
+    filename="subscriptions.json"
+)
 
-# -----------------------------
-# کلاس TelegramAPI
-# -----------------------------
-class TelegramAPI:
-    def __init__(self, token):
-        self.base_url = f"https://api.telegram.org/bot{token}"
-
-    def send_message(self, chat_id, text, reply_markup=None):
-        data = {"chat_id": chat_id, "text": text}
-        if reply_markup:
-            data["reply_markup"] = reply_markup
-        return requests.post(f"{self.base_url}/sendMessage", json=data).json()
-
-    def edit_message_text(self, chat_id, message_id, text, reply_markup=None):
-        data = {
-            "chat_id": chat_id,
-            "message_id": message_id,
-            "text": text
-        }
-        if reply_markup:
-            data["reply_markup"] = reply_markup
-        return requests.post(f"{self.base_url}/editMessageText", json=data).json()
-
-    def answer_callback_query(self, callback_query_id, text=None, show_alert=False):
-        data = {"callback_query_id": callback_query_id, "show_alert": show_alert}
-        if text:
-            data["text"] = text
-        return requests.post(f"{self.base_url}/answerCallbackQuery", json=data).json()
-
-# -----------------------------
-# کلاس MenuManager
-# -----------------------------
-class MenuManager:
-    def __init__(self, base_url, token):
-        self.base_url = base_url
-        self.token = token
-
-    def get_main_menu(self):
-        return {
-            "keyboard": [
-                [{"text": "🎭 استیکرساز"}],
-                [{"text": "🤖 استیکر هوش مصنوعی"}],
-                [{"text": "⭐ اشتراک"}, {"text": "🎁 تست رایگان"}],
-                [{"text": "⚙️ تنظیمات"}]
-            ],
-            "resize_keyboard": True
-        }
-
-# -----------------------------
-# کلاس SubscriptionManager
-# -----------------------------
-class SubscriptionManager:
-    def __init__(self, db_manager, filename="subscriptions.json"):
-        if isinstance(db_manager, DatabaseManager):
-            self.db_manager = db_manager
-        else:
-            raise ValueError("db_manager باید یک شی از DatabaseManager باشد.")
-        self.filename = filename
-        self.subscriptions = self._load()
-
-    def _load(self):
-        data = self.db_manager.load(self.filename)
-        if not data:
-            return {}
-        return data
-
-    def save(self):
-        self.db_manager.save(self.filename, self.subscriptions)
-
-    def add_subscription(self, user_id, plan, expires_at):
-        self.subscriptions[str(user_id)] = {
-            "plan": plan,
-            "expires_at": expires_at
-        }
-        self.save()
-
-    def get_subscription(self, user_id):
-        return self.subscriptions.get(str(user_id))
-
-    def has_active_subscription(self, user_id):
-        sub = self.get_subscription(user_id)
-        if not sub:
-            return False
-        return sub["expires_at"] > time.time()
-
-# -----------------------------
-# اینجا بقیه کد legacy اصلی‌ات قرار می‌گیرد
-# -----------------------------
+logger.info("Legacy services initialized successfully.")
 
 
 
