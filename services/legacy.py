@@ -1,9 +1,10 @@
 import os
 import json
 import time
+import requests
 
 # -----------------------------
-# تعریف متغیرهای پایه
+# تنظیمات پایه
 # -----------------------------
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -32,23 +33,42 @@ try:
 except FileNotFoundError:
     user_data = {}
 
-
 def save_user_data():
     with open(USER_DATA_FILE, "w", encoding="utf-8") as f:
         json.dump(user_data, f, ensure_ascii=False, indent=2)
 
+# -----------------------------
+# کلاس TelegramAPI
+# -----------------------------
+class TelegramAPI:
+    def __init__(self, token):
+        self.base_url = f"https://api.telegram.org/bot{token}"
+
+    def send_message(self, chat_id, text, reply_markup=None):
+        data = {"chat_id": chat_id, "text": text}
+        if reply_markup:
+            data["reply_markup"] = reply_markup
+        return requests.post(f"{self.base_url}/sendMessage", json=data).json()
+
+    def edit_message_text(self, chat_id, message_id, text, reply_markup=None):
+        data = {
+            "chat_id": chat_id,
+            "message_id": message_id,
+            "text": text
+        }
+        if reply_markup:
+            data["reply_markup"] = reply_markup
+        return requests.post(f"{self.base_url}/editMessageText", json=data).json()
+
+    def answer_callback_query(self, callback_query_id, text=None, show_alert=False):
+        data = {"callback_query_id": callback_query_id, "show_alert": show_alert}
+        if text:
+            data["text"] = text
+        return requests.post(f"{self.base_url}/answerCallbackQuery", json=data).json()
 
 # -----------------------------
-# بقیه کدهای legacy اصلی اینجا میاد
-# (همون کدی که در legacy.py داشتی بدون تغییر)
+# اینجا بقیه کد legacy.py اصلی‌ات قرار می‌گیرد
 # -----------------------------
-
-# مثال: اگر در legacy.py توابعی داشتی مثل
-# def process_message(...):
-# یا کلاس‌هایی مثل StickerHandler
-# همه رو همینجا بیار، فقط ابتدای فایل
-# این تنظیمات پایه اضافه شده.
-from services.database_manager import DatabaseManager
 
 
 
