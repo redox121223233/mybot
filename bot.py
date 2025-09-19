@@ -673,8 +673,8 @@ def load_pending_payments():
     """بارگذاری پرداخت‌های در انتظار از فایل"""
     global pending_payments
     try:
-        if os.path.exists(db_manager.files['payments']  # replaced PAYMENTS_FILE):
-            with open(db_manager.files['payments']  # replaced PAYMENTS_FILE, 'r', encoding='utf-8') as f:
+        if os.path.exists(db_manager.files['payments']):  # replaced PAYMENTS_FILE
+            with open(db_manager.files['payments'], 'r', encoding='utf-8') as f:  # replaced PAYMENTS_FILE
                 pending_payments = json.load(f)
                 logger.info(f"Loaded pending payments: {len(pending_payments)} payments")
         else:
