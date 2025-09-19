@@ -259,49 +259,47 @@ def handle_callback_query(callback_query):
         message_id = callback_query["message"]["message_id"]
         data = callback_query["data"]
         
-        
-        logger.info(f"Callback data: {data}")
-# پردازش دکمه‌های منو
+        # پردازش دکمه‌های منو
         if data == "new_sticker":
             handle_sticker_maker_toggle(chat_id, message_id, ai_manager, api)
-            api.api.answer_callback_query(query_id)
+            api.answer_callback_query(query_id)
             return
             
         elif data == "show_subscription":
             menu_manager.show_subscription_menu(chat_id, message_id)
-            api.api.answer_callback_query(query_id)
+            api.answer_callback_query(query_id)
             return
             
         elif data == "show_free_trial":
             menu_manager.show_free_trial_menu(chat_id, message_id)
-            api.api.answer_callback_query(query_id)
+            api.answer_callback_query(query_id)
             return
             
         elif data == "show_templates":
             menu_manager.show_templates_menu(chat_id, message_id)
-            api.api.answer_callback_query(query_id)
+            api.answer_callback_query(query_id)
             return
             
         elif data == "back_to_main":
             send_main_menu(chat_id, message_id)
-            api.api.answer_callback_query(query_id)
+            api.answer_callback_query(query_id)
             return
             
         elif data.startswith("sub_"):
             plan_id = data[4:]
             handle_subscription_purchase(chat_id, plan_id, message_id)
-            api.api.answer_callback_query(query_id)
+            api.answer_callback_query(query_id)
             return
             
         elif data == "activate_trial":
             handle_trial_activation(chat_id, message_id)
-            api.api.answer_callback_query(query_id)
+            api.answer_callback_query(query_id)
             return
             
         elif data.startswith("template_"):
             template_id = data[9:]
             handle_template_selection(chat_id, template_id, message_id)
-            api.api.answer_callback_query(query_id)
+            api.answer_callback_query(query_id)
             return
             
         # پردازش دکمه‌های استیکر
@@ -316,16 +314,14 @@ def handle_callback_query(callback_query):
             return
             
         else:
-            api.api.answer_callback_query(query_id, "⚠️ این قابلیت در حال حاضر در دسترس نیست.")
+            api.answer_callback_query(query_id, "⚠️ این قابلیت در حال حاضر در دسترس نیست.")
             return
             
     except Exception as e:
         logger.error(f"Error handling callback query: {e}")
-        api.api.answer_callback_query(query_id, f"⚠️ خطایی رخ داد: {str(e)}")
+        api.answer_callback_query(query_id, f"⚠️ خطایی رخ داد: {str(e)}")
 
 # --- توابع منو ---
-
-
 def send_welcome_message(chat_id):
     """ارسال پیام خوش‌آمدگویی"""
     text = f"👋 سلام! به ربات استیکرساز خوش آمدید!\n\n"
@@ -750,8 +746,8 @@ load_locales()  # بارگذاری فایل‌های ترجمه
 
 # اضافه کردن فیلد ai_sticker_usage به کاربران موجود
 for chat_id in user_data:
-    if "ai_sticker_usage" not in user_data[str(chat_id)]:
-        user_data[str(chat_id)]["ai_sticker_usage"] = []
+    if "ai_sticker_usage" not in user_data[chat_id]:
+        user_data[chat_id]["ai_sticker_usage"] = []
 save_user_data()
 
 app = Flask(__name__)
@@ -812,8 +808,8 @@ def api_create_sticker():
                 }, 429
         
         # آماده‌سازی کاربر برای ساخت استیکر
-        if str(chat_id) not in user_data:
-            user_data[str(chat_id)] = {
+        if chat_id not in user_data:
+            user_data[chat_id] = {
                 "mode": "free",
                 "count": 0,
                 "step": "text",
@@ -825,13 +821,13 @@ def api_create_sticker():
             }
         
         # تنظیم pack_name اگر وجود نداشت
-        if not user_data[str(chat_id)].get("pack_name"):
+        if not user_data[chat_id].get("pack_name"):
             pack_name = sanitize_pack_name(f"ai_pack_{user_id}")
             unique_pack_name = f"{pack_name}_{chat_id}_by_{BOT_USERNAME}"
-            user_data[str(chat_id)]["pack_name"] = unique_pack_name
+            user_data[chat_id]["pack_name"] = unique_pack_name
         
-        user_data[str(chat_id)]["mode"] = "free"
-        user_data[str(chat_id)]["step"] = "text"
+        user_data[chat_id]["mode"] = "free"
+        user_data[chat_id]["step"] = "text"
         
         # ساخت استیکر
         logger.info(f"API: Creating sticker for chat_id={chat_id}, text='{text}'")
@@ -840,15 +836,15 @@ def api_create_sticker():
         success = send_as_sticker(chat_id, text, None)
         
         if success:
-            user_data[str(chat_id)]["count"] += 1
+            user_data[chat_id]["count"] += 1
             record_sticker_usage(chat_id)
             save_user_data()
             
             return {
                 "success": True,
                 "message": "استیکر با موفقیت ساخته شد",
-                "sticker_count": user_data[str(chat_id)]["count"],
-                "pack_name": user_data[str(chat_id)]["pack_name"]
+                "sticker_count": user_data[chat_id]["count"],
+                "pack_name": user_data[chat_id]["pack_name"]
             }
         else:
             return {"error": "خطا در ساخت استیکر"}, 500
@@ -861,14 +857,14 @@ def api_create_sticker():
 def api_sticker_status(chat_id):
     """بررسی وضعیت استیکر کاربر"""
     try:
-        if str(chat_id) not in user_data:
+        if chat_id not in user_data:
             return {
                 "has_pack": False,
                 "sticker_count": 0,
                 "remaining_limit": 5
             }
         
-        user_info = user_data[str(chat_id)]
+        user_info = user_data[chat_id]
         remaining, next_reset = check_sticker_limit(chat_id)
         
         return {
@@ -1069,8 +1065,8 @@ def process_message(msg):
         state = user_data.get(chat_id, {})
         
         # اگر کاربر جدید است، اطلاعات اولیه را تنظیم کن
-        if str(chat_id) not in user_data:
-            user_data[str(chat_id)] = {
+        if chat_id not in user_data:
+            user_data[chat_id] = {
                 "mode": None,
                 "count": 0,
                 "step": None,
@@ -1097,8 +1093,8 @@ def process_message(msg):
                 
                 # همیشه به منوی اصلی برگرد (حتی اگر در حال ساخت استیکر هستید)
                 if chat_id in user_data:
-                    old_data = user_data[str(chat_id)]
-                    user_data[str(chat_id)] = {
+                    old_data = user_data[chat_id]
+                    user_data[chat_id] = {
                         "mode": None, 
                         "count": old_data.get("count", 0), 
                         "step": None, 
@@ -1110,7 +1106,7 @@ def process_message(msg):
                         "ai_sticker_usage": old_data.get("ai_sticker_usage", [])  # حفظ استفاده از هوش مصنوعی
                     }
                 else:
-                    user_data[str(chat_id)] = {
+                    user_data[chat_id] = {
                         "mode": None, 
                         "count": 0, 
                         "step": None, 
@@ -1138,8 +1134,8 @@ def process_message(msg):
                 return "ok"
             
             # شروع فرآیند استیکرساز معمولی
-            if str(chat_id) not in user_data:
-                user_data[str(chat_id)] = {
+            if chat_id not in user_data:
+                user_data[chat_id] = {
                     "mode": "sticker",
                     "ai_mode": False,
                     "count": 0,
@@ -1151,9 +1147,9 @@ def process_message(msg):
                     "last_reset": time.time()
                 }
             else:
-                user_data[str(chat_id)]["mode"] = "sticker"
-                user_data[str(chat_id)]["ai_mode"] = False
-                user_data[str(chat_id)]["step"] = None
+                user_data[chat_id]["mode"] = "sticker"
+                user_data[chat_id]["ai_mode"] = False
+                user_data[chat_id]["step"] = None
             
             save_user_data()
             
@@ -1185,8 +1181,8 @@ def process_message(msg):
                     return "ok"
             
             # آماده‌سازی حالت استیکرساز هوشمند (بدون فعال‌سازی خودکار هوش مصنوعی)
-            if str(chat_id) not in user_data:
-                user_data[str(chat_id)] = {
+            if chat_id not in user_data:
+                user_data[chat_id] = {
                     "mode": "ai_sticker",
                     "ai_mode": False,  # هوش مصنوعی به صورت پیش‌فرض غیرفعال است
                     "count": 0,
@@ -1198,9 +1194,9 @@ def process_message(msg):
                     "last_reset": time.time()
                 }
             else:
-                user_data[str(chat_id)]["mode"] = "ai_sticker"
-                user_data[str(chat_id)]["ai_mode"] = False  # هوش مصنوعی به صورت پیش‌فرض غیرفعال است
-                user_data[str(chat_id)]["step"] = None
+                user_data[chat_id]["mode"] = "ai_sticker"
+                user_data[chat_id]["ai_mode"] = False  # هوش مصنوعی به صورت پیش‌فرض غیرفعال است
+                user_data[chat_id]["step"] = None
             
             save_user_data()
             
@@ -1245,7 +1241,7 @@ def process_message(msg):
         elif text == "🔄 ساخت استیکر جدید":
             if chat_id in user_data:
                 # آماده‌سازی برای ساخت استیکر جدید
-                user_data[str(chat_id)]["step"] = "text"
+                user_data[chat_id]["step"] = "text"
                 save_user_data()
                 
                 send_message(chat_id, "لطفاً متن مورد نظر خود را برای تبدیل به استیکر وارد کنید:")
@@ -1254,11 +1250,11 @@ def process_message(msg):
         elif text == "🔙 بازگشت":
             # بازگشت به منوی اصلی
             if chat_id in user_data:
-                user_data[str(chat_id)]["mode"] = None
-                user_data[str(chat_id)]["step"] = None
+                user_data[chat_id]["mode"] = None
+                user_data[chat_id]["step"] = None
                 # غیرفعال کردن حالت هوش مصنوعی
-                if "ai_mode" in user_data[str(chat_id)]:
-                    user_data[str(chat_id)]["ai_mode"] = False
+                if "ai_mode" in user_data[chat_id]:
+                    user_data[chat_id]["ai_mode"] = False
                 save_user_data()
                 show_main_menu(chat_id)
                 return "ok"
@@ -1282,7 +1278,7 @@ def process_message(msg):
             if not text.startswith('/') and chat_id in user_data:
                 try:
                     # فقط اگر کاربر در حالت استیکرساز هوشمند باشد و هوش مصنوعی را فعال کرده باشد
-                    if user_data[str(chat_id)].get("mode") == "ai_sticker" and user_data[str(chat_id)].get("ai_mode", False):
+                    if user_data[chat_id].get("mode") == "ai_sticker" and user_data[chat_id].get("ai_mode", False):
                         # بررسی محدودیت هوش مصنوعی
                         ai_remaining, next_reset = check_ai_sticker_limit(chat_id)
                         if ai_remaining <= 0 and not is_subscribed(chat_id):
@@ -1343,7 +1339,7 @@ def process_message(msg):
                         logger.error(f"Error sending receipt to admin: {e}")
                     
                     # پاسخ به کاربر
-                    user_data[str(chat_id)]["step"] = None
+                    user_data[chat_id]["step"] = None
                     send_message_with_back_button(chat_id, f"✅ رسید شما دریافت شد!\n\n⏳ لطفاً منتظر تایید پشتیبانی باشید.\n\n📞 در صورت عدم پاسخ، با {SUPPORT_ID} تماس بگیرید.")
                     return "ok"
         
@@ -1364,8 +1360,8 @@ def process_message(msg):
                     
                     if state.get("step") == "background":
                         # عکس اول برای بکگراند
-                        user_data[str(chat_id)]["background"] = file_id
-                        user_data[str(chat_id)]["step"] = "text"
+                        user_data[chat_id]["background"] = file_id
+                        user_data[chat_id]["step"] = "text"
                         
                         # اطلاع‌رسانی در مورد حجم عکس
                         size_info = ""
@@ -1378,7 +1374,7 @@ def process_message(msg):
                         
                     elif state.get("step") == "text":
                         # تغییر بکگراند در حین ساخت استیکر
-                        user_data[str(chat_id)]["background"] = file_id
+                        user_data[chat_id]["background"] = file_id
                         
                         # اطلاع‌رسانی در مورد حجم عکس
                         size_info = ""
@@ -1417,42 +1413,42 @@ def process_message(msg):
 
 def handle_premium_feature(chat_id, feature):
     """پردازش قابلیت‌های اشتراکی"""
-    if str(chat_id) not in user_data:
-        user_data[str(chat_id)] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+    if chat_id not in user_data:
+        user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
     
     if feature == "🎞 تبدیل استیکر ویدیویی به گیف":
-        user_data[str(chat_id)]["mode"] = "video_sticker_to_gif"
-        user_data[str(chat_id)]["step"] = "waiting_file"
+        user_data[chat_id]["mode"] = "video_sticker_to_gif"
+        user_data[chat_id]["step"] = "waiting_file"
         send_message_with_back_button(chat_id, "🎞 لطفاً استیکر ویدیویی خود را ارسال کنید:")
     
     elif feature == "🎥 تبدیل گیف به استیکر ویدیویی":
-        user_data[str(chat_id)]["mode"] = "gif_to_video_sticker"
-        user_data[str(chat_id)]["step"] = "waiting_file"
+        user_data[chat_id]["mode"] = "gif_to_video_sticker"
+        user_data[chat_id]["step"] = "waiting_file"
         send_message_with_back_button(chat_id, "🎥 لطفاً فایل GIF خود را ارسال کنید:")
     
     elif feature == "🖼 تبدیل عکس به استیکر":
-        user_data[str(chat_id)]["mode"] = "photo_to_sticker"
-        user_data[str(chat_id)]["step"] = "waiting_file"
+        user_data[chat_id]["mode"] = "photo_to_sticker"
+        user_data[chat_id]["step"] = "waiting_file"
         send_message_with_back_button(chat_id, "🖼 لطفاً عکس خود را ارسال کنید:")
     
     elif feature == "📂 تبدیل استیکر به عکس":
-        user_data[str(chat_id)]["mode"] = "sticker_to_photo"
-        user_data[str(chat_id)]["step"] = "waiting_file"
+        user_data[chat_id]["mode"] = "sticker_to_photo"
+        user_data[chat_id]["step"] = "waiting_file"
         send_message_with_back_button(chat_id, "📂 لطفاً استیکر خود را ارسال کنید:")
     
     elif feature == "🌃 تبدیل PNG به استیکر":
-        user_data[str(chat_id)]["mode"] = "png_to_sticker"
-        user_data[str(chat_id)]["step"] = "waiting_file"
+        user_data[chat_id]["mode"] = "png_to_sticker"
+        user_data[chat_id]["step"] = "waiting_file"
         send_message_with_back_button(chat_id, "🌃 لطفاً فایل PNG خود را ارسال کنید:")
     
     elif feature == "🗂 تبدیل فایل ویدیو":
-        user_data[str(chat_id)]["mode"] = "file_to_video"
-        user_data[str(chat_id)]["step"] = "waiting_file"
+        user_data[chat_id]["mode"] = "file_to_video"
+        user_data[chat_id]["step"] = "waiting_file"
         send_message_with_back_button(chat_id, "🗂 لطفاً فایل ویدیو خود را ارسال کنید:")
     
     elif feature == "🎥 تبدیل ویدیو مسیج":
-        user_data[str(chat_id)]["mode"] = "video_message_to_video"
-        user_data[str(chat_id)]["step"] = "waiting_file"
+        user_data[chat_id]["mode"] = "video_message_to_video"
+        user_data[chat_id]["step"] = "waiting_file"
         send_message_with_back_button(chat_id, "🎥 لطفاً ویدیو مسیج خود را ارسال کنید:")
     
     save_user_data()
@@ -1593,8 +1589,8 @@ def handle_premium_file(chat_id, file_type, file_data):
                 send_message(chat_id, "❌ خطا در تبدیل فایل! لطفاً مطمئن شوید که ویدیو مسیج معتبر است و FFmpeg نصب شده باشد.")
         
         # ریست کردن حالت
-        user_data[str(chat_id)]["mode"] = None
-        user_data[str(chat_id)]["step"] = None
+        user_data[chat_id]["mode"] = None
+        user_data[chat_id]["step"] = None
         save_user_data()
         
     except Exception as e:
@@ -2006,7 +2002,7 @@ def process_user_state(chat_id, text):
     # پردازش بازخورد منفی - درخواست دلیل
     if state.get("step") == "waiting_feedback_reason":
         save_negative_feedback(chat_id, text)
-        user_data[str(chat_id)]["step"] = "text"  # بازگشت به حالت عادی
+        user_data[chat_id]["step"] = "text"  # بازگشت به حالت عادی
         send_message_with_back_button(chat_id, "🙏 ممنون از بازخوردتون! سعی می‌کنیم بهتر شیم.\n\n✍️ متن استیکر بعدی را بفرست:")
         return True
     
@@ -2016,31 +2012,31 @@ def process_user_state(chat_id, text):
         if step == "ask_pack_choice":
             if text == "1":  # ساخت پک جدید
                 send_message(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
-                user_data[str(chat_id)]["step"] = "pack_name"
+                user_data[chat_id]["step"] = "pack_name"
             elif text == "2":  # اضافه کردن به پک قبلی
-                created_packs = user_data[str(chat_id)].get("created_packs", [])
+                created_packs = user_data[chat_id].get("created_packs", [])
                 if created_packs:
                     # نمایش لیست پک‌های موجود
                     pack_list = ""
                     for i, pack in enumerate(created_packs, 1):
                         pack_list += f"{i}. {pack['title']}\n"
                     send_message(chat_id, f"📂 پک‌های موجود شما:\n{pack_list}\nلطفاً شماره پک مورد نظر را انتخاب کنید:")
-                    user_data[str(chat_id)]["step"] = "select_pack"
+                    user_data[chat_id]["step"] = "select_pack"
                 else:
                     send_message(chat_id, "❌ هنوز پک استیکری نداری. اول باید پک جدید بسازی.")
-                    user_data[str(chat_id)]["step"] = "pack_name"
+                    user_data[chat_id]["step"] = "pack_name"
                     send_message(chat_id, "📝 لطفاً یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
             return True
 
         if step == "select_pack":
             try:
                 pack_index = int(text) - 1
-                created_packs = user_data[str(chat_id)].get("created_packs", [])
+                created_packs = user_data[chat_id].get("created_packs", [])
                 if 0 <= pack_index < len(created_packs):
                     selected_pack = created_packs[pack_index]
-                    user_data[str(chat_id)]["pack_name"] = selected_pack["name"]
+                    user_data[chat_id]["pack_name"] = selected_pack["name"]
                     send_message_with_back_button(chat_id, f"✅ پک '{selected_pack['title']}' انتخاب شد.\n📷 یک عکس برای بکگراند استیکرت بفرست:")
-                    user_data[str(chat_id)]["step"] = "background"
+                    user_data[chat_id]["step"] = "background"
                 else:
                     send_message(chat_id, "❌ شماره پک نامعتبر است. لطفاً دوباره انتخاب کنید:")
             except ValueError:
@@ -2083,16 +2079,16 @@ def process_user_state(chat_id, text):
                         unique_pack_name = f"pack_{int(time.time())}_{chat_id}_by_{BOT_USERNAME}"
                         break
             
-            user_data[str(chat_id)]["pack_name"] = unique_pack_name
+            user_data[chat_id]["pack_name"] = unique_pack_name
             logger.info(f"Pack name set for user {chat_id}: {unique_pack_name}")
             
             # اگر کاربر از قالب استفاده کرده، مستقیماً به ساخت استیکر برو
-            if user_data[str(chat_id)].get("background_style"):
-                user_data[str(chat_id)]["step"] = "text"
+            if user_data[chat_id].get("background_style"):
+                user_data[chat_id]["step"] = "text"
                 send_message_with_back_button(chat_id, "✍️ حالا متن استیکرت رو بفرست:")
             else:
                 send_message_with_back_button(chat_id, "📷 یک عکس برای بکگراند استیکرت بفرست:")
-                user_data[str(chat_id)]["step"] = "background"
+                user_data[chat_id]["step"] = "background"
             return True
 
         if step == "background":
@@ -2109,17 +2105,17 @@ def process_user_state(chat_id, text):
             
             text_sticker = text
             send_message(chat_id, "⚙️ در حال ساخت استیکر...")
-            background_file_id = user_data[str(chat_id)].get("background")
+            background_file_id = user_data[chat_id].get("background")
             
             # Debug: بررسی pack_name
-            pack_name = user_data[str(chat_id)].get("pack_name")
+            pack_name = user_data[chat_id].get("pack_name")
             logger.info(f"Creating sticker for pack: {pack_name}")
             
             # ارسال استیکر و بررسی موفقیت
             success = send_as_sticker(chat_id, text_sticker, background_file_id)
             
             if success:
-                user_data[str(chat_id)]["count"] += 1
+                user_data[chat_id]["count"] += 1
                 record_sticker_usage(chat_id)  # ثبت استفاده
                 
                 # نمایش وضعیت محدودیت
@@ -2129,15 +2125,15 @@ def process_user_state(chat_id, text):
                 
                 # نمایش تنظیمات فعلی
                 settings_info = ""
-                if user_data[str(chat_id)].get("text_color"):
-                    settings_info += f"\n🎨 رنگ: {user_data[str(chat_id)]['text_color']}"
-                if user_data[str(chat_id)].get("font_style"):
-                    settings_info += f"\n📝 فونت: {user_data[str(chat_id)]['font_style']}"
-                if user_data[str(chat_id)].get("text_size"):
-                    settings_info += f"\n📏 اندازه: {user_data[str(chat_id)]['text_size']}"
+                if user_data[chat_id].get("text_color"):
+                    settings_info += f"\n🎨 رنگ: {user_data[chat_id]['text_color']}"
+                if user_data[chat_id].get("font_style"):
+                    settings_info += f"\n📝 فونت: {user_data[chat_id]['font_style']}"
+                if user_data[chat_id].get("text_size"):
+                    settings_info += f"\n📏 اندازه: {user_data[chat_id]['text_size']}"
                 
                 # ارسال پیام با دکمه‌های بازخورد
-                send_feedback_message(chat_id, f"✅ استیکر شماره {user_data[str(chat_id)]['count']} ساخته شد.{limit_info}{settings_info}")
+                send_feedback_message(chat_id, f"✅ استیکر شماره {user_data[chat_id]['count']} ساخته شد.{limit_info}{settings_info}")
                 
                 # مهم: pack_name و background را حفظ کن تا استیکر بعدی در همان پک قرار بگیرد
                 # step همچنان "text" باقی می‌ماند تا کاربر بتواند استیکر بعدی بسازد
@@ -2150,28 +2146,28 @@ def process_user_state(chat_id, text):
         if step in ["color_selection", "font_selection", "size_selection", "position_selection", "background_color_selection", "effect_selection"]:
             # تنظیمات را بر اساس step ذخیره کن
             if step == "color_selection":
-                user_data[str(chat_id)]["text_color"] = text
+                user_data[chat_id]["text_color"] = text
             elif step == "font_selection":
-                user_data[str(chat_id)]["font_style"] = text
+                user_data[chat_id]["font_style"] = text
             elif step == "size_selection":
-                user_data[str(chat_id)]["text_size"] = text
+                user_data[chat_id]["text_size"] = text
             elif step == "position_selection":
-                user_data[str(chat_id)]["text_position"] = text
+                user_data[chat_id]["text_position"] = text
             elif step == "background_color_selection":
-                user_data[str(chat_id)]["background_style"] = text
+                user_data[chat_id]["background_style"] = text
             elif step == "effect_selection":
-                user_data[str(chat_id)]["text_effect"] = text
+                user_data[chat_id]["text_effect"] = text
             
             # به حالت free برو
-            user_data[str(chat_id)]["mode"] = "free"
+            user_data[chat_id]["mode"] = "free"
             
             # اگر pack_name نداریم، ابتدا آن را بپرس
-            if not user_data[str(chat_id)].get("pack_name"):
-                user_data[str(chat_id)]["step"] = "pack_name"
+            if not user_data[chat_id].get("pack_name"):
+                user_data[chat_id]["step"] = "pack_name"
                 send_message(chat_id, f"✅ تنظیمات ذخیره شد!\n\n📝 حالا یک نام برای پک استیکر خود انتخاب کن:\n\n💡 می‌تونید فارسی، انگلیسی یا حتی ایموجی بنویسید، ربات خودش تبدیلش می‌کنه!")
             else:
                 # اگر pack_name داریم، مستقیماً به ساخت استیکر برو
-                user_data[str(chat_id)]["step"] = "text"
+                user_data[chat_id]["step"] = "text"
                 send_message_with_back_button(chat_id, "✍️ حالا متن استیکرت رو بفرست:")
             return True
     
@@ -2244,9 +2240,9 @@ def show_payment_info(chat_id, plan):
     plan_info = SUBSCRIPTION_PLANS[plan]
     
     # ذخیره طرح انتخابی کاربر
-    if str(chat_id) not in user_data:
-        user_data[str(chat_id)] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
-    user_data[str(chat_id)]["selected_plan"] = plan
+    if chat_id not in user_data:
+        user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+    user_data[chat_id]["selected_plan"] = plan
     save_user_data()
     
     message = f"""💳 اطلاعات پرداخت
@@ -2618,11 +2614,11 @@ def check_sticker_limit(chat_id):
     if is_subscribed(chat_id):
         return 999, time.time() + 24 * 3600  # نامحدود
     
-    if str(chat_id) not in user_data:
+    if chat_id not in user_data:
         return 5, time.time() + 24 * 3600  # 5 استیکر، 24 ساعت بعد
     
     current_time = time.time()
-    user_info = user_data[str(chat_id)]
+    user_info = user_data[chat_id]
     
     # دریافت زمان آخرین reset (اگر وجود نداشت، از الان شروع کن)
     last_reset = user_info.get("last_reset", current_time)
@@ -2646,8 +2642,8 @@ def check_sticker_limit(chat_id):
 
 def record_sticker_usage(chat_id):
     """ثبت استفاده از استیکر"""
-    if str(chat_id) not in user_data:
-        user_data[str(chat_id)] = {
+    if chat_id not in user_data:
+        user_data[chat_id] = {
             "mode": None, 
             "count": 0, 
             "step": None, 
@@ -2659,7 +2655,7 @@ def record_sticker_usage(chat_id):
         }
     
     current_time = time.time()
-    user_info = user_data[str(chat_id)]
+    user_info = user_data[chat_id]
     
     # دریافت زمان آخرین reset (اگر وجود نداشت، از الان شروع کن)
     last_reset = user_info.get("last_reset", current_time)
@@ -2684,12 +2680,12 @@ def send_as_sticker(chat_id, text, background_file_id=None):
     user_settings = {}
     if chat_id in user_data:
         user_settings = {
-            "text_color": user_data[str(chat_id)].get("text_color"),
-            "background_style": user_data[str(chat_id)].get("background_style"),
-            "font_style": user_data[str(chat_id)].get("font_style"),
-            "text_size": user_data[str(chat_id)].get("text_size"),
-            "text_position": user_data[str(chat_id)].get("text_position"),
-            "text_effect": user_data[str(chat_id)].get("text_effect")
+            "text_color": user_data[chat_id].get("text_color"),
+            "background_style": user_data[chat_id].get("background_style"),
+            "font_style": user_data[chat_id].get("font_style"),
+            "text_size": user_data[chat_id].get("text_size"),
+            "text_position": user_data[chat_id].get("text_position"),
+            "text_effect": user_data[chat_id].get("text_effect")
         }
     
     ok = make_text_sticker(text, sticker_path, background_file_id, user_settings)
@@ -2697,7 +2693,7 @@ def send_as_sticker(chat_id, text, background_file_id=None):
         send_message(chat_id, "❌ خطا در ساخت استیکر")
         return False
 
-    pack_name = user_data[str(chat_id)].get("pack_name")
+    pack_name = user_data[chat_id].get("pack_name")
     if not pack_name:
         send_message(chat_id, "❌ خطا: نام پک تعریف نشده")
         return False
@@ -2726,23 +2722,23 @@ def send_as_sticker(chat_id, text, background_file_id=None):
             if r.json().get("ok"):
                 sticker_created = True
                 # ذخیره پک جدید در لیست
-                if "created_packs" not in user_data[str(chat_id)]:
-                    user_data[str(chat_id)]["created_packs"] = []
+                if "created_packs" not in user_data[chat_id]:
+                    user_data[chat_id]["created_packs"] = []
                 
                 # بررسی اینکه پک قبلاً در لیست نیست
                 pack_exists = False
-                for existing_pack in user_data[str(chat_id)]["created_packs"]:
+                for existing_pack in user_data[chat_id]["created_packs"]:
                     if existing_pack["name"] == pack_name:
                         pack_exists = True
                         break
                 
                 if not pack_exists:
-                    user_data[str(chat_id)]["created_packs"].append({
+                    user_data[chat_id]["created_packs"].append({
                         "name": pack_name,
                         "title": pack_title
                     })
                     logger.info(f"Pack added to created_packs: {pack_name} - {pack_title}")
-                    logger.info(f"User {chat_id} created_packs: {user_data[str(chat_id)]['created_packs']}")
+                    logger.info(f"User {chat_id} created_packs: {user_data[chat_id]['created_packs']}")
                     save_user_data()  # ذخیره فوری
             else:
                 send_message(chat_id, f"❌ خطا در ساخت پک: {r.json().get('description', 'خطای نامشخص')}")
@@ -3823,11 +3819,11 @@ def show_template_menu(chat_id):
 
 def show_history(chat_id):
     """نمایش تاریخچه استیکرها"""
-    if chat_id not in user_data or not user_data[str(chat_id)].get("created_packs"):
+    if chat_id not in user_data or not user_data[chat_id].get("created_packs"):
         send_message_with_back_button(chat_id, "📝 شما هنوز استیکری نساخته‌اید.")
         return
     
-    packs = user_data[str(chat_id)]["created_packs"]
+    packs = user_data[chat_id]["created_packs"]
     message = "📝 تاریخچه استیکرهای شما:\n\n"
     
     for i, pack in enumerate(packs, 1):
@@ -3969,8 +3965,8 @@ def apply_template(chat_id, template_name):
         template = templates[template_name]
         
         # تنظیم تنظیمات کاربر
-        if str(chat_id) not in user_data:
-            user_data[str(chat_id)] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
+        if chat_id not in user_data:
+            user_data[chat_id] = {"mode": None, "count": 0, "step": None, "pack_name": None, "background": None, "created_packs": [], "sticker_usage": [], "last_reset": time.time()}
         
         # تبدیل hex کد به نام رنگ فارسی
         color_hex = template["color"]
@@ -3992,22 +3988,22 @@ def apply_template(chat_id, template_name):
         elif color_hex == "#00FF00":
             color_name = "سبز"
         
-        user_data[str(chat_id)]["text_color"] = color_name
-        user_data[str(chat_id)]["background_style"] = template["bg"]
-        user_data[str(chat_id)]["font_style"] = template["font"]
-        user_data[str(chat_id)]["text_size"] = template["size"]
-        user_data[str(chat_id)]["text_position"] = "📍 وسط"
-        user_data[str(chat_id)]["text_effect"] = "✨ سایه"
+        user_data[chat_id]["text_color"] = color_name
+        user_data[chat_id]["background_style"] = template["bg"]
+        user_data[chat_id]["font_style"] = template["font"]
+        user_data[chat_id]["text_size"] = template["size"]
+        user_data[chat_id]["text_position"] = "📍 وسط"
+        user_data[chat_id]["text_effect"] = "✨ سایه"
         
         # رفتن به حالت ساخت استیکر
-        user_data[str(chat_id)]["mode"] = "free"
+        user_data[chat_id]["mode"] = "free"
         
         # اگر pack_name نداریم، ابتدا آن را بپرس
-        if not user_data[str(chat_id)].get("pack_name"):
-            user_data[str(chat_id)]["step"] = "pack_name"
+        if not user_data[chat_id].get("pack_name"):
+            user_data[chat_id]["step"] = "pack_name"
             send_message(chat_id, f"✅ قالب '{template_name}' اعمال شد!\n\n🎨 رنگ: {color_name}\n🖼️ پس‌زمینه: {template['bg']}\n📝 فونت: {template['font']}\n📏 اندازه: {template['size']}\n\n📝 حالا یک نام برای پک استیکر خود انتخاب کن:")
         else:
-            user_data[str(chat_id)]["step"] = "text"
+            user_data[chat_id]["step"] = "text"
             send_message_with_back_button(chat_id, f"✅ قالب '{template_name}' اعمال شد!\n\n🎨 رنگ: {color_name}\n🖼️ پس‌زمینه: {template['bg']}\n📝 فونت: {template['font']}\n📏 اندازه: {template['size']}\n\nحالا متن خود را بفرستید:")
     else:
         send_message_with_back_button(chat_id, "❌ قالب پیدا نشد!")
@@ -4074,7 +4070,7 @@ def handle_feedback(chat_id, feedback):
     
     elif feedback == "👎 خوب نبود":
         # بازخورد منفی - درخواست دلیل
-        user_data[str(chat_id)]["step"] = "waiting_feedback_reason"
+        user_data[chat_id]["step"] = "waiting_feedback_reason"
         send_message_with_back_button(chat_id, "😔 متأسفیم که راضی نبودید.\n\n💬 لطفاً بگید چه مشکلی داشت تا بتونیم بهتر شیم:")
 
 def save_positive_feedback(chat_id):
@@ -4268,15 +4264,15 @@ def check_ai_sticker_limit(chat_id):
     if is_subscribed(chat_id):
         return 999  # نامحدود
     
-    if str(chat_id) not in user_data:
-        user_data[str(chat_id)] = {
+    if chat_id not in user_data:
+        user_data[chat_id] = {
             "mode": None, "count": 0, "step": None, "pack_name": None,
             "background": None, "created_packs": [], "sticker_usage": [],
             "ai_sticker_usage": [], "last_reset": time.time()
         }
     
     current_time = time.time()
-    user_info = user_data[str(chat_id)]
+    user_info = user_data[chat_id]
     
     # اطمینان از وجود ai_sticker_usage
     if "ai_sticker_usage" not in user_info:
@@ -4301,15 +4297,15 @@ def check_ai_sticker_limit(chat_id):
 
 def record_ai_sticker_usage(chat_id):
     """ثبت استفاده از استیکر هوش مصنوعی"""
-    if str(chat_id) not in user_data:
-        user_data[str(chat_id)] = {
+    if chat_id not in user_data:
+        user_data[chat_id] = {
             "mode": None, "count": 0, "step": None, "pack_name": None,
             "background": None, "created_packs": [], "sticker_usage": [],
             "ai_sticker_usage": [], "last_reset": time.time()
         }
     
     current_time = time.time()
-    user_info = user_data[str(chat_id)]
+    user_info = user_data[chat_id]
     
     # اطمینان از وجود ai_sticker_usage
     if "ai_sticker_usage" not in user_info:
@@ -4333,18 +4329,18 @@ def handle_ai_message(chat_id, message_text):
             sticker_text = ai_response.get("sticker_text", message_text)
             
             # آماده‌سازی کاربر برای ساخت استیکر هوش مصنوعی
-            if str(chat_id) not in user_data:
-                user_data[str(chat_id)] = {
+            if chat_id not in user_data:
+                user_data[chat_id] = {
                     "mode": None, "count": 0, "step": None, "pack_name": None,
                     "background": None, "created_packs": [], "sticker_usage": [],
                     "ai_sticker_usage": [], "last_reset": time.time()
                 }
             
             # تنظیم pack_name برای هوش مصنوعی
-            if not user_data[str(chat_id)].get("pack_name"):
+            if not user_data[chat_id].get("pack_name"):
                 pack_name = sanitize_pack_name(f"ai_pack_{chat_id}")
                 unique_pack_name = f"{pack_name}_by_{BOT_USERNAME}"
-                user_data[str(chat_id)]["pack_name"] = unique_pack_name
+                user_data[chat_id]["pack_name"] = unique_pack_name
             
             # ساخت استیکر
             success = send_as_sticker(chat_id, sticker_text, None)
@@ -4549,12 +4545,12 @@ def should_ai_respond_local(chat_id=None, message_text=None):
     
     # بررسی اینکه آیا کاربر حالت هوش مصنوعی را فعال کرده است
     if chat_id and chat_id in user_data:
-        if not user_data[str(chat_id)].get("ai_mode", False):
+        if not user_data[chat_id].get("ai_mode", False):
             logger.info(f"هوش مصنوعی برای کاربر {chat_id} غیرفعال است - پاسخ داده نمی‌شود")
             return False
         
         # فقط در حالت استیکرساز هوشمند به پیام‌ها پاسخ بده
-        if user_data[str(chat_id)].get("mode") != "ai_sticker":
+        if user_data[chat_id].get("mode") != "ai_sticker":
             logger.info(f"کاربر {chat_id} در حالت استیکرساز هوشمند نیست - پاسخ داده نمی‌شود")
             return False
     else:
