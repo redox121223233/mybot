@@ -35,3 +35,15 @@ class TelegramAPI:
         response = requests.post(url, json=payload)
         logger.info(f"answer_callback_query response: {response.text}")
         return response.json()
+
+
+def register_webhook(token: str, webhook_url: str):
+    """
+    ثبت وبهوک برای ربات
+    """
+    url = f"https://api.telegram.org/bot{token}/setWebhook"
+    payload = {"url": webhook_url}
+
+    response = requests.post(url, json=payload)
+    logger.info(f"register_webhook response: {response.text}")
+    return response.json()
