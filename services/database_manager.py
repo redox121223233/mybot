@@ -1,31 +1,30 @@
-# /app/services/database_manager.py
-
 import os
 import json
+import logging
 
 class DatabaseManager:
-    def __init__(self, base_dir: str):
+    def __init__(self, base_dir):
         self.base_dir = base_dir
-        if not os.path.exists(base_dir):
-            os.makedirs(base_dir, exist_ok=True)
 
-    def _get_path(self, filename: str) -> str:
-        """برگرداندن مسیر کامل فایل"""
+    def _get_path(self, filename):
         return os.path.join(self.base_dir, filename)
 
-    def load(self, filename: str):
-        """بارگذاری دیتا از فایل JSON"""
+    def load(self, filename):
         path = self._get_path(filename)
         if not os.path.exists(path):
+            logging.info(f"File not found, creating empty: {filename}")
+            self.save(filename, {})
             return {}
-        try:
-            with open(path, "r", encoding="utf-8") as f:
+        with open(path, "r", encoding="utf-8") as f:
+            try:
                 return json.load(f)
-        except Exception:
-            return {}
+            except json.JSONDecodeError:
+                logging.warning(f"Corrupted JSON in {filename}, resetting file.")
+                self.save(filename, {})
+                return {}
 
-    def save(self, filename: str, data: dict):
-        """ذخیره دیتا در فایل JSON"""
+    def save(self, filename, data):
         path = self._get_path(filename)
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+            json.dump(data, f, indent=4, ensure_ascii=False)
+        logging.info(f"Data saved to {filename}")
