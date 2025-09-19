@@ -6,7 +6,10 @@ from services import legacy as legacy_services
 from handlers import messages, callbacks
 
 app = Flask(__name__)
-TOKEN = legacy_services.api.token
+from config import BOT_TOKEN
+
+TOKEN = BOT_TOKEN
+
 
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
