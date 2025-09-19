@@ -1,36 +1,40 @@
-from flask import Flask, request, jsonify
+# bot.py
+import os
+from flask import Flask, request
 from utils.logger import logger
-from handlers import messages, callbacks
 from utils.telegram_api import register_webhook
+from handlers import messages, callbacks
+
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+APP_URL = os.environ.get("APP_URL")
+
+if not BOT_TOKEN:
+    raise RuntimeError("❌ BOT_TOKEN is not set in environment variables")
 
 app = Flask(__name__)
 
-@app.route("/health", methods=["GET"])
-def health():
-    return jsonify({"status":"ok"})
+@app.route(f"/{BOT_TOKEN}", methods=["POST"])
+def webhook():
+    update = request.get_json(force=True, silent=True)
+    if not update:
+        return "no update"
 
-@app.route("/webhook/<token>", methods=["POST"])
-def webhook(token):
-    update = request.get_json(force=True)
-    logger.info(f"Received update for token={token}: {str(update)[:800]}")
-    try:
-        if "callback_query" in update:
-            callbacks.handle_callback(update["callback_query"])
-        if "message" in update:
-            messages.process_message = getattr(messages, 'process_message', None)
-            # messages.handle_message is preferred; if not present, call messages.process_message
-            if hasattr(messages, 'handle_message'):
-                messages.handle_message(update["message"])
-            elif callable(messages.process_message):
-                messages.process_message(update["message"])
-    except Exception as e:
-        logger.error("Error in webhook dispatch: %s", e)
-    return "OK", 200
+    logger.info(f"Received update: {update}")
 
-if __name__ == '__main__':
-    # attempt to register webhook if function exists
-    try:
-        register_webhook()
-    except Exception:
-        pass
-    app.run(host='0.0.0.0', port=8080)
+    if "message" in update:
+        messages.process_message(update["message"])
+    elif "callback_query" in update:
+        callbacks.handle_callback_query(update["callback_query"])
+
+    return "ok"
+
+
+if __name__ == "__main__":
+    # ثبت وبهوک در استارتاپ
+    if APP_URL:
+        logger.info(f"Setting webhook for {APP_URL}/{BOT_TOKEN}")
+        register_webhook(APP_URL, secret_token="stickerbot")
+    else:
+        logger.warning("⚠️ APP_URL not set, webhook not registered")
+
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 8080)))
