@@ -575,6 +575,9 @@ if AI_INTEGRATION_AVAILABLE:
 # Original lines 572-657 removed to prevent duplicate definitions (preserved elsewhere).
 # If you need the removed code back, check the original bot.py or contact the maintainer.
 
+# تعریف متغیر LOCALES به صورت گلوبال
+LOCALES = {}
+
 def load_locales():
     """Optionally override LOCALES with files in locales/*.json"""
     try:
@@ -629,7 +632,7 @@ def load_user_data():
     global user_data
     try:
         if os.path.exists(db_manager.files['users']):
-            with open(db_manager.files['users'], 'w', encoding='utf-8') as f:  # replaced DATA_FILE
+            with open(db_manager.files['users'], 'r', encoding='utf-8') as f:  # replaced DATA_FILE
 
                 user_data = json.load(f)
                 logger.info(f"Loaded user data: {len(user_data)} users")
@@ -4757,6 +4760,9 @@ def handle_ai_web_panel(chat_id):
 
 if __name__ == "__main__":
     load_locales()
+    # تعریف API برای تنظیم وب‌هوک
+    API = f"https://api.telegram.org/bot{BOT_TOKEN}/"
+    
     if APP_URL:
         webhook_url = f"{APP_URL}/webhook/{WEBHOOK_SECRET}"
         try:
