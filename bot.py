@@ -686,7 +686,7 @@ def load_pending_payments():
 def save_pending_payments():
     """ذخیره پرداخت‌های در انتظار در فایل"""
     try:
-        with open(db_manager.files['payments']  # replaced PAYMENTS_FILE, 'w', encoding='utf-8') as f:
+        with open(db_manager.files['payments'], 'w', encoding='utf-8') as f:  # replaced PAYMENTS_FILE
             json.dump(pending_payments, f, ensure_ascii=False, indent=2)
         logger.info(f"Saved pending payments: {len(pending_payments)} payments")
     except Exception as e:
