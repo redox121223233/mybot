@@ -1,30 +1,31 @@
-import os
-import json
-import logging
+
+import os, json
+from utils.logger import logger
 
 class DatabaseManager:
     def __init__(self, base_dir):
         self.base_dir = base_dir
+        os.makedirs(self.base_dir, exist_ok=True)
 
-    def _get_path(self, filename):
+    def _path(self, filename):
         return os.path.join(self.base_dir, filename)
 
     def load(self, filename):
-        path = self._get_path(filename)
+        path = self._path(filename)
         if not os.path.exists(path):
-            logging.info(f"File not found, creating empty: {filename}")
+            logger.info("File not found, creating empty: %s", filename)
             self.save(filename, {})
             return {}
-        with open(path, "r", encoding="utf-8") as f:
-            try:
+        try:
+            with open(path, "r", encoding="utf-8") as f:
                 return json.load(f)
-            except json.JSONDecodeError:
-                logging.warning(f"Corrupted JSON in {filename}, resetting file.")
-                self.save(filename, {})
-                return {}
+        except Exception as e:
+            logger.exception("load error %s: %s", filename, e)
+            self.save(filename, {})
+            return {}
 
     def save(self, filename, data):
-        path = self._get_path(filename)
+        path = self._path(filename)
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, indent=4, ensure_ascii=False)
-        logging.info(f"Data saved to {filename}")
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        logger.info("Saved %s", filename)
