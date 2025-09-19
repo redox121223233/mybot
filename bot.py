@@ -709,7 +709,7 @@ def load_feedback_data():
 def save_feedback_data():
     """ذخیره بازخوردهای کاربران در فایل"""
     try:
-        with open(db_manager.files['feedback']  # replaced FEEDBACK_FILE, 'w', encoding='utf-8') as f:
+        with open(db_manager.files['feedback'], 'w', encoding='utf-8') as f:  # replaced FEEDBACK_FILE
             json.dump(feedback_data, f, ensure_ascii=False, indent=2)
         logger.info(f"Saved feedback data: {len(feedback_data)} feedbacks")
     except Exception as e:
