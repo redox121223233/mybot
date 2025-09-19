@@ -205,6 +205,15 @@ def process_message(message):
                 menu_manager.show_templates_menu(chat_id)
                 return
                 
+            elif text == "/sticker" or text == "🎨 ساخت استیکر":
+                handle_sticker_maker_toggle(chat_id, None, ai_manager, api)
+                return
+                
+            elif text == "/ai_sticker" or text == "🤖 استیکرساز هوشمند" and AI_INTEGRATION_AVAILABLE:
+                api.send_message(chat_id, "🤖 استیکرساز هوشمند فعال شد. لطفاً متن یا تصویر خود را ارسال کنید.")
+                toggle_ai(chat_id, True, ai_manager)
+                return
+                
             # پردازش متن برای ساخت استیکر
             elif AI_INTEGRATION_AVAILABLE and should_ai_respond(message, ai_manager):
                 handle_sticker_maker_input(chat_id, text, "text", ai_manager=ai_manager, send_message=api.send_message)
