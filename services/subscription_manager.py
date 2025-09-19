@@ -1,47 +1,31 @@
-# /app/services/subscription_manager.py
+# /app/services/database_manager.py
 
 import os
 import json
 
-class SubscriptionManager:
-    def __init__(self, db_manager, filename: str = "subscriptions.json"):
-        """
-        مدیریت اشتراک‌ها
-        :param db_manager: شی DatabaseManager
-        :param filename: فایل ذخیره‌سازی اشتراک‌ها
-        """
-        self.db_manager = db_manager
-        self.filename = filename
-        self.subscriptions = self._load()
+class DatabaseManager:
+    def __init__(self, base_dir: str):
+        self.base_dir = base_dir
+        if not os.path.exists(base_dir):
+            os.makedirs(base_dir, exist_ok=True)
 
-    def _load(self):
-        """بارگذاری اشتراک‌ها از فایل"""
-        data = self.db_manager.load(self.filename)
-        return data if data else {}
+    def _get_path(self, filename: str):
+        """آدرس کامل فایل رو برمی‌گردونه"""
+        return os.path.join(self.base_dir, filename)
 
-    def _save(self):
-        """ذخیره اشتراک‌ها در فایل"""
-        self.db_manager.save(self.filename, self.subscriptions)
+    def load(self, filename: str):
+        """بارگذاری دیتا از فایل JSON"""
+        path = self._get_path(filename)
+        if not os.path.exists(path):
+            return {}
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            return {}
 
-    def add_subscription(self, user_id: int, plan: str, expiry: str):
-        """افزودن یا بروزرسانی اشتراک کاربر"""
-        self.subscriptions[str(user_id)] = {"plan": plan, "expiry": expiry}
-        self._save()
-
-    def get_subscription(self, user_id: int):
-        """دریافت وضعیت اشتراک کاربر"""
-        return self.subscriptions.get(str(user_id))
-
-    def has_active_subscription(self, user_id: int):
-        """بررسی فعال بودن اشتراک"""
-        sub = self.get_subscription(user_id)
-        if not sub:
-            return False
-        # اینجا میشه تاریخ انقضا رو هم چک کرد (فعلا ساده نگه داشتیم)
-        return True
-
-    def remove_subscription(self, user_id: int):
-        """حذف اشتراک کاربر"""
-        if str(user_id) in self.subscriptions:
-            del self.subscriptions[str(user_id)]
-            self._save()
+    def save(self, filename: str, data: dict):
+        """ذخیره دیتا در فایل JSON"""
+        path = self._get_path(filename)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
