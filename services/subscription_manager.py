@@ -1,31 +1,40 @@
-# /app/services/database_manager.py
+# /app/services/subscription_manager.py
 
 import os
 import json
 
-class DatabaseManager:
-    def __init__(self, base_dir: str):
-        self.base_dir = base_dir
-        if not os.path.exists(base_dir):
-            os.makedirs(base_dir, exist_ok=True)
+class SubscriptionManager:
+    def __init__(self, filename: str, db_manager):
+        """
+        مدیریت اشتراک‌ها
+        :param filename: نام فایل ذخیره‌سازی
+        :param db_manager: شی DatabaseManager
+        """
+        self.filename = filename
+        self.db_manager = db_manager
+        self.subscriptions = self._load()
 
-    def _get_path(self, filename: str):
-        """آدرس کامل فایل رو برمی‌گردونه"""
-        return os.path.join(self.base_dir, filename)
+    def _load(self):
+        data = self.db_manager.load(self.filename)
+        return data if data else {}
 
-    def load(self, filename: str):
-        """بارگذاری دیتا از فایل JSON"""
-        path = self._get_path(filename)
-        if not os.path.exists(path):
-            return {}
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception:
-            return {}
+    def _save(self):
+        self.db_manager.save(self.filename, self.subscriptions)
 
-    def save(self, filename: str, data: dict):
-        """ذخیره دیتا در فایل JSON"""
-        path = self._get_path(filename)
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
+    def add_subscription(self, user_id: int, plan: str, expiry: str):
+        self.subscriptions[str(user_id)] = {"plan": plan, "expiry": expiry}
+        self._save()
+
+    def get_subscription(self, user_id: int):
+        return self.subscriptions.get(str(user_id))
+
+    def has_active_subscription(self, user_id: int):
+        sub = self.get_subscription(user_id)
+        if not sub:
+            return False
+        return True  # TODO: بررسی تاریخ انقضا
+
+    def remove_subscription(self, user_id: int):
+        if str(user_id) in self.subscriptions:
+            del self.subscriptions[str(user_id)]
+            self._save()
