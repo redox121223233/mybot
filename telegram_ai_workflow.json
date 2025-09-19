@@ -1,0 +1,91 @@
+{
+  "name": "Telegram AI Chat",
+  "nodes": [
+    {
+      "parameters": {
+        "path": "telegram-ai",
+        "method": "POST",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [
+        250,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "openAiApi",
+        "resource": "chat",
+        "operation": "createChatCompletion",
+        "model": "gpt-4o-mini",
+        "messages": [
+          {
+            "role": "user",
+            "content": "={{$json[\"text\"]}}"
+          }
+        ]
+      },
+      "id": "2",
+      "name": "OpenAI",
+      "type": "n8n-nodes-base.openAi",
+      "typeVersion": 1,
+      "position": [
+        550,
+        300
+      ],
+      "credentials": {
+        "openAiApi": {
+          "id": "openai_credential_id",
+          "name": "OpenAI API Key"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "authentication": "none",
+        "url": "https://api.telegram.org/bot{{YOUR_BOT_TOKEN}}/sendMessage",
+        "method": "POST",
+        "options": {},
+        "bodyParametersJson": "={\n  \"chat_id\": $json[\"chat_id\"],\n  \"text\": $json[\"choices\"][0][\"message\"][\"content\"]\n}"
+      },
+      "id": "3",
+      "name": "Send to Telegram",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [
+        850,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "OpenAI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "OpenAI": {
+      "main": [
+        [
+          {
+            "node": "Send to Telegram",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "feedback_123456_1694448000": {
+    "user_id": 123456,
+    "type": "positive",
+    "timestamp": 1694448000,
+    "rating": 5
+  },
+  "feedback_789012_1694451600": {
+    "user_id": 789012,
+    "type": "negative",
+    "timestamp": 1694451600,
+    "rating": 2,
+    "reason": "کیفیت استیکر خوب نبود"
+  },
+  "feedback_345678_1694455200": {
+    "user_id": 345678,
+    "type": "positive",
+    "timestamp": 1694455200,
+    "rating": 5
+  }
+}
