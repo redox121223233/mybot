@@ -1,15 +1,7 @@
+import logging
 
-import re
-import time
-import json
-import requests
-from flask import Flask, request
-from waitress import serve
-
-# تنظیم مسیر پایه پروژه
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-
-# تنظیم لاگر
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s %(levelname)s:%(message)s"
+)
 logger = logging.getLogger("sticker_bot")
-
