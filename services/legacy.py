@@ -1,33 +1,27 @@
-class SubscriptionManager:
-    def __init__(self, db_manager, filename="subscriptions.json"):
-        self.db_manager = db_manager
-        self.filename = filename
-        self.subscriptions = self._load()
+class DatabaseManager:
+    def __init__(self, base_dir):
+        self.base_dir = base_dir
+        self.data_dir = os.path.join(base_dir, "data")
+        if not os.path.exists(self.data_dir):
+            os.makedirs(self.data_dir)
 
-    def _load(self):
-        data = self.db_manager.load(self.filename)
-        if not data:
+    def _path(self, filename):
+        return os.path.join(self.data_dir, filename)
+
+    def load(self, filename):
+        path = self._path(filename)
+        if not os.path.exists(path):
             return {}
-        return data
+        with open(path, "r", encoding="utf-8") as f:
+            try:
+                return json.load(f)
+            except json.JSONDecodeError:
+                return {}
 
-    def save(self):
-        self.db_manager.save(self.filename, self.subscriptions)
-
-    def add_subscription(self, user_id, plan, expires_at):
-        self.subscriptions[str(user_id)] = {
-            "plan": plan,
-            "expires_at": expires_at
-        }
-        self.save()
-
-    def get_subscription(self, user_id):
-        return self.subscriptions.get(str(user_id))
-
-    def has_active_subscription(self, user_id):
-        sub = self.get_subscription(user_id)
-        if not sub:
-            return False
-        return sub["expires_at"] > time.time()
+    def save(self, filename, data):
+        path = self._path(filename)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
 
 
 
