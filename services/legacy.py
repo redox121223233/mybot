@@ -1,28 +1,27 @@
-from services.database_manager import DatabaseManager
+import os
+import json
+import logging
+from utils.telegram_api import TelegramAPI
 from services.menu_manager import MenuManager
 from services.subscription_manager import SubscriptionManager
-from utils.telegram_api import TelegramAPI
-import os
+from services.database_manager import DatabaseManager
 
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+# ✅ ایمپورت از فایل config
+from config import BOT_TOKEN, BASE_DIR
 
-# دیتابیس اصلی
+# اطمینان از وجود دایرکتوری دیتابیس
+if not os.path.exists(BASE_DIR):
+    os.makedirs(BASE_DIR)
+
+# راه‌اندازی Logger
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
+# ساخت نمونه‌های اصلی
 db_manager = DatabaseManager(BASE_DIR)
-
-# مدیریت منو
-menu_manager = MenuManager(
-    f"https://api.telegram.org/bot{os.getenv('BOT_TOKEN')}/",
-    os.getenv("BOT_TOKEN")
-)
-
-# مدیریت اشتراک - فقط یکبار و درست
-subscription_manager = SubscriptionManager(
-    os.path.join(BASE_DIR, "subscriptions.json"),
-    db_manager
-)
-
-# API تلگرام
-api = TelegramAPI(os.getenv("BOT_TOKEN"))
+api = TelegramAPI(BOT_TOKEN)
+menu_manager = MenuManager(api, BOT_TOKEN)
+subscription_manager = SubscriptionManager(db_manager, "subscriptions.json")
 
 
 
