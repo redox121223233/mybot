@@ -193,15 +193,15 @@ def process_message(message):
                 send_settings_menu(chat_id)
                 return
                 
-            elif text == "/subscription":
+            elif text == "/subscription" or text == "⭐ اشتراک":
                 menu_manager.show_subscription_menu(chat_id)
                 return
                 
-            elif text == "/trial":
+            elif text == "/trial" or text == "🎁 تست رایگان":
                 menu_manager.show_free_trial_menu(chat_id)
                 return
                 
-            elif text == "/templates":
+            elif text == "/templates" or text == "📚 قالب‌های آماده":
                 menu_manager.show_templates_menu(chat_id)
                 return
                 
