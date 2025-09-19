@@ -252,88 +252,43 @@ def process_message(message):
         api.send_message(chat_id, f"⚠️ خطایی رخ داد: {str(e)}")
 
 def handle_callback_query(callback_query):
-    """پردازش کالبک کوئری‌ها"""
     try:
-        query_id = callback_query["id"]
+        callback_query_id = callback_query["id"]
         chat_id = callback_query["message"]["chat"]["id"]
         message_id = callback_query["message"]["message_id"]
         data = callback_query["data"]
-        
-        # پردازش دکمه‌های منو
-        if data == "new_sticker":
-            handle_sticker_maker_toggle(chat_id, message_id, ai_manager, api)
-            api.answer_callback_query(query_id)
-            return
-            
-        elif data == "show_subscription":
+
+        if data == "show_subscription":
             menu_manager.show_subscription_menu(chat_id, message_id)
-            api.answer_callback_query(query_id)
-            return
-            
+
         elif data == "show_free_trial":
             menu_manager.show_free_trial_menu(chat_id, message_id)
-            api.answer_callback_query(query_id)
-            return
-            
+
         elif data == "show_templates":
             menu_manager.show_templates_menu(chat_id, message_id)
-            api.answer_callback_query(query_id)
-            return
-            
-        elif data == "back_to_main":
-            send_main_menu(chat_id, message_id)
-            api.answer_callback_query(query_id)
-            return
-            
-        elif data.startswith("sub_"):
-            plan_id = data[4:]
-            handle_subscription_purchase(chat_id, plan_id, message_id)
-            api.answer_callback_query(query_id)
-            return
-            
-        elif data == "activate_trial":
-            handle_trial_activation(chat_id, message_id)
-            api.answer_callback_query(query_id)
-            return
-            
-        elif data.startswith("template_"):
-            template_id = data[9:]
-            handle_template_selection(chat_id, template_id, message_id)
-            api.answer_callback_query(query_id)
-            return
-            
-        # پردازش دکمه‌های استیکر
-        elif AI_INTEGRATION_AVAILABLE:
-            from sticker_handlers import process_callback_query
-            process_callback_query(
-                callback_query, 
-                ai_manager=ai_manager, 
-                answer_callback_query=api.answer_callback_query, 
-                edit_message=api.edit_message_text
-            )
-            return
-            
-        
-    elif data == "ai_activate":
-        toggle_ai(chat_id, True, ai_manager)
-        answer_callback_query(callback_query_id, "هوش مصنوعی فعال شد ✅")
 
-    elif data == "toggle_ai_sticker":
-        handle_sticker_maker_toggle(chat_id)
-        answer_callback_query(callback_query_id, "استیکر هوش مصنوعی تغییر کرد 🎭")
+        elif data == "new_sticker":
+            handle_sticker_maker_toggle(chat_id)
 
-    elif data == "change_lang":
-        send_message(chat_id, "🌐 انتخاب زبان:\n🇮🇷 فارسی | 🇬🇧 English")
-        answer_callback_query(callback_query_id)
-    else:
-            api.answer_callback_query(query_id, "⚠️ این قابلیت در حال حاضر در دسترس نیست.")
-            return
-            
+        elif data == "ai_activate":
+            toggle_ai(chat_id, True, ai_manager)
+            answer_callback_query(callback_query_id, "هوش مصنوعی فعال شد ✅")
+
+        elif data == "toggle_ai_sticker":
+            handle_sticker_maker_toggle(chat_id)
+            answer_callback_query(callback_query_id, "استیکر هوش مصنوعی تغییر کرد 🎭")
+
+        elif data == "change_lang":
+            send_message(chat_id, "🌐 انتخاب زبان:
+🇮🇷 فارسی | 🇬🇧 English")
+            answer_callback_query(callback_query_id)
+
+        else:
+            answer_callback_query(callback_query_id, "دستور ناشناخته ⚠️")
+
     except Exception as e:
-        logger.error(f"Error handling callback query: {e}")
-        api.answer_callback_query(query_id, f"⚠️ خطایی رخ داد: {str(e)}")
-
-# --- توابع منو ---
+        logger.error(f"Error in handle_callback_query: {e}")
+        answer_callback_query(callback_query_id, "خطا در پردازش ❌")
 def send_welcome_message(chat_id):
     """ارسال پیام خوش‌آمدگویی"""
     text = f"👋 سلام! به ربات استیکرساز خوش آمدید!\n\n"
@@ -3718,69 +3673,44 @@ def edit_message_text(chat_id, message_id, text, reply_markup=None):
         # ارسال درخواست به API تلگرام
         response = requests.post(f"{API}answerCallbackQuery", json=data)
         result = None  # auto-fixed: was incomplete assignment
-#     def handle_callback_query(update, context):
-#     from menu_handlers import MenuManager
-#     from sticker_handlers import start_new_sticker, ai_sticker_handler
-# 
-# 
-#     query = update.callback_query
-#     chat_id = query.message.chat_id
-#     data = query.data
-# 
-# 
-#     ogger.info(f"Callback query received: {data}")
-# 
-# 
-#     menu = MenuManager(api_url=context.bot.api_url, bot_token=context.bot.token)
-# 
-# 
-#     if data == "back_to_main":
-#     menu.show_main_menu(chat_id, query.message.message_id)
-# 
-# 
-#     elif data == "show_subscription":
-#     menu.show_subscription_menu(chat_id, query.message.message_id)
-# 
-# 
-#     elif data == "show_trial":
-#     menu.show_free_trial_menu(chat_id, query.message.message_id)
-# 
-# 
-#     elif data == "show_templates":
-#         menu.show_templates_menu(chat_id, query.message.message_id)
-# 
-# 
-#     elif data.startswith("sub_"):
-# خرید اشتراک
-#     plan_id = data.split("_")[1]
-# اینجا می‌تونی تابع فعال‌سازی اشتراک رو صدا بزنی
-#     query.answer(text=f"طرح {plan_id} انتخاب شد ✅", show_alert=True)
-# 
-# 
-#     elif data == "activate_trial":
-# فعال‌سازی دوره آزمایشی
-#     query.answer(text="دوره آزمایشی فعال شد ✅", show_alert=True)
-# 
-# 
-#     elif data == "new_sticker":
-#     query.answer()
-#     start_new_sticker(update, context)
-# 
-# 
-#     elif data == "ai_sticker":
-#     query.answer()
-#     ai_sticker_handler(update, context)
-# 
-# 
-#     elif data.startswith("template_"):
-#     template_id = data.split("_")[1]
-# اینجا می‌تونی هندلر مربوط به قالب‌ها رو اضافه کنی
-#     query.answer(text=f"قالب {template_id} انتخاب شد ✅")
-# 
-# 
-#     else:
-#     query.answer(text="دکمه ناشناخته ❓")
-# 
+#     def handle_callback_query(callback_query):
+    try:
+        callback_query_id = callback_query["id"]
+        chat_id = callback_query["message"]["chat"]["id"]
+        message_id = callback_query["message"]["message_id"]
+        data = callback_query["data"]
+
+        if data == "show_subscription":
+            menu_manager.show_subscription_menu(chat_id, message_id)
+
+        elif data == "show_free_trial":
+            menu_manager.show_free_trial_menu(chat_id, message_id)
+
+        elif data == "show_templates":
+            menu_manager.show_templates_menu(chat_id, message_id)
+
+        elif data == "new_sticker":
+            handle_sticker_maker_toggle(chat_id)
+
+        elif data == "ai_activate":
+            toggle_ai(chat_id, True, ai_manager)
+            answer_callback_query(callback_query_id, "هوش مصنوعی فعال شد ✅")
+
+        elif data == "toggle_ai_sticker":
+            handle_sticker_maker_toggle(chat_id)
+            answer_callback_query(callback_query_id, "استیکر هوش مصنوعی تغییر کرد 🎭")
+
+        elif data == "change_lang":
+            send_message(chat_id, "🌐 انتخاب زبان:
+🇮🇷 فارسی | 🇬🇧 English")
+            answer_callback_query(callback_query_id)
+
+        else:
+            answer_callback_query(callback_query_id, "دستور ناشناخته ⚠️")
+
+    except Exception as e:
+        logger.error(f"Error in handle_callback_query: {e}")
+        answer_callback_query(callback_query_id, "خطا در پردازش ❌")
 def send_message_with_back_button(chat_id, text):
     """ارسال پیام با دکمه بازگشت"""
     keyboard = {
