@@ -1,35 +1,23 @@
 import requests
-import logging
+from config import BOT_TOKEN
 
-class TelegramAPI:
-    def __init__(self, bot_token: str):
-        self.base_url = f"https://api.telegram.org/bot{bot_token}/"
+BASE_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/"
 
-    def send_message(self, chat_id: int, text: str, reply_markup=None):
-        url = self.base_url + "sendMessage"
-        payload = {"chat_id": chat_id, "text": text}
-        if reply_markup:
-            payload["reply_markup"] = reply_markup
-        response = requests.post(url, json=payload)
-        logging.info(f"send_message response: {response.text}")
-        return response.json()
+def send_message(chat_id, text, reply_markup=None):
+    data = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
+    if reply_markup:
+        data["reply_markup"] = reply_markup
+    requests.post(BASE_URL + "sendMessage", json=data)
 
-    def edit_message_text(self, chat_id: int, message_id: int, text: str, reply_markup=None):
-        url = self.base_url + "editMessageText"
-        payload = {
-            "chat_id": chat_id,
-            "message_id": message_id,
-            "text": text
-        }
-        if reply_markup:
-            payload["reply_markup"] = reply_markup
-        response = requests.post(url, json=payload)
-        logging.info(f"edit_message_text response: {response.text}")
-        return response.json()
+def edit_message(chat_id, message_id, text, reply_markup=None):
+    data = {"chat_id": chat_id, "message_id": message_id, "text": text, "parse_mode": "HTML"}
+    if reply_markup:
+        data["reply_markup"] = reply_markup
+    requests.post(BASE_URL + "editMessageText", json=data)
 
-def register_webhook(bot_token: str, url: str):
-    base_url = f"https://api.telegram.org/bot{bot_token}/"
-    set_webhook_url = base_url + "setWebhook"
-    response = requests.post(set_webhook_url, json={"url": url})
-    logging.info(f"register_webhook response: {response.text}")
-    return response.json()
+def answer_callback_query(callback_id, text=None, show_alert=False):
+    data = {"callback_query_id": callback_id}
+    if text:
+        data["text"] = text
+        data["show_alert"] = show_alert
+    requests.post(BASE_URL + "answerCallbackQuery", json=data)
