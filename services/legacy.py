@@ -1,33 +1,28 @@
-import os
-from utils.logger import logger
-from utils.telegram_api import TelegramAPI
 from services.database_manager import DatabaseManager
 from services.menu_manager import MenuManager
 from services.subscription_manager import SubscriptionManager
+from utils.telegram_api import TelegramAPI
+import os
 
-# ثابت‌ها
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-# ساخت DatabaseManager
+# دیتابیس اصلی
 db_manager = DatabaseManager(BASE_DIR)
 
-# ساخت API تلگرام
-api = TelegramAPI(BOT_TOKEN)
-
-# ساخت MenuManager
+# مدیریت منو
 menu_manager = MenuManager(
-    base_url=f"https://api.telegram.org/bot{BOT_TOKEN}/",
-    bot_token=BOT_TOKEN
+    f"https://api.telegram.org/bot{os.getenv('BOT_TOKEN')}/",
+    os.getenv("BOT_TOKEN")
 )
 
-# ساخت SubscriptionManager
+# مدیریت اشتراک - فقط یکبار و درست
 subscription_manager = SubscriptionManager(
-    db_manager=db_manager,
-    filename="subscriptions.json"
+    os.path.join(BASE_DIR, "subscriptions.json"),
+    db_manager
 )
 
-logger.info("Legacy services initialized successfully.")
+# API تلگرام
+api = TelegramAPI(os.getenv("BOT_TOKEN"))
 
 
 
