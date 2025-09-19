@@ -251,7 +251,12 @@ def handle_callback_query(callback_query):
         data = callback_query["data"]
         
         # پردازش دکمه‌های منو
-        if data == "show_subscription":
+        if data == "new_sticker":
+            handle_sticker_maker_toggle(chat_id, message_id, ai_manager, api)
+            api.answer_callback_query(query_id)
+            return
+            
+        elif data == "show_subscription":
             menu_manager.show_subscription_menu(chat_id, message_id)
             api.answer_callback_query(query_id)
             return
