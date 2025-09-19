@@ -1,93 +1,33 @@
-import os
-import json
-import time
-import requests
+class SubscriptionManager:
+    def __init__(self, db_manager, filename="subscriptions.json"):
+        self.db_manager = db_manager
+        self.filename = filename
+        self.subscriptions = self._load()
 
-# -----------------------------
-# تنظیمات پایه
-# -----------------------------
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-DATA_DIR = os.path.join(BASE_DIR, "data")
+    def _load(self):
+        data = self.db_manager.load(self.filename)
+        if not data:
+            return {}
+        return data
 
-if not os.path.exists(DATA_DIR):
-    os.makedirs(DATA_DIR)
+    def save(self):
+        self.db_manager.save(self.filename, self.subscriptions)
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN")
-APP_URL = os.getenv("APP_URL", "http://localhost:8080")
-
-# -----------------------------
-# دیتابیس منیجر
-# -----------------------------
-from services.database_manager import DatabaseManager
-
-db_manager = DatabaseManager(BASE_DIR)
-
-# -----------------------------
-# مدیریت کاربران
-# -----------------------------
-USER_DATA_FILE = os.path.join(DATA_DIR, "users.json")
-
-try:
-    with open(USER_DATA_FILE, "r", encoding="utf-8") as f:
-        user_data = json.load(f)
-except FileNotFoundError:
-    user_data = {}
-
-def save_user_data():
-    with open(USER_DATA_FILE, "w", encoding="utf-8") as f:
-        json.dump(user_data, f, ensure_ascii=False, indent=2)
-
-# -----------------------------
-# کلاس TelegramAPI
-# -----------------------------
-class TelegramAPI:
-    def __init__(self, token):
-        self.base_url = f"https://api.telegram.org/bot{token}"
-
-    def send_message(self, chat_id, text, reply_markup=None):
-        data = {"chat_id": chat_id, "text": text}
-        if reply_markup:
-            data["reply_markup"] = reply_markup
-        return requests.post(f"{self.base_url}/sendMessage", json=data).json()
-
-    def edit_message_text(self, chat_id, message_id, text, reply_markup=None):
-        data = {
-            "chat_id": chat_id,
-            "message_id": message_id,
-            "text": text
+    def add_subscription(self, user_id, plan, expires_at):
+        self.subscriptions[str(user_id)] = {
+            "plan": plan,
+            "expires_at": expires_at
         }
-        if reply_markup:
-            data["reply_markup"] = reply_markup
-        return requests.post(f"{self.base_url}/editMessageText", json=data).json()
+        self.save()
 
-    def answer_callback_query(self, callback_query_id, text=None, show_alert=False):
-        data = {"callback_query_id": callback_query_id, "show_alert": show_alert}
-        if text:
-            data["text"] = text
-        return requests.post(f"{self.base_url}/answerCallbackQuery", json=data).json()
+    def get_subscription(self, user_id):
+        return self.subscriptions.get(str(user_id))
 
-# -----------------------------
-# کلاس MenuManager
-# -----------------------------
-class MenuManager:
-    def __init__(self, base_url, token):
-        self.base_url = base_url
-        self.token = token
-
-    def get_main_menu(self):
-        return {
-            "keyboard": [
-                [{"text": "🎭 استیکرساز"}],
-                [{"text": "🤖 استیکر هوش مصنوعی"}],
-                [{"text": "⭐ اشتراک"}, {"text": "🎁 تست رایگان"}],
-                [{"text": "⚙️ تنظیمات"}]
-            ],
-            "resize_keyboard": True
-        }
-
-# -----------------------------
-# اینجا بقیه کد legacy.py اصلی‌ات قرار می‌گیرد
-# -----------------------------
+    def has_active_subscription(self, user_id):
+        sub = self.get_subscription(user_id)
+        if not sub:
+            return False
+        return sub["expires_at"] > time.time()
 
 
 
