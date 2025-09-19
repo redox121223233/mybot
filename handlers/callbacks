@@ -1,0 +1,14 @@
+# handlers/callbacks.py
+from utils.logger import logger
+from services import legacy
+
+def handle_callback_query(callback_query):
+    """
+    هندلر دکمه‌های شیشه‌ای
+    مستقیماً به legacy وصل میشه
+    """
+    try:
+        return legacy.handle_callback_query(callback_query)
+    except Exception as e:
+        logger.error(f"Error in handle_callback_query (handlers/callbacks.py): {e}")
+        return "error"
