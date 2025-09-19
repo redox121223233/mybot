@@ -1,3 +1,53 @@
+import os
+import json
+import time
+
+# -----------------------------
+# تعریف متغیرهای پایه
+# -----------------------------
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+DATA_DIR = os.path.join(BASE_DIR, "data")
+
+if not os.path.exists(DATA_DIR):
+    os.makedirs(DATA_DIR)
+
+BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN")
+APP_URL = os.getenv("APP_URL", "http://localhost:8080")
+
+# -----------------------------
+# دیتابیس منیجر
+# -----------------------------
+from services.database_manager import DatabaseManager
+
+db_manager = DatabaseManager(BASE_DIR)
+
+# -----------------------------
+# مدیریت کاربران
+# -----------------------------
+USER_DATA_FILE = os.path.join(DATA_DIR, "users.json")
+
+try:
+    with open(USER_DATA_FILE, "r", encoding="utf-8") as f:
+        user_data = json.load(f)
+except FileNotFoundError:
+    user_data = {}
+
+
+def save_user_data():
+    with open(USER_DATA_FILE, "w", encoding="utf-8") as f:
+        json.dump(user_data, f, ensure_ascii=False, indent=2)
+
+
+# -----------------------------
+# بقیه کدهای legacy اصلی اینجا میاد
+# (همون کدی که در legacy.py داشتی بدون تغییر)
+# -----------------------------
+
+# مثال: اگر در legacy.py توابعی داشتی مثل
+# def process_message(...):
+# یا کلاس‌هایی مثل StickerHandler
+# همه رو همینجا بیار، فقط ابتدای فایل
+# این تنظیمات پایه اضافه شده.
 from services.database_manager import DatabaseManager
 
 
