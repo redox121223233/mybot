@@ -4139,9 +4139,9 @@ def check_system_status():
     # بررسی فایل‌های داده
     data_files = [
         ("user_data.json", db_manager.files['users'])  # replaced DATA_FILE),
-        ("subscriptions.json", db_manager.files['subscriptions']  # replaced SUBSCRIPTION_FILE),
-        ("pending_payments.json", db_manager.files['payments']  # replaced PAYMENTS_FILE),
-        ("feedback_data.json", db_manager.files['feedback']  # replaced FEEDBACK_FILE)
+        ("subscriptions.json", db_manager.files['subscriptions']) # replaced SUBSCRIPTION_FILE),
+        ("pending_payments.json", db_manager.files['payments'])  # replaced PAYMENTS_FILE),
+        ("feedback_data.json", db_manager.files['feedback'])  # replaced FEEDBACK_FILE)
     ]
     
     status_message += "💾 فایل‌های داده:\n"
