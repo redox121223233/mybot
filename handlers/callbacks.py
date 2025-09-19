@@ -1,22 +1,22 @@
+
 from utils.logger import logger
-try:
-    from services import legacy
-    cb_fn = getattr(legacy, "handle_callback_query", None) or getattr(legacy, "handle_callback", None)
-except Exception:
-    legacy = None
-    cb_fn = None
+from services import legacy as legacy_services
+
+api = legacy_services.api
+subscription_manager = legacy_services.subscription_manager
 
 def handle_callback(cb):
-    if cb_fn:
-        try:
-            return cb_fn(cb)
-        except Exception as e:
-            logger.error("Error in legacy callback handler: %s", e)
-    # fallback
-    try:
-        from utils.telegram_api import answer_callback_query, send_message
-        cid = cb.get("message",{}).get("chat",{}).get("id")
-        answer_callback_query(cb.get("id"), "عملیات انجام شد")
-    except:
-        pass
-    return "ok"
+    data = cb.get("data")
+    from_id = cb.get("from", {}).get("id")
+    logger.info("handle_callback %s: %s", from_id, data)
+
+    if data == "buy_sub":
+        api.send_message(from_id, "برای خرید اشتراک راهنمایی ...")
+    elif data == "check_sub":
+        sub = subscription_manager.get_subscription(from_id)
+        if sub:
+            api.send_message(from_id, f"اشتراک شما: {sub}")
+        else:
+            api.send_message(from_id, "اشتراک فعالی ندارید.")
+    else:
+        api.answer_callback_query(cb.get("id"), "عملیات نامشخص.")
