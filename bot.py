@@ -1054,42 +1054,7 @@ def health_check_api():
 # Original lines 1171-1771 removed to prevent duplicate definitions (preserved elsewhere).
 # If you need the removed code back, check the original bot.py or contact the maintainer.
 
-def process_message(msg):
-    """پردازش پیام‌های دریافتی از تلگرام"""
-    try:
-        chat_id = msg.get("chat", {}).get("id")
-        if not chat_id:
-            return "no chat_id"
-            
-        # تعریف state در ابتدای تابع برای دسترسی در تمام بخش‌های کد
-        state = user_data.get(chat_id, {})
-        
-        # اگر کاربر جدید است، اطلاعات اولیه را تنظیم کن
-        if chat_id not in user_data:
-            user_data[chat_id] = {
-                "mode": None,
-                "count": 0,
-                "step": None,
-                "pack_name": None,
-                "background": None,
-                "created_packs": [],
-                "sticker_usage": [],
-                "last_reset": time.time(),
-                "ai_mode": False  # هوش مصنوعی به صورت پیش‌فرض غیرفعال است
-            }
-            save_user_data()
-        
-        # پردازش دستورات
-        if "text" in msg:
-            text = msg["text"]
-            
-            # پردازش دستور /start
-            if text == "/start":
-                logger.info(f"Processing /start command for chat_id: {chat_id}")
-                # بررسی عضویت در کانال
-                if not check_channel_membership(chat_id):
-                    send_membership_required_message(chat_id)
-                    return "ok"
+# --- Removed duplicate process_message ---
                 
                 # همیشه به منوی اصلی برگرد (حتی اگر در حال ساخت استیکر هستید)
                 if chat_id in user_data:
