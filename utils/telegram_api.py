@@ -1,52 +1,37 @@
-import os, requests
+import requests
+from utils.logger import logger
 
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
-API = f"https://api.telegram.org/bot{BOT_TOKEN}/"
 
-def _post(method, payload):
-    url = f"{API}{method}"
-    try:
-        r = requests.post(url, json=payload, timeout=10)
-        return r.json()
-    except Exception as e:
-        print(f"_post error for {method}:", e)
-        return None
+class TelegramAPI:
+    def __init__(self, token: str):
+        self.base_url = f"https://api.telegram.org/bot{token}"
 
-def answer_callback_query(callback_query_id, text=None, show_alert=False):
-    payload = {"callback_query_id": callback_query_id}
-    if text:
-        payload["text"] = text
-    if show_alert:
-        payload["show_alert"] = True
-    return _post("answerCallbackQuery", payload)
+    def send_message(self, chat_id: int, text: str, reply_markup=None):
+        url = f"{self.base_url}/sendMessage"
+        payload = {"chat_id": chat_id, "text": text}
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
 
-def send_message(chat_id, text, reply_markup=None, parse_mode="HTML"):
-    payload = {"chat_id": chat_id, "text": text, "parse_mode": parse_mode}
-    if reply_markup is not None:
-        payload["reply_markup"] = reply_markup
-    return _post("sendMessage", payload)
+        response = requests.post(url, json=payload)
+        logger.info(f"send_message response: {response.text}")
+        return response.json()
 
-def edit_message_text(chat_id, message_id, text, reply_markup=None, parse_mode="HTML"):
-    payload = {"chat_id": chat_id, "message_id": message_id, "text": text, "parse_mode": parse_mode}
-    if reply_markup is not None:
-        payload["reply_markup"] = reply_markup
-    return _post("editMessageText", payload)
+    def edit_message_text(self, chat_id: int, message_id: int, text: str, reply_markup=None):
+        url = f"{self.base_url}/editMessageText"
+        payload = {"chat_id": chat_id, "message_id": message_id, "text": text}
+        if reply_markup:
+            payload["reply_markup"] = reply_markup
 
-def register_webhook(app_url=None, secret_token=None):
-    if not app_url:
-        app_url = os.environ.get("APP_URL")
-    if not app_url:
-        print("APP_URL not set; cannot register webhook.")
-        return None
-    token = BOT_TOKEN
-    url = f"{API}setWebhook"
-    data = {"url": f"{app_url}/{token}"}
-    if secret_token:
-        data["secret_token"] = secret_token
-    try:
-        r = requests.post(url, json=data, timeout=10)
-        print("Webhook set:", r.text)
-        return r.json()
-    except Exception as e:
-        print("register_webhook error:", e)
-        return None
+        response = requests.post(url, json=payload)
+        logger.info(f"edit_message_text response: {response.text}")
+        return response.json()
+
+    def answer_callback_query(self, callback_query_id: str, text: str = None, show_alert: bool = False):
+        url = f"{self.base_url}/answerCallbackQuery"
+        payload = {"callback_query_id": callback_query_id, "show_alert": show_alert}
+        if text:
+            payload["text"] = text
+
+        response = requests.post(url, json=payload)
+        logger.info(f"answer_callback_query response: {response.text}")
+        return response.json()
