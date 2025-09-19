@@ -4,14 +4,12 @@ import os
 import json
 
 class SubscriptionManager:
-    def __init__(self, filename: str, db_manager):
-        """
-        مدیریت اشتراک‌ها
-        :param filename: نام فایل ذخیره‌سازی
-        :param db_manager: شی DatabaseManager
-        """
+    def __init__(self, db_manager, filename):
+        if not hasattr(db_manager, "load") or not hasattr(db_manager, "save"):
+            raise ValueError("db_manager باید یک شی از DatabaseManager باشد.")
+        
+        self.db_manager = db_manager   # ✅ درست شد
         self.filename = filename
-        self.db_manager = db_manager
         self.subscriptions = self._load()
 
     def _load(self):
@@ -21,20 +19,14 @@ class SubscriptionManager:
     def _save(self):
         self.db_manager.save(self.filename, self.subscriptions)
 
-    def add_subscription(self, user_id: int, plan: str, expiry: str):
-        self.subscriptions[str(user_id)] = {"plan": plan, "expiry": expiry}
+    def add_subscription(self, user_id, plan):
+        self.subscriptions[user_id] = plan
         self._save()
 
-    def get_subscription(self, user_id: int):
-        return self.subscriptions.get(str(user_id))
+    def get_subscription(self, user_id):
+        return self.subscriptions.get(user_id)
 
-    def has_active_subscription(self, user_id: int):
-        sub = self.get_subscription(user_id)
-        if not sub:
-            return False
-        return True  # TODO: بررسی تاریخ انقضا
-
-    def remove_subscription(self, user_id: int):
-        if str(user_id) in self.subscriptions:
-            del self.subscriptions[str(user_id)]
+    def remove_subscription(self, user_id):
+        if user_id in self.subscriptions:
+            del self.subscriptions[user_id]
             self._save()
