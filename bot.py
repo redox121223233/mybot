@@ -626,7 +626,7 @@ def load_user_data():
     """بارگذاری داده‌های کاربر از فایل"""
     global user_data
     try:
-        if os.path.exists(db_manager.files['users'])  # replaced DATA_FILE):
+        if os.path.exists(db_manager.files['users']):# replaced DATA_FILE):
             with open(db_manager.files['users'])  # replaced DATA_FILE, 'r', encoding='utf-8') as f:
                 user_data = json.load(f)
                 logger.info(f"Loaded user data: {len(user_data)} users")
