@@ -4137,8 +4137,6 @@ def check_system_status():
         status_message += "📝 فونت‌های فارسی: ❌ هیچ فونت فارسی پیدا نشد\n"
     
     status_message += "\n"
-    
-   @@ .. @@
     # بررسی فایل‌های داده
     data_files = [
         ("user_data.json", db_manager.files['users']),  # replaced DATA_FILE
