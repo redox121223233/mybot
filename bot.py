@@ -640,7 +640,7 @@ def load_user_data():
 def save_user_data():
     """ذخیره داده‌های کاربر در فایل"""
     try:
-        with open(db_manager.files['users']  # replaced DATA_FILE, 'w', encoding='utf-8') as f:
+        with open(db_manager.files['users'], 'w', encoding='utf-8') as f:  # replaced DATA_FILE
             json.dump(user_data, f, ensure_ascii=False, indent=2)
         logger.info(f"Saved user data: {len(user_data)} users")
     except Exception as e:
