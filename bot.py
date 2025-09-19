@@ -663,7 +663,7 @@ def load_subscription_data():
 def save_subscription_data():
     """ذخیره داده‌های اشتراک در فایل"""
     try:
-        with open(db_manager.files['subscriptions']  # replaced SUBSCRIPTION_FILE, 'w', encoding='utf-8') as f:
+        with open(db_manager.files['subscriptions'], 'w', encoding='utf-8') as f:  # replaced SUBSCRIPTION_FILE
             json.dump(subscription_data, f, ensure_ascii=False, indent=2)
         logger.info(f"Saved subscription data: {len(subscription_data)} users")
     except Exception as e:
