@@ -696,8 +696,8 @@ def load_feedback_data():
     """بارگذاری بازخوردهای کاربران از فایل"""
     global feedback_data
     try:
-        if os.path.exists(db_manager.files['feedback']  # replaced FEEDBACK_FILE):
-            with open(db_manager.files['feedback']  # replaced FEEDBACK_FILE, 'r', encoding='utf-8') as f:
+        if os.path.exists(db_manager.files['feedback']):  # replaced FEEDBACK_FILE
+            with open(db_manager.files['feedback'], 'r', encoding='utf-8') as f:  # replaced FEEDBACK_FILE
                 feedback_data = json.load(f)
                 logger.info(f"Loaded feedback data: {len(feedback_data)} feedbacks")
         else:
