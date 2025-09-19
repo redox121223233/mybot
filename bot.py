@@ -251,97 +251,6 @@ def process_message(message):
         logger.error(f"Error processing message: {e}")
         api.send_message(chat_id, f"⚠️ خطایی رخ داد: {str(e)}")
 
-def handle_callback_query(callback_query):
-    """پردازش کالبک کوئری‌ها"""
-    try:
-        query_id = callback_query["id"]
-        chat_id = callback_query["message"]["chat"]["id"]
-        message_id = callback_query["message"]["message_id"]
-        data = callback_query["data"]
-        
-        # پردازش دکمه‌های منو
-        if data == "new_sticker":
-            handle_sticker_maker_toggle(chat_id, message_id, ai_manager, api)
-            api.answer_callback_query(query_id)
-            return
-            
-        elif data == "show_subscription":
-            menu_manager.show_subscription_menu(chat_id, message_id)
-            api.answer_callback_query(query_id)
-            return
-            
-        elif data == "show_free_trial":
-            menu_manager.show_free_trial_menu(chat_id, message_id)
-            api.answer_callback_query(query_id)
-            return
-            
-        elif data == "show_templates":
-            menu_manager.show_templates_menu(chat_id, message_id)
-            api.answer_callback_query(query_id)
-            return
-            
-        elif data == "back_to_main":
-            send_main_menu(chat_id, message_id)
-            api.answer_callback_query(query_id)
-            return
-            
-        elif data.startswith("sub_"):
-            plan_id = data[4:]
-            handle_subscription_purchase(chat_id, plan_id, message_id)
-            api.answer_callback_query(query_id)
-            return
-            
-        elif data == "activate_trial":
-            handle_trial_activation(chat_id, message_id)
-            api.answer_callback_query(query_id)
-            return
-            
-        elif data.startswith("template_"):
-            template_id = data[9:]
-            handle_template_selection(chat_id, template_id, message_id)
-            api.answer_callback_query(query_id)
-            return
-            
-        # پردازش دکمه‌های استیکر
-        elif AI_INTEGRATION_AVAILABLE:
-            from sticker_handlers import process_callback_query
-            process_callback_query(
-                callback_query, 
-                ai_manager=ai_manager, 
-                answer_callback_query=api.answer_callback_query, 
-                edit_message=api.edit_message_text
-            )
-            return
-            
-        else:
-            api.answer_callback_query(query_id, "⚠️ این قابلیت در حال حاضر در دسترس نیست.")
-            return
-            
-    except Exception as e:
-        logger.error(f"Error handling callback query: {e}")
-        api.answer_callback_query(query_id, f"⚠️ خطایی رخ داد: {str(e)}")
-
-# --- توابع منو ---
-def send_welcome_message(chat_id):
-    """ارسال پیام خوش‌آمدگویی"""
-    text = f"👋 سلام! به ربات استیکرساز خوش آمدید!\n\n"
-    text += "با این ربات می‌توانید استیکرهای زیبا بسازید.\n\n"
-    text += f"🔹 برای پشتیبانی: {SUPPORT_ID}\n"
-    text += f"🔹 کانال ما: {CHANNEL_LINK}"
-    
-    keyboard = [
-        [{"text": "🎨 ساخت استیکر", "callback_data": "new_sticker"}],
-        [{"text": "🖼 قالب‌های آماده", "callback_data": "show_templates"}],
-        [{"text": "💎 خرید اشتراک", "callback_data": "show_subscription"}],
-        [{"text": "🎁 دوره آزمایشی رایگان", "callback_data": "show_free_trial"}]
-    ]
-    
-    if AI_INTEGRATION_AVAILABLE:
-        keyboard.insert(1, [{"text": "🤖 استیکرساز هوشمند", "callback_data": "toggle_ai_sticker"}])
-    
-    reply_markup = {"inline_keyboard": keyboard}
-    api.send_message(chat_id, text, reply_markup)
-
 def send_main_menu(chat_id, message_id=None):
     """ارسال منوی اصلی"""
     text = "👋 منوی اصلی\n\nیکی از گزینه‌های زیر را انتخاب کنید:"
@@ -1053,6 +962,363 @@ def health_check_api():
 # --- DUPLICATE BLOCK REMOVED BY CLEANUP ---
 # Original lines 1171-1771 removed to prevent duplicate definitions (preserved elsewhere).
 # If you need the removed code back, check the original bot.py or contact the maintainer.
+
+def process_message(msg):
+    """پردازش پیام‌های دریافتی از تلگرام"""
+    try:
+        chat_id = msg.get("chat", {}).get("id")
+        if not chat_id:
+            return "no chat_id"
+            
+        # تعریف state در ابتدای تابع برای دسترسی در تمام بخش‌های کد
+        state = user_data.get(chat_id, {})
+        
+        # اگر کاربر جدید است، اطلاعات اولیه را تنظیم کن
+        if chat_id not in user_data:
+            user_data[chat_id] = {
+                "mode": None,
+                "count": 0,
+                "step": None,
+                "pack_name": None,
+                "background": None,
+                "created_packs": [],
+                "sticker_usage": [],
+                "last_reset": time.time(),
+                "ai_mode": False  # هوش مصنوعی به صورت پیش‌فرض غیرفعال است
+            }
+            save_user_data()
+        
+        # پردازش دستورات
+        if "text" in msg:
+            text = msg["text"]
+            
+            # پردازش دستور /start
+            if text == "/start":
+                logger.info(f"Processing /start command for chat_id: {chat_id}")
+                # بررسی عضویت در کانال
+                if not check_channel_membership(chat_id):
+                    send_membership_required_message(chat_id)
+                    return "ok"
+                
+                # همیشه به منوی اصلی برگرد (حتی اگر در حال ساخت استیکر هستید)
+                if chat_id in user_data:
+                    old_data = user_data[chat_id]
+                    user_data[chat_id] = {
+                        "mode": None, 
+                        "count": old_data.get("count", 0), 
+                        "step": None, 
+                        "pack_name": old_data.get("pack_name"), 
+                        "background": None, 
+                        "created_packs": old_data.get("created_packs", []),  # حفظ پک‌های ساخته شده
+                        "sticker_usage": old_data.get("sticker_usage", []),  # حفظ محدودیت
+                        "last_reset": old_data.get("last_reset", time.time()),  # حفظ زمان reset
+                        "ai_sticker_usage": old_data.get("ai_sticker_usage", [])  # حفظ استفاده از هوش مصنوعی
+                    }
+                else:
+                    user_data[chat_id] = {
+                        "mode": None, 
+                        "count": 0, 
+                        "step": None, 
+                        "pack_name": None, 
+                        "background": None, 
+                        "created_packs": [],
+                        "sticker_usage": [],
+                        "last_reset": time.time(),
+                        "ai_sticker_usage": []
+                    }
+                save_user_data()
+                show_main_menu(chat_id)
+                return "ok"
+                
+            # پردازش دستورات ادمین
+            elif text.startswith("/admin"):
+                handle_admin_command(chat_id, text)
+                return "ok"
+                
+            # پردازش دکمه‌های منوی استیکرساز
+        elif text == "🎭 استیکرساز":
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+            
+            # شروع فرآیند استیکرساز معمولی
+            if chat_id not in user_data:
+                user_data[chat_id] = {
+                    "mode": "sticker",
+                    "ai_mode": False,
+                    "count": 0,
+                    "step": None,
+                    "pack_name": None,
+                    "background": None,
+                    "created_packs": [],
+                    "sticker_usage": [],
+                    "last_reset": time.time()
+                }
+            else:
+                user_data[chat_id]["mode"] = "sticker"
+                user_data[chat_id]["ai_mode"] = False
+                user_data[chat_id]["step"] = None
+            
+            save_user_data()
+            
+            # نمایش منوی استیکرساز
+            keyboard = {
+                "keyboard": [
+                    ["🔄 ساخت استیکر جدید"],
+                    ["🔙 بازگشت"]
+                ],
+                "resize_keyboard": True
+            }
+            
+            send_message(chat_id, "🎭 استیکرساز معمولی فعال شد!\n\nلطفاً متن مورد نظر خود را برای تبدیل به استیکر وارد کنید یا از دکمه‌های زیر استفاده کنید.", reply_markup=json.dumps(keyboard))
+            return "ok"
+            
+        elif text == "🤖 استیکرساز هوشمند" and AI_INTEGRATION_AVAILABLE:
+            # بررسی عضویت در کانال
+            if not check_channel_membership(chat_id):
+                send_membership_required_message(chat_id)
+                return "ok"
+            
+            # بررسی محدودیت استفاده از هوش مصنوعی
+            if not is_subscribed(chat_id):
+                remaining, next_reset = check_ai_sticker_limit(chat_id)
+                if remaining <= 0:
+                    next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
+                    send_message(chat_id, f"⚠️ محدودیت روزانه استفاده از استیکرساز هوشمند شما تمام شده است!\n\nزمان بازنشانی: {next_reset_time}\n\nبرای استفاده نامحدود اشتراک تهیه کنید.")
+                    show_subscription_plans(chat_id)
+                    return "ok"
+            
+            # آماده‌سازی حالت استیکرساز هوشمند (بدون فعال‌سازی خودکار هوش مصنوعی)
+            if chat_id not in user_data:
+                user_data[chat_id] = {
+                    "mode": "ai_sticker",
+                    "ai_mode": False,  # هوش مصنوعی به صورت پیش‌فرض غیرفعال است
+                    "count": 0,
+                    "step": None,
+                    "pack_name": None,
+                    "background": None,
+                    "created_packs": [],
+                    "sticker_usage": [],
+                    "last_reset": time.time()
+                }
+            else:
+                user_data[chat_id]["mode"] = "ai_sticker"
+                user_data[chat_id]["ai_mode"] = False  # هوش مصنوعی به صورت پیش‌فرض غیرفعال است
+                user_data[chat_id]["step"] = None
+            
+            save_user_data()
+            
+            # استفاده از دکمه‌های شیشه‌ای برای فعال‌سازی هوش مصنوعی
+            keyboard = {
+                "inline_keyboard": [
+                    [
+                        {"text": "🤖 فعال کردن هوش مصنوعی", "callback_data": "ai_activate"}
+                    ],
+                    [
+                        {"text": "🔄 ساخت استیکر جدید", "callback_data": "new_sticker"}
+                    ],
+                    [
+                        {"text": "🔙 بازگشت", "callback_data": "back_to_main"}
+                    ]
+                ]
+            }
+            
+            send_message(chat_id, "🤖 استیکرساز هوشمند فعال شد!\n\nبرای استفاده از قابلیت هوش مصنوعی، روی دکمه «🤖 فعال کردن هوش مصنوعی» کلیک کنید.\n\nسپس متن مورد نظر خود را برای تبدیل به استیکر وارد کنید.", reply_markup=json.dumps(keyboard))
+            return "ok"
+            
+        elif text == "🤖 فعال/غیرفعال کردن هوش مصنوعی":
+            # این دکمه دیگر استفاده نمی‌شود و با دکمه‌های شیشه‌ای جایگزین شده است
+            # ارسال پیام راهنما برای استفاده از دکمه‌های شیشه‌ای
+            keyboard = {
+                "inline_keyboard": [
+                    [
+                        {"text": "🤖 فعال کردن هوش مصنوعی", "callback_data": "ai_activate"}
+                    ],
+                    [
+                        {"text": "🔄 ساخت استیکر جدید", "callback_data": "new_sticker"}
+                    ],
+                    [
+                        {"text": "🔙 بازگشت", "callback_data": "back_to_main"}
+                    ]
+                ]
+            }
+            
+            send_message(chat_id, "🤖 استیکرساز هوشمند به‌روزرسانی شده است!\n\nبرای استفاده از قابلیت هوش مصنوعی، روی دکمه «🤖 فعال کردن هوش مصنوعی» کلیک کنید.", reply_markup=json.dumps(keyboard))
+            return "ok"
+            
+        elif text == "🔄 ساخت استیکر جدید":
+            if chat_id in user_data:
+                # آماده‌سازی برای ساخت استیکر جدید
+                user_data[chat_id]["step"] = "text"
+                save_user_data()
+                
+                send_message(chat_id, "لطفاً متن مورد نظر خود را برای تبدیل به استیکر وارد کنید:")
+            return "ok"
+            
+        elif text == "🔙 بازگشت":
+            # بازگشت به منوی اصلی
+            if chat_id in user_data:
+                user_data[chat_id]["mode"] = None
+                user_data[chat_id]["step"] = None
+                # غیرفعال کردن حالت هوش مصنوعی
+                if "ai_mode" in user_data[chat_id]:
+                    user_data[chat_id]["ai_mode"] = False
+                save_user_data()
+                show_main_menu(chat_id)
+                return "ok"
+                
+            elif text == "💰 خرید اشتراک":
+                show_subscription_plans(chat_id)
+                return "ok"
+                
+            elif text == "❓ راهنما":
+                show_help(chat_id)
+                return "ok"
+                
+            elif text == "🌍 زبان":
+                show_language_menu(chat_id)
+                return "ok"
+            
+        # بررسی اینکه آیا هوش مصنوعی باید پاسخ دهد (فقط برای پیام‌های عادی که پردازش نشده‌اند)
+        if "text" in msg and AI_INTEGRATION_AVAILABLE:
+            text = msg["text"]
+            # هوش مصنوعی فقط در حالت استیکرساز هوشمند و با فعال‌سازی دستی کاربر پاسخ می‌دهد
+            if not text.startswith('/') and chat_id in user_data:
+                try:
+                    # فقط اگر کاربر در حالت استیکرساز هوشمند باشد و هوش مصنوعی را فعال کرده باشد
+                    if user_data[chat_id].get("mode") == "ai_sticker" and user_data[chat_id].get("ai_mode", False):
+                        # بررسی محدودیت هوش مصنوعی
+                        ai_remaining, next_reset = check_ai_sticker_limit(chat_id)
+                        if ai_remaining <= 0 and not is_subscribed(chat_id):
+                            next_reset_time = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(next_reset))
+                            send_message(chat_id, f"🤖 محدودیت روزانه هوش مصنوعی شما تمام شده!\n\n📊 شما امروز 5 استیکر با هوش مصنوعی ساخته‌اید.\n🔄 زمان بازنشانی: {next_reset_time}\n\n💎 برای استفاده نامحدود، اشتراک تهیه کنید.")
+                            return "ok"
+                        
+                        # پردازش پیام با هوش مصنوعی
+                        handle_ai_message(chat_id, text)
+                        return "ok"
+                except Exception as e:
+                    logger.error(f"Error in AI processing: {e}")
+                    # در صورت خطا، ادامه پردازش عادی
+        
+        # 📌 پردازش عکس
+        if "photo" in msg:
+            # بررسی ارسال رسید
+            if state.get("step") == "waiting_receipt":
+                photos = msg.get("photo", [])
+                if photos:
+                    file_id = photos[-1].get("file_id")
+                    if file_id:
+                        # ذخیره رسید در پرداخت‌های در انتظار
+                        payment_id = f"{chat_id}_{int(time.time())}"
+                        user_info = requests.get(API + f"getChat?chat_id={chat_id}").json()
+                        username = user_info.get("result", {}).get("username", f"user_{chat_id}")
+                        first_name = user_info.get("result", {}).get("first_name", "User")
+                        
+                        pending_payments[payment_id] = {
+                        "user_id": chat_id,
+                        "username": username,
+                        "first_name": first_name,
+                        "receipt_file_id": file_id,
+                        "timestamp": time.time(),
+                        "plan": state.get("selected_plan", "1month")
+                    }
+                    save_pending_payments()
+                    
+                    # اطلاع به ادمین
+                    admin_message = f"""🔔 رسید جدید دریافت شد!
+
+👤 کاربر: {first_name} (@{username if username != f'user_{chat_id}' else 'بدون یوزرنیم'})
+🆔 ایدی: {chat_id}
+📦 طرح: {SUBSCRIPTION_PLANS[state.get('selected_plan', '1month')]['title']}
+💰 مبلغ: {SUBSCRIPTION_PLANS[state.get('selected_plan', '1month')]['price']} تومان
+⏰ زمان: {time.strftime('%Y-%m-%d %H:%M:%S')}
+
+برای تایید: /admin add {chat_id} {SUBSCRIPTION_PLANS[state.get('selected_plan', '1month')]['days']}"""
+                    
+                    # ارسال رسید به ادمین
+                    try:
+                        requests.post(API + "sendPhoto", data={
+                            "chat_id": ADMIN_ID,
+                            "photo": file_id,
+                            "caption": admin_message
+                        })
+                    except Exception as e:
+                        logger.error(f"Error sending receipt to admin: {e}")
+                    
+                    # پاسخ به کاربر
+                    user_data[chat_id]["step"] = None
+                    send_message_with_back_button(chat_id, f"✅ رسید شما دریافت شد!\n\n⏳ لطفاً منتظر تایید پشتیبانی باشید.\n\n📞 در صورت عدم پاسخ، با {SUPPORT_ID} تماس بگیرید.")
+                    return "ok"
+        
+        # پردازش عکس برای استیکر
+        if state.get("mode") == "free":
+            photos = msg.get("photo", [])
+            if photos:
+                # انتخاب بهترین کیفیت عکس (آخرین عکس معمولاً بالاترین کیفیت است)
+                photo = photos[-1]
+                file_id = photo.get("file_id")
+                file_size = photo.get("file_size", 0)
+                
+                if file_id:
+                    # بررسی حجم عکس
+                    if file_size > 20 * 1024 * 1024:  # 20MB
+                        send_message_with_back_button(chat_id, "❌ عکس خیلی بزرگ است! (حداکثر 20MB)\n\n💡 راه حل:\n• از عکس با کیفیت کمتر استفاده کنید\n• عکس را فشرده کنید\n• از ابزارهای آنلاین برای کاهش حجم استفاده کنید")
+                        return "ok"
+                    
+                    if state.get("step") == "background":
+                        # عکس اول برای بکگراند
+                        user_data[chat_id]["background"] = file_id
+                        user_data[chat_id]["step"] = "text"
+                        
+                        # اطلاع‌رسانی در مورد حجم عکس
+                        size_info = ""
+                        if file_size > 5 * 1024 * 1024:  # 5MB
+                            size_info = "\n\n⚠️ عکس شما بزرگ است، ممکن است پردازش کمی طول بکشد."
+                        elif file_size > 2 * 1024 * 1024:  # 2MB
+                            size_info = "\n\n📷 عکس با کیفیت خوب دریافت شد."
+                        
+                        send_message_with_back_button(chat_id, f"✅ بکگراند تنظیم شد!{size_info}\n\n✍️ حالا متن استیکرت رو بفرست:")
+                        
+                    elif state.get("step") == "text":
+                        # تغییر بکگراند در حین ساخت استیکر
+                        user_data[chat_id]["background"] = file_id
+                        
+                        # اطلاع‌رسانی در مورد حجم عکس
+                        size_info = ""
+                        if file_size > 5 * 1024 * 1024:  # 5MB
+                            size_info = "\n⚠️ عکس بزرگ است، پردازش ممکن است کمی طول بکشد."
+                        
+                        send_message_with_back_button(chat_id, f"✅ بکگراند تغییر کرد!{size_info}\n✍️ متن استیکر بعدی را بفرست:")
+        
+        # پردازش عکس برای قابلیت‌های اشتراکی
+        handle_premium_file(chat_id, "photo", msg.get("photo", []))
+
+        # 📌 پردازش استیکر
+        if "sticker" in msg:
+            handle_premium_file(chat_id, "sticker", msg["sticker"])
+
+        # 📌 پردازش ویدیو
+        if "video" in msg:
+            handle_premium_file(chat_id, "video", msg["video"])
+
+        # 📌 پردازش انیمیشن (GIF)
+        if "animation" in msg:
+            handle_premium_file(chat_id, "animation", msg["animation"])
+
+        # 📌 پردازش ویدیو نوت
+        if "video_note" in msg:
+            handle_premium_file(chat_id, "video_note", msg["video_note"])
+
+        # 📌 پردازش فایل
+        if "document" in msg:
+            handle_premium_file(chat_id, "document", msg["document"])
+
+    except Exception as e:
+        logger.error(f"Error processing message: {e}")
+        
+    return "ok"
 
 def handle_premium_feature(chat_id, feature):
     """پردازش قابلیت‌های اشتراکی"""
@@ -4459,3 +4725,114 @@ if __name__ == "__main__":
     port = int(os.environ.get("PORT", 8080))
     logger.info(f"🚀 Starting server on port {port}")
     serve(app, host="0.0.0.0", port=port)
+
+
+def handle_callback_query(callback_query):
+    """پردازش کالبک کوئری‌ها"""
+    try:
+        query_id = callback_query["id"]
+        chat_id = callback_query["message"]["chat"]["id"]
+        message_id = callback_query["message"]["message_id"]
+        data = callback_query["data"]
+        
+        # پردازش دکمه‌های منو
+        if data == "new_sticker":
+            logger.info(f"Callback pressed: {{data}}")
+            handle_sticker_maker_toggle(chat_id, message_id, ai_manager, api)
+            api.answer_callback_query(query_id)
+            return
+            
+        elif data == "show_subscription":
+            logger.info(f"Callback pressed: {{data}}")
+            menu_manager.show_subscription_menu(chat_id, message_id)
+            api.answer_callback_query(query_id)
+            return
+            
+        elif data == "show_free_trial":
+            logger.info(f"Callback pressed: {{data}}")
+            menu_manager.show_free_trial_menu(chat_id, message_id)
+            api.answer_callback_query(query_id)
+            return
+            
+        elif data == "show_templates":
+            logger.info(f"Callback pressed: {{data}}")
+            menu_manager.show_templates_menu(chat_id, message_id)
+            api.answer_callback_query(query_id)
+            return
+            
+        elif data == "back_to_main":
+            logger.info(f"Callback pressed: {{data}}")
+            send_main_menu(chat_id, message_id)
+            api.answer_callback_query(query_id)
+            return
+            
+        elif data.startswith("sub_"):
+            logger.info(f"Callback pressed: {{data}}")
+            plan_id = data[4:]
+            handle_subscription_purchase(chat_id, plan_id, message_id)
+            api.answer_callback_query(query_id)
+            return
+            
+        elif data == "activate_trial":
+            logger.info(f"Callback pressed: {{data}}")
+            handle_trial_activation(chat_id, message_id)
+            api.answer_callback_query(query_id)
+            return
+            
+        elif data.startswith("template_"):
+            logger.info(f"Callback pressed: {{data}}")
+            template_id = data[9:]
+            handle_template_selection(chat_id, template_id, message_id)
+            api.answer_callback_query(query_id)
+            return
+            
+        elif data == "toggle_ai_sticker":
+            logger.info(f"Callback pressed: {{data}}")
+            api.send_message(chat_id, "🤖 استیکرساز هوشمند فعال شد. لطفاً متن یا تصویر خود را ارسال کنید.")
+            toggle_ai(chat_id, True, ai_manager)
+            api.answer_callback_query(query_id)
+            return
+
+        # پردازش دکمه‌های استیکر
+        elif AI_INTEGRATION_AVAILABLE:
+            from sticker_handlers import process_callback_query
+            logger.info(f"Callback pressed (AI handler): {{data}}")
+            process_callback_query(
+                callback_query, 
+                ai_manager=ai_manager, 
+                answer_callback_query=api.answer_callback_query, 
+                edit_message=api.edit_message_text
+            )
+            return
+            
+        else:
+            api.answer_callback_query(query_id, "⚠️ این قابلیت در حال حاضر در دسترس نیست.")
+            return
+            
+    except Exception as e:
+        logger.error(f"Error handling callback query: {e}")
+        api.answer_callback_query(query_id, f"⚠️ خطایی رخ داد: {str(e)}")
+
+
+
+def send_welcome_message(chat_id):
+    """ارسال پیام خوشامدگویی همراه با منو"""
+    text = (
+        "👋 سلام! به ربات استیکرساز خوش آمدید.\n\n"
+        "از منوی زیر یکی از گزینه‌ها را انتخاب کنید:"
+    )
+    keyboard = [
+        [
+            {"text": "✨ ساخت استیکر جدید", "callback_data": "new_sticker"},
+            {"text": "📚 قالب‌های آماده", "callback_data": "show_templates"}
+        ],
+        [
+            {"text": "💎 خرید اشتراک", "callback_data": "show_subscription"},
+            {"text": "🎁 دوره رایگان", "callback_data": "show_free_trial"}
+        ],
+        [
+            {"text": "🤖 استیکرساز هوشمند", "callback_data": "toggle_ai_sticker"}
+        ]
+    ]
+    api.send_message(chat_id, text, reply_markup={"inline_keyboard": keyboard})
+
