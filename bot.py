@@ -59,7 +59,7 @@ except ImportError as e:
 
 # --- تنظیمات اصلی ---
 # تنظیم توکن ربات
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")  # برای تست، توکن خود را اینجا قرار دهید
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8324626018:AAEiEd_zcpuw10s1nIWr5bryj1yyZDX0yl0")  # توکن ربات تنظیم شد
 if not BOT_TOKEN or BOT_TOKEN == "YOUR_BOT_TOKEN_HERE":
     logger.warning("⚠️ استفاده از توکن پیش‌فرض - لطفاً توکن واقعی را تنظیم کنید")
     # برای اجرای واقعی، خط زیر را فعال کنید
