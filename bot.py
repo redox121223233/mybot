@@ -650,7 +650,7 @@ def load_subscription_data():
     global subscription_data
     try:
         if os.path.exists(db_manager.files['subscriptions'])  # replaced SUBSCRIPTION_FILE):
-            with open(db_manager.files['subscriptions']  # replaced SUBSCRIPTION_FILE, 'r', encoding='utf-8') as f:
+            with open(db_manager.files['subscriptions'], 'r', encoding='utf-8') as f:  # replaced SUBSCRIPTION_FILE, 'r', encoding='utf-8') as f:
                 subscription_data = json.load(f)
                 logger.info(f"Loaded subscription data: {len(subscription_data)} users")
         else:
@@ -662,7 +662,7 @@ def load_subscription_data():
 def save_subscription_data():
     """ذخیره داده‌های اشتراک در فایل"""
     try:
-        with open(db_manager.files['subscriptions']), 'w', encoding='utf-8') as f:  # replaced SUBSCRIPTION_FILE
+        with open(db_manager.files['subscriptions'], 'w', encoding='utf-8') as f:  # replaced SUBSCRIPTION_FILE
             json.dump(subscription_data, f, ensure_ascii=False, indent=2)
         logger.info(f"Saved subscription data: {len(subscription_data)} users")
     except Exception as e:
@@ -673,7 +673,7 @@ def load_pending_payments():
     global pending_payments
     try:
         if os.path.exists(db_manager.files['payments'])  # replaced PAYMENTS_FILE):
-            with open(db_manager.files['payments']),'r', encoding='utf-8') as f:  # replaced PAYMENTS_FILE, 'r', encoding='utf-8') as f:
+            with open(db_manager.files['payments'],'r', encoding='utf-8') as f:  # replaced PAYMENTS_FILE, 'r', encoding='utf-8') as f:
                 pending_payments = json.load(f)
                 logger.info(f"Loaded pending payments: {len(pending_payments)} payments")
         else:
@@ -685,7 +685,7 @@ def load_pending_payments():
 def save_pending_payments():
     """ذخیره پرداخت‌های در انتظار در فایل"""
     try:
-        with open(db_manager.files['payments']), 'w', encoding='utf-8') as f:  # replaced PAYMENTS_FILE, 'w', encoding='utf-8') as f:
+        with open(db_manager.files['payments'], 'w', encoding='utf-8') as f:  # replaced PAYMENTS_FILE, 'w', encoding='utf-8') as f:
             json.dump(pending_payments, f, ensure_ascii=False, indent=2)
         logger.info(f"Saved pending payments: {len(pending_payments)} payments")
     except Exception as e:
@@ -708,7 +708,7 @@ def load_feedback_data():
 def save_feedback_data():
     """ذخیره بازخوردهای کاربران در فایل"""
     try:
-        with open(db_manager.files['feedback']), 'w', encoding='utf-8') as f:   # replaced FEEDBACK_FILE, 'w', encoding='utf-8') as f:
+        with open(db_manager.files['feedback'], 'w', encoding='utf-8') as f:   # replaced FEEDBACK_FILE, 'w', encoding='utf-8') as f:
             json.dump(feedback_data, f, ensure_ascii=False, indent=2)
         logger.info(f"Saved feedback data: {len(feedback_data)} feedbacks")
     except Exception as e:
