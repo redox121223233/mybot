@@ -1,55 +1,30 @@
-# services/database_manager.py
-import json
 import os
-from utils.logger import logger
+import json
+import logging
 
 class DatabaseManager:
     def __init__(self, base_dir):
         self.base_dir = base_dir
-        self.users_file = os.path.join(base_dir, "data", "users.json")
-        self.subscriptions_file = os.path.join(base_dir, "data", "subscriptions.json")
-        self.feedback_file = os.path.join(base_dir, "data", "feedback_data.json")
-        self._ensure_files()
 
-    def _ensure_files(self):
-        os.makedirs(os.path.join(self.base_dir, "data"), exist_ok=True)
-        for f in [self.users_file, self.subscriptions_file, self.feedback_file]:
-            if not os.path.exists(f):
-                with open(f, "w", encoding="utf-8") as out:
-                    json.dump({}, out)
+    def _get_path(self, filename):
+        return os.path.join(self.base_dir, filename)
 
-    def load_json(self, path):
-        try:
-            with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception as e:
-            logger.error(f"Error loading {path}: {e}")
+    def load(self, filename):
+        path = self._get_path(filename)
+        if not os.path.exists(path):
+            logging.info(f"File not found, creating empty: {filename}")
+            self.save(filename, {})
             return {}
+        with open(path, "r", encoding="utf-8") as f:
+            try:
+                return json.load(f)
+            except json.JSONDecodeError:
+                logging.warning(f"Corrupted JSON in {filename}, resetting file.")
+                self.save(filename, {})
+                return {}
 
-    def save_json(self, path, data):
-        try:
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(data, f, ensure_ascii=False, indent=2)
-        except Exception as e:
-            logger.error(f"Error saving {path}: {e}")
-
-    # === user data ===
-    def load_users(self):
-        return self.load_json(self.users_file)
-
-    def save_users(self, data):
-        self.save_json(self.users_file, data)
-
-    # === subscriptions ===
-    def load_subscriptions(self):
-        return self.load_json(self.subscriptions_file)
-
-    def save_subscriptions(self, data):
-        self.save_json(self.subscriptions_file, data)
-
-    # === feedback ===
-    def load_feedback(self):
-        return self.load_json(self.feedback_file)
-
-    def save_feedback(self, data):
-        self.save_json(self.feedback_file, data)
+    def save(self, filename, data):
+        path = self._get_path(filename)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4, ensure_ascii=False)
+        logging.info(f"Data saved to {filename}")
