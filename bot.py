@@ -313,7 +313,19 @@ def handle_callback_query(callback_query):
             )
             return
             
-        else:
+        
+    elif data == "ai_activate":
+        toggle_ai(chat_id, True, ai_manager)
+        answer_callback_query(callback_query_id, "هوش مصنوعی فعال شد ✅")
+
+    elif data == "toggle_ai_sticker":
+        handle_sticker_maker_toggle(chat_id)
+        answer_callback_query(callback_query_id, "استیکر هوش مصنوعی تغییر کرد 🎭")
+
+    elif data == "change_lang":
+        send_message(chat_id, "🌐 انتخاب زبان:\n🇮🇷 فارسی | 🇬🇧 English")
+        answer_callback_query(callback_query_id)
+    else:
             api.answer_callback_query(query_id, "⚠️ این قابلیت در حال حاضر در دسترس نیست.")
             return
             
