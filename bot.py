@@ -649,7 +649,7 @@ def load_subscription_data():
     """بارگذاری داده‌های اشتراک از فایل"""
     global subscription_data
     try:
-        if os.path.exists(db_manager.files['subscriptions'])  # replaced SUBSCRIPTION_FILE):
+        if os.path.exists(db_manager.files['subscriptions']):  # replaced SUBSCRIPTION_FILE)
             with open(db_manager.files['subscriptions'], 'r', encoding='utf-8') as f:  # replaced SUBSCRIPTION_FILE, 'r', encoding='utf-8') as f:
                 subscription_data = json.load(f)
                 logger.info(f"Loaded subscription data: {len(subscription_data)} users")
