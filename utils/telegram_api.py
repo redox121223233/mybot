@@ -91,7 +91,7 @@ class TelegramAPI:
             for chunk in r.iter_content(4096):
                 if chunk:
                     f.write(chunk)
-                        def get_back_button(self):
+     def get_back_button(self):
         return {"keyboard": [["⬅️ بازگشت"]], "resize_keyboard": True}
 
     def main_menu(self):
