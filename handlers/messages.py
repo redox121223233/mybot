@@ -1,3 +1,4 @@
+# handlers/messages.py
 import logging
 from services import legacy as legacy_services
 
@@ -8,82 +9,79 @@ sticker_manager = legacy_services.sticker_manager
 ai_manager = legacy_services.ai_manager
 subscription_manager = legacy_services.subscription_manager
 
-# وضعیت کاربران
-user_states = {}
-
-def set_state(user_id, state):
-    user_states[user_id] = state
-    logger.info(f"✅ تغییر وضعیت کاربر {user_id} → {state}")
-
-def get_state(user_id):
-    return user_states.get(user_id, "main_menu")
-
+BACK_TEXT = "⬅️ بازگشت"
 
 def handle_message(msg: dict):
-    """مدیریت پیام‌های دریافتی"""
     user_id = msg["from"]["id"]
     text = msg.get("text", "")
     logger.info(f"📩 handle_message {user_id}: {text}")
 
-    state = get_state(user_id)
-
-    # --- عکس دریافت شد ---
-    if "photo" in msg:
-        file_id = msg["photo"][-1]["file_id"]
-
-        if state == "sticker_photo":
-            sticker_manager.process_sticker_photo(user_id, file_id)
-            set_state(user_id, "sticker_text")
-            api.send_message(user_id, "📝 حالا متن استیکر رو وارد کنید:", reply_markup=menu_manager.back_button())
-
-        elif state == "ai_flow":
-            ai_manager.process_ai_photo(user_id, file_id)
-
+    # 1) اگر کاربر دکمه بازگشت زد — اول این را چک کنیم
+    if text == BACK_TEXT:
+        # اگر توی استیکرساز بودیم، کنسلش کن
+        if sticker_manager.is_in_sticker_flow(user_id):
+            sticker_manager.cancel_flow(user_id)
+        # اگر در AI بود
+        elif ai_manager.is_in_ai_flow(user_id):
+            ai_manager.cancel_flow(user_id)
+        # اگر در subscription بود
         else:
-            api.send_message(user_id, "📌 لطفاً اول یک گزینه از منوی اصلی انتخاب کنید.", reply_markup=menu_manager.main_menu())
+            menu_manager.show_main_menu(user_id)
         return
 
-    # --- متن دریافت شد ---
+    # 2) عکس
+    if "photo" in msg:
+        file_id = msg["photo"][-1]["file_id"]
+        if sticker_manager.is_in_sticker_flow(user_id):
+            sticker_manager.process_sticker_photo(user_id, file_id)
+            return
+        if ai_manager.is_in_ai_flow(user_id):
+            ai_manager.process_ai_photo(user_id, file_id)
+            return
+        api.send_message(user_id, "لطفاً ابتدا یک گزینه از منوی اصلی انتخاب کنید.", reply_markup=menu_manager.main_menu())
+        return
+
+    # 3) متن (دستور/مراحل)
     if text:
-        # مرحله انتخاب اسم پک
-        if state == "sticker_pack_name":
-            sticker_manager.set_pack_name(user_id, text)
-            set_state(user_id, "sticker_photo")
-            api.send_message(user_id, "📷 حالا عکس رو بفرست تا استیکر ساخته بشه:", reply_markup=menu_manager.back_button())
-            return
-
-        # مرحله نوشتن متن استیکر
-        elif state == "sticker_text":
-            sticker_manager.add_text_to_sticker(user_id, text)
-            set_state(user_id, "main_menu")
-            api.send_message(user_id, "✅ استیکر ساخته شد!", reply_markup=menu_manager.main_menu())
-            return
-
-        # منوی اصلی
+        # شروع استیکرساز
         if text == "🎭 استیکرساز":
-            set_state(user_id, "sticker_pack_name")
-            api.send_message(user_id, "✍️ لطفاً اسم پک استیکر خود را وارد کنید:", reply_markup=menu_manager.back_button())
+            sticker_manager.start_sticker_flow(user_id)
+            api.send_message(user_id, "✍️ لطفاً نام پک استیکر را وارد کنید:", reply_markup=menu_manager.back_button())
+            return
 
-        elif text == "⭐ اشتراک":
-            set_state(user_id, "subscription_menu")
+        # اگر در مرحله نام پک هست
+        if sticker_manager.is_in_sticker_flow(user_id):
+            # در حالت ما اسم پک باید ذخیره بشه
+            session = sticker_manager.user_sessions.get(user_id, {})
+            if session.get("step") == "pack_name":
+                sticker_manager.set_pack_name(user_id, text)
+                return
+            if session.get("step") == "text":
+                sticker_manager.add_text_to_sticker(user_id, text)
+                return
+
+        # شروع هوش مصنوعی
+        if text == "🤖 هوش مصنوعی":
+            ai_manager.start_ai_flow(user_id)
+            api.send_message(user_id, "🤖 لطفاً عکس یا دستور طراحی را ارسال کنید.", reply_markup=menu_manager.back_button())
+            return
+
+        # اشتراک
+        if text == "⭐ اشتراک":
             subscription_manager.show_subscription_menu(user_id)
+            return
 
-        elif text == "🎁 تست رایگان":
-            set_state(user_id, "main_menu")
-            api.send_message(user_id, "🎉 شما یک تست رایگان فعال دارید!", reply_markup=menu_manager.back_button())
+        if text == "🎁 تست رایگان":
+            api.send_message(user_id, "🎉 تست رایگان فعال شد.", reply_markup=menu_manager.back_button())
+            return
 
-        elif text == "🤖 هوش مصنوعی":
-            set_state(user_id, "ai_flow")
-            api.send_message(user_id, "🤖 متن یا دستور طراحی خود را بفرستید:", reply_markup=menu_manager.back_button())
+        # سایر متن‌ها (اگر در subscription باشیم باید handle کنیم)
+        if subscription_manager and hasattr(subscription_manager, "handle_subscription_action"):
+            subscription_manager.handle_subscription_action(user_id, text)
+            return
 
-        elif text == "⬅️ بازگشت":
-            set_state(user_id, "main_menu")
-            menu_manager.show_main_menu(user_id)
+        api.send_message(user_id, "متوجه نشدم. از منوی اصلی استفاده کنید.", reply_markup=menu_manager.main_menu())
+        return
 
-        else:
-            if state == "subscription_menu":
-                subscription_manager.handle_subscription_action(user_id, text)
-            elif state == "ai_flow":
-                ai_manager.process_ai_text(user_id, text)
-            else:
-                api.send_message(user_id, "❌ متوجه نشدم. از منوی اصلی استفاده کنید.", reply_markup=menu_manager.main_menu())
+    # در هر حالت دیگر
+    api.send_message(user_id, "فقط متن یا عکس ارسال کنید.", reply_markup=menu_manager.main_menu())
