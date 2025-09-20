@@ -1,73 +1,101 @@
+# services/sticker_manager.py
 import os
-from PIL import Image, ImageDraw, ImageFont
+import time
 import logging
+from PIL import Image, ImageDraw, ImageFont
 
 logger = logging.getLogger(__name__)
 
 class StickerManager:
     def __init__(self, api, base_dir="stickers"):
         self.api = api
-        self.base_dir = base_dir
-        self.user_sessions = {}  # ذخیره وضعیت هر کاربر
+        self.base_dir = base_dir or "stickers"
         os.makedirs(self.base_dir, exist_ok=True)
+        self.user_sessions = {}  # {user_id: {"step":..., "pack_name":..., "photo":...}}
 
     def start_sticker_flow(self, user_id):
-        """شروع فرآیند ساخت استیکر"""
         self.user_sessions[user_id] = {"step": "pack_name"}
-        logger.info(f"🎭 کاربر {user_id} وارد حالت استیکرساز شد.")
+        logger.info(f"Sticker flow started for {user_id}")
+
+    def is_in_sticker_flow(self, user_id):
+        return user_id in self.user_sessions
+
+    def cancel_flow(self, user_id):
+        if user_id in self.user_sessions:
+            del self.user_sessions[user_id]
+        # inform user done
+        self.api.send_message(user_id, "🔙 برگشت به منوی اصلی.", reply_markup={"keyboard":[[{"text":"⬅️ بازگشت"}]], "resize_keyboard": True})
 
     def set_pack_name(self, user_id, pack_name):
-        """ذخیره اسم پک استیکر"""
-        if user_id not in self.user_sessions:
+        session = self.user_sessions.get(user_id)
+        if not session:
             self.start_sticker_flow(user_id)
-        self.user_sessions[user_id]["pack_name"] = pack_name
-        self.user_sessions[user_id]["step"] = "photo"
-        logger.info(f"📦 کاربر {user_id} نام پک انتخاب کرد: {pack_name}")
+            session = self.user_sessions[user_id]
+        session["pack_name"] = pack_name.strip() or "default"
+        session["step"] = "photo"
+        self.api.send_message(user_id, "📸 حالا عکس را ارسال کنید.", reply_markup={"keyboard":[[{"text":"⬅️ بازگشت"}]], "resize_keyboard": True})
+        logger.info(f"User {user_id} set pack name: {session['pack_name']}")
 
     def process_sticker_photo(self, user_id, file_id):
-        """ذخیره عکس برای استیکر"""
-        session = self.user_sessions.get(user_id, {})
+        session = self.user_sessions.get(user_id)
         if not session:
-            logger.warning(f"⚠️ کاربر {user_id} در حالت استیکرساز نبود.")
+            self.api.send_message(user_id, "ابتدا از منوی اصلی استیکرساز را انتخاب کنید.", reply_markup=self._main_menu_kb())
             return
 
-        file_path = f"{self.base_dir}/{user_id}_sticker.jpg"
-        self.api.download_file(file_id, file_path)
-        session["photo"] = file_path
-        session["step"] = "text"
-        logger.info(f"📷 عکس استیکر ذخیره شد: {file_path}")
+        if session.get("step") != "photo":
+            self.api.send_message(user_id, "در حال حاضر منتظر عکس نیستیم. اگر می‌خواهید از اول شروع کنید، دکمه بازگشت را بزنید.", reply_markup=self._main_menu_kb())
+            return
+
+        try:
+            # filename unique with timestamp
+            fname = f"{user_id}_{int(time.time())}.jpg"
+            dest = os.path.join(self.base_dir, fname)
+            local_path = self.api.download_file(file_id, dest)
+            session["photo"] = local_path
+            session["step"] = "text"
+            self.api.send_message(user_id, "✍️ عکس دریافت شد. الآن متن استیکر را بفرستید.", reply_markup={"keyboard":[[{"text":"⬅️ بازگشت"}]], "resize_keyboard": True})
+            logger.info(f"Downloaded user {user_id} photo to {local_path}")
+        except Exception as e:
+            logger.exception("خطا در دانلود عکس")
+            self.api.send_message(user_id, "❌ خطا در دانلود عکس. لطفاً دوباره تلاش کنید یا عکس دیگری بفرستید.", reply_markup={"keyboard":[[{"text":"⬅️ بازگشت"}]], "resize_keyboard": True})
 
     def add_text_to_sticker(self, user_id, text):
-        """اضافه کردن متن به عکس و ساخت استیکر"""
-        session = self.user_sessions.get(user_id, {})
+        session = self.user_sessions.get(user_id)
         if not session or "photo" not in session:
-            logger.error(f"❌ عکس برای کاربر {user_id} یافت نشد.")
+            self.api.send_message(user_id, "عکسی برای ساخت استیکر پیدا نشد. لطفاً از ابتدا شروع کنید.", reply_markup=self._main_menu_kb())
             return
 
         photo_path = session["photo"]
-        output_path = f"{self.base_dir}/{user_id}_final.png"
+        pack_name = session.get("pack_name", "default")
+        out_dir = os.path.join(self.base_dir, "packs", pack_name)
+        os.makedirs(out_dir, exist_ok=True)
+        out_path = os.path.join(out_dir, f"{user_id}_{int(time.time())}.png")
 
         try:
-            image = Image.open(photo_path).convert("RGBA")
-            draw = ImageDraw.Draw(image)
-
-            # فونت پیش‌فرض
+            img = Image.open(photo_path).convert("RGBA")
+            draw = ImageDraw.Draw(img)
             try:
                 font = ImageFont.truetype("arial.ttf", 40)
             except:
                 font = ImageFont.load_default()
 
-            # متن وسط بچسبه
-            w, h = image.size
+            W, H = img.size
             text_w, text_h = draw.textsize(text, font=font)
-            draw.text(((w - text_w) / 2, h - text_h - 10), text, fill="yellow", font=font)
+            pos = ((W - text_w) // 2, H - text_h - 20)
+            draw.text(pos, text, font=font, fill="yellow")
 
-            image.save(output_path, "PNG")
+            img.save(out_path, "PNG")
+            # ارسال فایل به کاربر (به عنوان عکس یا استیکر)
+            self.api.send_photo(user_id, out_path, caption=f"✅ استیکر ساخته شد — پک: {pack_name}")
+            logger.info(f"Sticker saved: {out_path}")
 
-            # ارسال استیکر
-            self.api.send_sticker(user_id, output_path)
-            logger.info(f"✅ استیکر ساخته شد برای کاربر {user_id}")
+            # پایان جریان
+            if user_id in self.user_sessions:
+                del self.user_sessions[user_id]
 
         except Exception as e:
-            logger.error(f"❌ خطا در ساخت استیکر: {e}")
-            self.api.send_message(user_id, "⚠️ مشکلی در ساخت استیکر پیش آمد.")
+            logger.exception("خطا در ساخت استیکر")
+            self.api.send_message(user_id, "❌ خطا در ساخت استیکر. لطفاً دوباره تلاش کنید.", reply_markup=self._main_menu_kb())
+
+    def _main_menu_kb(self):
+        return {"keyboard":[[{"text":"🎭 استیکرساز"},{"text":"🤖 هوش مصنوعی"}],[{"text":"⭐ اشتراک"},{"text":"🎁 تست رایگان"}],[{"text":"ℹ️ درباره ما"}]], "resize_keyboard": True}
