@@ -6,52 +6,86 @@ from utils.telegram_api import TelegramAPI
 logger = logging.getLogger(__name__)
 
 class StickerManager:
-    def __init__(self, api: TelegramAPI, base_dir: str = "/tmp"):
+    def __init__(self, api: TelegramAPI, base_dir="stickers"):
         self.api = api
         self.base_dir = base_dir
         os.makedirs(base_dir, exist_ok=True)
 
-    def create_sticker(self, file_id: str, text: str, pack_name: str) -> str:
-        """
-        ساخت استیکر از عکس + متن
-        - file_id: آیدی فایل عکس تلگرام
-        - text: متنی که روی استیکر نوشته بشه
-        - pack_name: اسم پک (برای ذخیره مرتب در پوشه)
-        """
-        try:
-            # دانلود عکس از تلگرام
-            photo_path = os.path.join(self.base_dir, f"{file_id}.jpg")
-            self.api.download_file(file_id, photo_path)
-            logger.info(f"File downloaded for sticker: {photo_path}")
+        # وضعیت کاربرها (جریان ساخت استیکر)
+        self.user_flows = {}  
+        # ساختار: {user_id: {"step": "pack_name/photo/text", "pack_name": "", "photo_path": ""}}
 
-            # باز کردن عکس
-            image = Image.open(photo_path).convert("RGBA")
+    def start_sticker_flow(self, user_id):
+        """شروع جریان ساخت استیکر"""
+        self.user_flows[user_id] = {"step": "pack_name"}
+        logger.info(f"Sticker flow started for user {user_id}")
 
-            # کشیدن متن روی عکس
-            draw = ImageDraw.Draw(image)
+    def is_in_sticker_flow(self, user_id):
+        """بررسی اینکه کاربر توی جریان استیکرساز هست یا نه"""
+        return user_id in self.user_flows
+
+    def process_sticker_step(self, user_id, text=None, file_id=None):
+        """پردازش مراحل ساخت استیکر"""
+        flow = self.user_flows.get(user_id)
+        if not flow:
+            return
+
+        step = flow["step"]
+
+        # مرحله ۱ → گرفتن نام پک
+        if step == "pack_name" and text:
+            flow["pack_name"] = text
+            flow["step"] = "photo"
+            self.api.send_message(user_id, "📸 حالا یک عکس ارسال کنید تا استیکر ساخته بشه.")
+            return
+
+        # مرحله ۲ → گرفتن عکس
+        if step == "photo" and file_id:
+            file_path = os.path.join(self.base_dir, f"{user_id}_photo.jpg")
             try:
-                font = ImageFont.truetype("arial.ttf", 40)  # فونت اصلی
-            except:
-                logger.warning("هیچ فونت استاندارد پیدا نشد. از پیش‌فرض PIL استفاده می‌شود.")
-                font = ImageFont.load_default()
+                self.api.download_file(file_id, file_path)
+                flow["photo_path"] = file_path
+                flow["step"] = "text"
+                self.api.send_message(user_id, "✍️ عالی! حالا متنی که روی استیکر باشه رو بفرست.")
+            except Exception as e:
+                logger.error(f"خطا در دانلود عکس: {e}")
+                self.api.send_message(user_id, "❌ خطا در دریافت عکس. دوباره امتحان کنید.")
+            return
 
-            # متن وسط عکس
-            text_width, text_height = draw.textsize(text, font=font)
-            x = (image.width - text_width) // 2
-            y = image.height - text_height - 20
-            draw.text((x, y), text, font=font, fill="yellow")
+        # مرحله ۳ → گرفتن متن و ساخت استیکر
+        if step == "text" and text:
+            try:
+                output_path = os.path.join(self.base_dir, f"{user_id}_sticker.png")
+                self._create_sticker(flow["photo_path"], text, output_path)
 
-            # پوشه پک
-            pack_dir = os.path.join(self.base_dir, "stickers", pack_name)
-            os.makedirs(pack_dir, exist_ok=True)
+                with open(output_path, "rb") as f:
+                    self.api.send_photo(user_id, f, caption=f"✅ استیکر ساخته شد! پک: {flow['pack_name']}")
 
-            # ذخیره استیکر
-            sticker_path = os.path.join(pack_dir, f"{file_id}.png")
-            image.save(sticker_path, "PNG")
-            logger.info(f"Sticker created: {sticker_path}")
+                # پاک کردن جریان بعد از اتمام
+                del self.user_flows[user_id]
+            except Exception as e:
+                logger.error(f"خطا در ساخت استیکر: {e}")
+                self.api.send_message(user_id, "❌ مشکلی در ساخت استیکر پیش اومد.")
+            return
 
-            return sticker_path
+    def _create_sticker(self, photo_path, text, output_path):
+        """ساخت استیکر با متن روی عکس"""
+        img = Image.open(photo_path).convert("RGBA")
+        draw = ImageDraw.Draw(img)
 
-        except Exception as e:
-            logger.error(f"خطا در ساخت استیکر: {e}")
-            raise
+        # فونت (اگر پیدا نشد از پیش‌فرض استفاده میشه)
+        try:
+            font = ImageFont.truetype("arial.ttf", 40)
+        except:
+            font = ImageFont.load_default()
+
+        # موقعیت متن
+        W, H = img.size
+        w, h = draw.textsize(text, font=font)
+        position = ((W - w) // 2, H - h - 20)  # پایین وسط
+
+        # نوشتن متن
+        draw.text(position, text, font=font, fill="yellow")
+
+        img.save(output_path, "PNG")
+        logger.info(f"Sticker created: {output_path}")
