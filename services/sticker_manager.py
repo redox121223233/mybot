@@ -53,7 +53,7 @@ class StickerManager:
             logger.exception("❌ خطا در دانلود عکس")
             self.api.send_message(user_id, "❌ خطا در دانلود عکس. دوباره تلاش کن.", reply_markup=BACK_BTN)
 
-    def add_text_to_sticker(self, user_id, text):
+    def add_text_to_sticker(self, user_id, text, style="default"):
         session = self.user_sessions.get(user_id)
         if not session or "photo" not in session:
             self.api.send_message(user_id, "❌ ابتدا استیکرساز را از منوی اصلی شروع کن.", reply_markup=self._main_menu_kb())
@@ -70,28 +70,47 @@ class StickerManager:
             draw = ImageDraw.Draw(img)
 
             try:
-                font = ImageFont.truetype("arial.ttf", 40)
+                font = ImageFont.truetype("arial.ttf", 48)
             except:
                 font = ImageFont.load_default()
 
             W, H = img.size
-            text_w, text_h = draw.textsize(text, font=font)
-            pos = ((W - text_w) // 2, H - text_h - 20)
-            draw.text(pos, text, font=font, fill="yellow")
+            bbox = draw.textbbox((0, 0), text, font=font)
+            text_w, text_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            pos = ((W - text_w) // 2, H - text_h - 30)
+
+            # 🎨 استایل‌ها
+            if style == "shadow":
+                draw.text((pos[0]+2, pos[1]+2), text, font=font, fill="black")  # سایه
+                draw.text(pos, text, font=font, fill="white")
+
+            elif style == "outline":
+                for dx in (-2, 2):
+                    for dy in (-2, 2):
+                        draw.text((pos[0]+dx, pos[1]+dy), text, font=font, fill="black")
+                draw.text(pos, text, font=font, fill="yellow")
+
+            elif style == "box":
+                # پس‌زمینه رنگی پشت متن
+                padding = 10
+                box_pos = (pos[0]-padding, pos[1]-padding, pos[0]+text_w+padding, pos[1]+text_h+padding)
+                draw.rectangle(box_pos, fill=(0, 0, 0, 180))
+                draw.text(pos, text, font=font, fill="white")
+
+            else:  # پیش‌فرض
+                draw.text(pos, text, font=font, fill="yellow")
 
             img.save(out_path, "PNG")
             self.api.send_photo(user_id, out_path, caption=f"✅ استیکر ساخته شد — پک: {pack_name}")
 
-            # پاک کردن جریان
             if user_id in self.user_sessions:
                 del self.user_sessions[user_id]
 
-            # برگرداندن منو
             self.api.send_message(user_id, "⬅️ به منوی اصلی برگشتی.", reply_markup=self._main_menu_kb())
 
         except Exception as e:
             logger.exception("❌ خطا در ساخت استیکر")
-            self.api.send_message(user_id, "❌ مشکلی در ساخت استیکر پیش آمد. دوباره تلاش کن.", reply_markup=BACK_BTN)
+            self.api.send_message(user_id, "❌ مشکلی در ساخت استیکر پیش آمد. دوباره تلاش کن.", reply_markup=self._main_menu_kb())
 
     def _main_menu_kb(self):
         return {
@@ -102,3 +121,4 @@ class StickerManager:
             ],
             "resize_keyboard": True,
         }
+
