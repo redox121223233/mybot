@@ -17,7 +17,7 @@ try:
     # ماژول‌ها
     subscription_manager = SubscriptionManager(db_manager, "subscriptions.json")
     menu_manager = MenuManager(api, BOT_TOKEN)
-    sticker_manager = StickerManager(api, db_manager)   # ✅ اصلاح شد
+    sticker_manager = StickerManager(api, BASE_DIR)  # ✅ اصلاح شد
     ai_manager = AIManager(api)
 
     logger.info("Legacy services initialized successfully.")
