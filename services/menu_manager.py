@@ -1,26 +1,29 @@
-
-from utils.telegram_api import TelegramAPI
-
 class MenuManager:
-    def __init__(self, api: TelegramAPI, bot_token: str):
+    def __init__(self, api, bot_token):
         self.api = api
         self.bot_token = bot_token
 
-    def main_keyboard_markup(self):
-        kb = {
+    def main_menu(self):
+        """منوی اصلی ربات"""
+        return {
             "keyboard": [
-                [{"text": "🎭 استیکرساز"}, {"text": "🤖 استیکر هوش مصنوعی"}],
-                [{"text": "⭐ اشتراک"}, {"text": "🎁 تست رایگان"}],
-                [{"text": "⚙️ تنظیمات"}]
+                [{"text": "🎭 استیکرساز"}],
+                [{"text": "⭐ اشتراک"}],
+                [{"text": "🎁 تست رایگان"}],
+                [{"text": "🤖 هوش مصنوعی"}],
             ],
             "resize_keyboard": True
         }
-        return kb
 
-    def subscription_inline_markup(self):
+    def back_button(self):
+        """دکمه بازگشت به منوی اصلی"""
         return {
-            "inline_keyboard": [
-                [{"text": "💳 خرید اشتراک", "callback_data": "buy_sub"}],
-                [{"text": "📊 وضعیت اشتراک", "callback_data": "check_sub"}]
-            ]
+            "keyboard": [
+                [{"text": "⬅️ بازگشت"}]
+            ],
+            "resize_keyboard": True
         }
+
+    def show_main_menu(self, user_id):
+        """ارسال منوی اصلی به کاربر"""
+        self.api.send_message(user_id, "منوی اصلی 👇", reply_markup=self.main_menu())
