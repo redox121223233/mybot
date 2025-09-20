@@ -1,130 +1,57 @@
 import os
 import logging
 from PIL import Image, ImageDraw, ImageFont
-from services.ai_manager import AIManager
+from utils.telegram_api import TelegramAPI
 
+logger = logging.getLogger(__name__)
 
 class StickerManager:
-    def __init__(self, api, db_manager, base_dir="."):
-        """
-        مدیریت ساخت استیکرها
-        :param api: کلاس TelegramAPI
-        :param db_manager: کلاس DatabaseManager
-        :param base_dir: پوشه ذخیره‌سازی فایل‌ها
-        """
+    def __init__(self, api: TelegramAPI, base_dir: str = "/tmp"):
         self.api = api
-        self.db_manager = db_manager
         self.base_dir = base_dir
-        self.ai = AIManager()
+        os.makedirs(base_dir, exist_ok=True)
 
-    def _get_font(self, font_size=40, font_path=None):
-        """برگرداندن فونت"""
-        try:
-            if font_path and os.path.exists(font_path):
-                return ImageFont.truetype(font_path, font_size)
-            return ImageFont.truetype("arial.ttf", font_size)
-        except:
-            logging.warning("هیچ فونت استاندارد پیدا نشد. از پیش‌فرض PIL استفاده می‌شود.")
-            return ImageFont.load_default()
-
-    def create_sticker_from_photo(self, user_id, file_id, text=None, style=None):
+    def create_sticker(self, file_id: str, text: str, pack_name: str) -> str:
         """
-        📷 ساخت استیکر از عکس ارسالی کاربر
-        :param user_id: شناسه کاربر
-        :param file_id: شناسه فایل تلگرام
-        :param text: متن دلخواه روی استیکر
-        :param style: دیکشنری شامل رنگ، موقعیت، اندازه فونت
+        ساخت استیکر از عکس + متن
+        - file_id: آیدی فایل عکس تلگرام
+        - text: متنی که روی استیکر نوشته بشه
+        - pack_name: اسم پک (برای ذخیره مرتب در پوشه)
         """
         try:
-            file_path = self.api.get_file(file_id)
-            local_path = self.api.download_file(file_path)
+            # دانلود عکس از تلگرام
+            photo_path = os.path.join(self.base_dir, f"{file_id}.jpg")
+            self.api.download_file(file_id, photo_path)
+            logger.info(f"File downloaded for sticker: {photo_path}")
 
-            img = Image.open(local_path).convert("RGBA")
-            draw = ImageDraw.Draw(img)
+            # باز کردن عکس
+            image = Image.open(photo_path).convert("RGBA")
 
-            if text:
-                font = self._get_font(style.get("font_size", 40))
-                color = style.get("color", "yellow")
-                position = style.get("position", "bottom")
+            # کشیدن متن روی عکس
+            draw = ImageDraw.Draw(image)
+            try:
+                font = ImageFont.truetype("arial.ttf", 40)  # فونت اصلی
+            except:
+                logger.warning("هیچ فونت استاندارد پیدا نشد. از پیش‌فرض PIL استفاده می‌شود.")
+                font = ImageFont.load_default()
 
-                w, h = draw.textsize(text, font=font)
-                if position == "top":
-                    pos = ((img.width - w) / 2, 10)
-                elif position == "center":
-                    pos = ((img.width - w) / 2, (img.height - h) / 2)
-                else:  # bottom
-                    pos = ((img.width - w) / 2, img.height - h - 10)
+            # متن وسط عکس
+            text_width, text_height = draw.textsize(text, font=font)
+            x = (image.width - text_width) // 2
+            y = image.height - text_height - 20
+            draw.text((x, y), text, font=font, fill="yellow")
 
-                draw.text(pos, text, font=font, fill=color)
+            # پوشه پک
+            pack_dir = os.path.join(self.base_dir, "stickers", pack_name)
+            os.makedirs(pack_dir, exist_ok=True)
 
-            sticker_path = os.path.join(self.base_dir, f"sticker_{user_id}.png")
-            img.save(sticker_path, "PNG")
+            # ذخیره استیکر
+            sticker_path = os.path.join(pack_dir, f"{file_id}.png")
+            image.save(sticker_path, "PNG")
+            logger.info(f"Sticker created: {sticker_path}")
 
-            self.api.send_photo(user_id, sticker_path)
-            logging.info(f"استیکر عکس برای کاربر {user_id} ساخته شد.")
-            return True
+            return sticker_path
 
         except Exception as e:
-            logging.error(f"خطا در ساخت استیکر از عکس: {e}")
-            self.api.send_message(user_id, "❌ مشکلی در ساخت استیکر پیش آمد.")
-            return False
-
-    def create_sticker_from_text(self, user_id, text, style=None):
-        """
-        📝 ساخت استیکر فقط از متن
-        """
-        try:
-            img = Image.new("RGBA", (512, 512), (255, 255, 255, 0))
-            draw = ImageDraw.Draw(img)
-
-            font = self._get_font(style.get("font_size", 60))
-            color = style.get("color", "black")
-            w, h = draw.textsize(text, font=font)
-
-            pos = ((512 - w) / 2, (512 - h) / 2)
-            draw.text(pos, text, font=font, fill=color)
-
-            sticker_path = os.path.join(self.base_dir, f"text_sticker_{user_id}.png")
-            img.save(sticker_path, "PNG")
-
-            self.api.send_photo(user_id, sticker_path)
-            logging.info(f"استیکر متن برای کاربر {user_id} ساخته شد.")
-            return True
-
-        except Exception as e:
-            logging.error(f"خطا در ساخت استیکر متنی: {e}")
-            self.api.send_message(user_id, "❌ مشکلی در ساخت استیکر متنی پیش آمد.")
-            return False
-
-    def create_ai_sticker(self, user_id, command):
-        """
-        🤖 استفاده از AIManager برای درک دستور کاربر
-        مثال: "یه عکس بگیر روش بنویس سلام زرد بالای عکس"
-        """
-        try:
-            ai_result = self.ai.process_command(command)
-
-            if ai_result.get("mode") == "text":
-                return self.create_sticker_from_text(
-                    user_id,
-                    ai_result.get("text"),
-                    ai_result.get("style", {})
-                )
-
-            elif ai_result.get("mode") == "photo":
-                file_id = ai_result.get("file_id")
-                return self.create_sticker_from_photo(
-                    user_id,
-                    file_id,
-                    ai_result.get("text"),
-                    ai_result.get("style", {})
-                )
-
-            else:
-                self.api.send_message(user_id, "🤖 دستور شما رو متوجه نشدم.")
-                return False
-
-        except Exception as e:
-            logging.error(f"خطا در استیکر هوش مصنوعی: {e}")
-            self.api.send_message(user_id, "❌ مشکلی در پردازش دستور پیش آمد.")
-            return False
+            logger.error(f"خطا در ساخت استیکر: {e}")
+            raise
