@@ -1,70 +1,130 @@
 import os
 import logging
 from PIL import Image, ImageDraw, ImageFont
+from services.ai_manager import AIManager
+
 
 class StickerManager:
-    def __init__(self, api, db_manager, storage_dir="stickers"):
+    def __init__(self, api, db_manager, base_dir="."):
+        """
+        مدیریت ساخت استیکرها
+        :param api: کلاس TelegramAPI
+        :param db_manager: کلاس DatabaseManager
+        :param base_dir: پوشه ذخیره‌سازی فایل‌ها
+        """
         self.api = api
         self.db_manager = db_manager
-        self.storage_dir = storage_dir
+        self.base_dir = base_dir
+        self.ai = AIManager()
 
-        # پوشه استیکرها رو بسازیم اگه وجود نداره
-        os.makedirs(self.storage_dir, exist_ok=True)
+    def _get_font(self, font_size=40, font_path=None):
+        """برگرداندن فونت"""
+        try:
+            if font_path and os.path.exists(font_path):
+                return ImageFont.truetype(font_path, font_size)
+            return ImageFont.truetype("arial.ttf", font_size)
+        except:
+            logging.warning("هیچ فونت استاندارد پیدا نشد. از پیش‌فرض PIL استفاده می‌شود.")
+            return ImageFont.load_default()
 
-    def create_sticker(self, user_id, text, image_path=None, font="arial.ttf", font_size=48, color="white", position="center"):
+    def create_sticker_from_photo(self, user_id, file_id, text=None, style=None):
         """
-        ساخت استیکر با متن و (اختیاری) عکس
+        📷 ساخت استیکر از عکس ارسالی کاربر
+        :param user_id: شناسه کاربر
+        :param file_id: شناسه فایل تلگرام
+        :param text: متن دلخواه روی استیکر
+        :param style: دیکشنری شامل رنگ، موقعیت، اندازه فونت
         """
         try:
-            if image_path and os.path.exists(image_path):
-                img = Image.open(image_path).convert("RGBA")
-            else:
-                img = Image.new("RGBA", (512, 512), (0, 0, 0, 0))  # پس‌زمینه شفاف
+            file_path = self.api.get_file(file_id)
+            local_path = self.api.download_file(file_path)
 
+            img = Image.open(local_path).convert("RGBA")
             draw = ImageDraw.Draw(img)
-            font = ImageFont.truetype(font, font_size)
 
-            text_w, text_h = draw.textsize(text, font=font)
+            if text:
+                font = self._get_font(style.get("font_size", 40))
+                color = style.get("color", "yellow")
+                position = style.get("position", "bottom")
 
-            if position == "center":
-                pos = ((img.width - text_w) // 2, (img.height - text_h) // 2)
-            elif position == "top":
-                pos = ((img.width - text_w) // 2, 20)
-            elif position == "bottom":
-                pos = ((img.width - text_w) // 2, img.height - text_h - 20)
-            else:
-                pos = (20, 20)
+                w, h = draw.textsize(text, font=font)
+                if position == "top":
+                    pos = ((img.width - w) / 2, 10)
+                elif position == "center":
+                    pos = ((img.width - w) / 2, (img.height - h) / 2)
+                else:  # bottom
+                    pos = ((img.width - w) / 2, img.height - h - 10)
 
-            draw.text(pos, text, font=font, fill=color)
+                draw.text(pos, text, font=font, fill=color)
 
-            sticker_path = os.path.join(self.storage_dir, f"{user_id}_{len(os.listdir(self.storage_dir))}.png")
+            sticker_path = os.path.join(self.base_dir, f"sticker_{user_id}.png")
             img.save(sticker_path, "PNG")
 
-            # ذخیره در دیتابیس
-            self.db_manager.save("user_packs.json", user_id, {"sticker": sticker_path})
-
-            logging.info(f"Sticker created for user {user_id}: {sticker_path}")
-            return sticker_path
+            self.api.send_photo(user_id, sticker_path)
+            logging.info(f"استیکر عکس برای کاربر {user_id} ساخته شد.")
+            return True
 
         except Exception as e:
-            logging.error(f"Error creating sticker: {e}")
-            return None
+            logging.error(f"خطا در ساخت استیکر از عکس: {e}")
+            self.api.send_message(user_id, "❌ مشکلی در ساخت استیکر پیش آمد.")
+            return False
 
-    def get_user_stickers(self, user_id):
+    def create_sticker_from_text(self, user_id, text, style=None):
         """
-        دریافت استیکرهای ذخیره‌شده کاربر
+        📝 ساخت استیکر فقط از متن
         """
-        data = self.db_manager.load("user_packs.json")
-        return [s["sticker"] for s in data.get(str(user_id), [])]
+        try:
+            img = Image.new("RGBA", (512, 512), (255, 255, 255, 0))
+            draw = ImageDraw.Draw(img)
 
-    def delete_sticker(self, user_id, sticker_path):
+            font = self._get_font(style.get("font_size", 60))
+            color = style.get("color", "black")
+            w, h = draw.textsize(text, font=font)
+
+            pos = ((512 - w) / 2, (512 - h) / 2)
+            draw.text(pos, text, font=font, fill=color)
+
+            sticker_path = os.path.join(self.base_dir, f"text_sticker_{user_id}.png")
+            img.save(sticker_path, "PNG")
+
+            self.api.send_photo(user_id, sticker_path)
+            logging.info(f"استیکر متن برای کاربر {user_id} ساخته شد.")
+            return True
+
+        except Exception as e:
+            logging.error(f"خطا در ساخت استیکر متنی: {e}")
+            self.api.send_message(user_id, "❌ مشکلی در ساخت استیکر متنی پیش آمد.")
+            return False
+
+    def create_ai_sticker(self, user_id, command):
         """
-        حذف یک استیکر از کاربر
+        🤖 استفاده از AIManager برای درک دستور کاربر
+        مثال: "یه عکس بگیر روش بنویس سلام زرد بالای عکس"
         """
-        data = self.db_manager.load("user_packs.json")
-        if str(user_id) in data:
-            data[str(user_id)] = [s for s in data[str(user_id)] if s["sticker"] != sticker_path]
-            self.db_manager.save("user_packs.json", user_id, data[str(user_id)])
-            if os.path.exists(sticker_path):
-                os.remove(sticker_path)
-            logging.info(f"Sticker deleted: {sticker_path}")
+        try:
+            ai_result = self.ai.process_command(command)
+
+            if ai_result.get("mode") == "text":
+                return self.create_sticker_from_text(
+                    user_id,
+                    ai_result.get("text"),
+                    ai_result.get("style", {})
+                )
+
+            elif ai_result.get("mode") == "photo":
+                file_id = ai_result.get("file_id")
+                return self.create_sticker_from_photo(
+                    user_id,
+                    file_id,
+                    ai_result.get("text"),
+                    ai_result.get("style", {})
+                )
+
+            else:
+                self.api.send_message(user_id, "🤖 دستور شما رو متوجه نشدم.")
+                return False
+
+        except Exception as e:
+            logging.error(f"خطا در استیکر هوش مصنوعی: {e}")
+            self.api.send_message(user_id, "❌ مشکلی در پردازش دستور پیش آمد.")
+            return False
