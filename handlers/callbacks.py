@@ -1,16 +1,14 @@
 import logging
 from utils.telegram_api import TelegramAPI
-from config import BOT_TOKEN   # ✅ اضافه شد
+from handlers.messages import send_main_menu
 
-api = TelegramAPI(BOT_TOKEN)   # ✅ ساخت api با توکن
-logger = logging.getLogger(__name__)
+api = TelegramAPI()
 
 def handle_callback(callback_query):
-    user_id = callback_query["from"]["id"]
-    data = callback_query.get("data", "")
+    data = callback_query["data"]
+    chat_id = callback_query["message"]["chat"]["id"]
 
-    logger.info(f"🔘 Callback from {user_id}: {data}")
+    logging.info(f"📩 handle_callback: {data}")
 
-    if data == "back_to_menu":
-        from handlers import messages
-        messages.main_menu(user_id)
+    if data == "restart_bot":
+        send_main_menu(chat_id)
