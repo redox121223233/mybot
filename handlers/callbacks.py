@@ -1,6 +1,7 @@
 import logging
 from utils.telegram_api import TelegramAPI
-from handlers.messages import send_main_menu
+from handlers.messages import show_main_menu as send_main_menu
+
 
 api = TelegramAPI()
 
