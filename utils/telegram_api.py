@@ -1,5 +1,6 @@
 import requests
 import logging
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -18,31 +19,28 @@ class TelegramAPI:
     def send_message(self, chat_id, text, reply_markup=None):
         params = {"chat_id": chat_id, "text": text}
         if reply_markup:
-            params["reply_markup"] = reply_markup
+            params["reply_markup"] = json.dumps(reply_markup)  # ✅ تبدیل به JSON
         resp = self.request("sendMessage", params=params)
         logger.info(f"send_message: {resp}")
         return resp
 
-    def is_user_in_channel(self, user_id, channel_id):
-        """ بررسی اینکه آیا کاربر عضو کانال هست یا نه """
-        try:
-            chat_id = channel_id if isinstance(channel_id, str) and channel_id.startswith("@") else int(channel_id)
-            resp = self.request("getChatMember", {
-                "chat_id": chat_id,
-                "user_id": user_id
-            })
-            status = resp.get("result", {}).get("status")
-            return status in ["member", "administrator", "creator"]
-        except Exception as e:
-            logger.error(f"❌ خطا در بررسی عضویت: {e}")
-            return False
-
-    def set_webhook(self, url: str):
-        """ ست کردن وبهوک روی دامنه """
-        try:
-            resp = self.request("setWebhook", params={"url": url})
-            logger.info(f"✅ Webhook response: {resp}")
+    def send_sticker(self, chat_id, sticker_path):
+        with open(sticker_path, "rb") as f:
+            files = {"sticker": f}
+            params = {"chat_id": chat_id}
+            resp = self.request("sendSticker", params=params, files=files)
+            logger.info(f"send_sticker: {resp}")
             return resp
-        except Exception as e:
-            logger.error(f"❌ خطا در setWebhook: {e}")
-            raise
+
+    def download_file(self, file_id, dest_path):
+        file_info = self.request("getFile", params={"file_id": file_id})
+        file_path = file_info["result"]["file_path"]
+        url = f"https://api.telegram.org/file/bot{self.token}/{file_path}"
+        resp = requests.get(url)
+        if resp.status_code == 200:
+            with open(dest_path, "wb") as f:
+                f.write(resp.content)
+            logger.info(f"📥 File downloaded: {dest_path}")
+            return dest_path
+        else:
+            raise Exception(f"❌ خطا در دانلود فایل: {resp.text}")
