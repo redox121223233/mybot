@@ -1,8 +1,8 @@
 import logging
 from utils.telegram_api import TelegramAPI
-from config import CHANNEL_LINK
+from config import CHANNEL_LINK, BOT_TOKEN   # ✅ توکن و لینک کانال
 
-api = TelegramAPI()
+api = TelegramAPI(BOT_TOKEN)  # ✅ ساخت api با توکن
 
 logger = logging.getLogger(__name__)
 
@@ -43,7 +43,6 @@ def handle_message(message):
             "📦 نام پک استیکر خود را وارد کنید:",
             reply_markup={"keyboard": [["⬅️ بازگشت"]], "resize_keyboard": True}
         )
-        # اینجا StickerManager وارد عمل میشه
 
     elif text == "🤖 هوش مصنوعی":
         api.send_message(
@@ -51,7 +50,6 @@ def handle_message(message):
             "✍️ پیام خود را وارد کنید تا هوش مصنوعی پاسخ دهد:",
             reply_markup={"keyboard": [["⬅️ بازگشت"]], "resize_keyboard": True}
         )
-        # اینجا AIManager وارد عمل میشه
 
     elif text == "⬅️ بازگشت":
         main_menu(user_id)
