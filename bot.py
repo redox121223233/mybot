@@ -10,8 +10,8 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:%(mess
 app = Flask(__name__)
 
 # توکن ربات از legacy
-TOKEN = legacy_services.api.BOT_TOKEN
-
+from config import BOT_TOKEN
+TOKEN = BOT_TOKEN
 # مسیر وبهوک
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
