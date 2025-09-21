@@ -24,10 +24,7 @@ class TelegramAPI:
         return resp
 
     def is_user_in_channel(self, user_id, channel_id):
-        """
-        بررسی اینکه آیا کاربر عضو کانال هست یا نه
-        channel_id می‌تونه @username یا chat_id منفی باشه
-        """
+        """ بررسی اینکه آیا کاربر عضو کانال هست یا نه """
         try:
             chat_id = channel_id if isinstance(channel_id, str) and channel_id.startswith("@") else int(channel_id)
             resp = self.request("getChatMember", {
@@ -39,3 +36,13 @@ class TelegramAPI:
         except Exception as e:
             logger.error(f"❌ خطا در بررسی عضویت: {e}")
             return False
+
+    def set_webhook(self, url: str):
+        """ ست کردن وبهوک روی دامنه """
+        try:
+            resp = self.request("setWebhook", params={"url": url})
+            logger.info(f"✅ Webhook response: {resp}")
+            return resp
+        except Exception as e:
+            logger.error(f"❌ خطا در setWebhook: {e}")
+            raise
