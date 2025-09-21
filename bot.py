@@ -2,53 +2,48 @@ import os
 import logging
 from flask import Flask, request
 from services import legacy as legacy_services
-from handlers import messages, callbacks
+from handlers import messages
 
 # ---------------- Logging ----------------
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s]: %(message)s"
+    format="%(asctime)s [%(levelname)s]: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
 )
 logger = logging.getLogger(__name__)
 
-# ---------------- Init ----------------
+# ---------------- Flask ----------------
 app = Flask(__name__)
+
+# ---------------- Legacy services ----------------
 api = legacy_services.api
-BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
+if not BOT_TOKEN:
+    logger.error("❌ BOT_TOKEN is not set in environment variables!")
 
 # ---------------- Routes ----------------
 @app.route(f"/webhook/{BOT_TOKEN}", methods=["POST"])
 def webhook():
-    """دریافت آپدیت‌های تلگرام"""
-    try:
-        update = request.get_json(force=True, silent=True)
-        if not update:
-            return "no update", 200
+    update = request.get_json()
+    logger.info(f"📩 Received update: {update}")
 
-        logger.info(f"📩 Received update: {update}")
+    if "message" in update:
+        messages.handle_message(update["message"])
+    elif "callback_query" in update:
+        from handlers import callbacks
+        callbacks.handle_callback(update["callback_query"])
 
-        if "message" in update:
-            messages.handle_message(update["message"])
-        elif "callback_query" in update:
-            callbacks.handle_callback(update["callback_query"])
-
-        return "ok", 200
-    except Exception as e:
-        logger.exception(f"❌ Error in webhook: {e}")
-        return "error", 200  # همیشه جواب بدیم تا تلگرام retry نکنه
-
-@app.route("/", methods=["GET"])
-def home():
-    return "🤖 Bot is running!", 200
+    return "OK", 200
 
 # ---------------- Main ----------------
 if __name__ == "__main__":
     logger.info("🚀 Starting bot...")
 
     # ست کردن وبهوک
-    webhook_url = f"https://mybot-production-61d8.up.railway.app/webhook/{BOT_TOKEN}"
+    domain = os.environ.get("DOMAIN", "mybot-production-61d8.up.railway.app")
+    webhook_url = f"https://{domain}/webhook/{BOT_TOKEN}"
     try:
-        resp = api.request("setWebhook", {"url": webhook_url})
+        resp = api.set_webhook(webhook_url)
         if resp.get("ok"):
             logger.info("✅ Webhook set successfully!")
         else:
