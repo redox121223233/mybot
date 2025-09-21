@@ -1,144 +1,154 @@
 import logging
-from config import BOT_TOKEN
+from config import CHANNEL_USERNAME
 from utils.telegram_api import TelegramAPI
+from services.sticker_manager import process_sticker
 
 logger = logging.getLogger(__name__)
-api = TelegramAPI(BOT_TOKEN)
+api = TelegramAPI("YOUR_BOT_TOKEN")  # 🔑 توکن واقعی اینجا
 
-# ------------------ وضعیت و تنظیمات ------------------
+# ذخیره وضعیت کاربر
 user_states = {}
 user_settings = {}
 
-def init_user(user_id):
-    if user_id not in user_states:
-        user_states[user_id] = "main_menu"
-    if user_id not in user_settings:
-        user_settings[user_id] = {
-            "font": "fonts/default.ttf",
-            "color": "white",
-            "position": "bottom"
-        }
-
-# ------------------ کیبوردها ------------------
-main_menu = {
-    "keyboard": [
-        ["🎭 استیکرساز", "🤖 هوش مصنوعی"],
-        ["⭐ اشتراک", "🎁 تست رایگان"],
-        ["ℹ️ راهنما"]
-    ],
-    "resize_keyboard": True
-}
-
-sticker_menu = {
-    "keyboard": [
-        ["📸 ارسال عکس", "✍️ نوشتن متن"],
-        ["⬅️ بازگشت به منو"]
-    ],
-    "resize_keyboard": True
-}
-
-ai_menu = {
-    "keyboard": [
-        ["🎨 رنگ متن", "🔠 فونت"],
-        ["📍 موقعیت متن", "🔄 ریست تنظیمات"],
-        ["📝 شروع نوشتن", "⬅️ بازگشت به منو"]
-    ],
-    "resize_keyboard": True
-}
-
-# ------------------ منوی اصلی ------------------
+# ------------------ منو اصلی ------------------
 def send_main_menu(chat_id):
-    api.send_message(chat_id, "👋 به منوی اصلی خوش آمدید", reply_markup=main_menu)
+    keyboard = {
+        "keyboard": [
+            [{"text": "🎭 استیکرساز"}],
+            [{"text": "🤖 هوش مصنوعی (تنظیمات)"}],
+            [{"text": "ℹ️ راهنما"}]
+        ],
+        "resize_keyboard": True
+    }
+    api.send_message(chat_id, "🏠 منو اصلی:", reply_markup=keyboard)
 
-# ------------------ هندلر پیام ------------------
+# ------------------ پیام‌ها ------------------
 def handle_message(message):
     user_id = message["from"]["id"]
     text = message.get("text", "")
-
-    init_user(user_id)
-    state = user_states[user_id]
+    chat_id = message["chat"]["id"]
 
     logger.info(f"📩 handle_message {user_id}: {text}")
 
-    # ----- دستور start -----
-    if text == "/start":
-        user_states[user_id] = "main_menu"
-        send_main_menu(user_id)
+    # بررسی عضویت
+    if not api.is_user_in_channel(CHANNEL_USERNAME, user_id):
+        api.send_message(chat_id, f"📢 برای استفاده از ربات ابتدا در کانال عضو شوید:\n@{CHANNEL_USERNAME}\n\nسپس /start را بزنید ✅")
         return
 
-    # ----- منوی اصلی -----
-    if state == "main_menu":
-        if text == "🎭 استیکرساز":
-            user_states[user_id] = "sticker_waiting_photo"
-            api.send_message(user_id, "📸 لطفاً یک عکس ارسال کنید", reply_markup=sticker_menu)
+    # /start → منو اصلی
+    if text == "/start":
+        send_main_menu(chat_id)
+        user_states[user_id] = None
+        return
 
-        elif text == "🤖 هوش مصنوعی":
-            user_states[user_id] = "ai_settings"
-            api.send_message(user_id, "⚙️ تنظیمات هوش مصنوعی:", reply_markup=ai_menu)
+    # ------------------ استیکرساز ------------------
+    if text == "🎭 استیکرساز":
+        user_states[user_id] = "awaiting_photo"
+        api.send_message(chat_id, "📷 لطفا عکست رو بفرست تا روش متن بچسبونم!")
+        return
 
+    if user_states.get(user_id) == "awaiting_photo" and "photo" in message:
+        file_id = message["photo"][-1]["file_id"]
+        photo_path = f"temp/photo_{user_id}.jpg"
+        api.download_file(file_id, photo_path)
+
+        user_settings.setdefault(user_id, {})
+        user_settings[user_id]["last_photo"] = photo_path
+
+        user_states[user_id] = "awaiting_text"
+        api.send_message(chat_id, "📝 حالا متن دلخواهت رو بفرست!")
+        return
+
+    if user_states.get(user_id) == "awaiting_text" and text:
+        photo_path = user_settings[user_id].get("last_photo")
+        if not photo_path:
+            api.send_message(chat_id, "❌ اول باید عکس بدی.")
         else:
-            api.send_message(user_id, "❌ گزینه نامعتبر است. یکی از دکمه‌ها را انتخاب کنید", reply_markup=main_menu)
+            out_path = process_sticker(user_id, photo_path, text=text, settings=user_settings.get(user_id, {}))
+            if out_path:
+                api.send_sticker(chat_id, out_path)
+                api.send_message(chat_id, "✅ استیکرت آماده شد!")
+            else:
+                api.send_message(chat_id, "❌ مشکلی در ساخت استیکر پیش آمد.")
 
-    # ----- استیکرساز -----
-    elif state == "sticker_waiting_photo":
-        if "photo" in message:
-            file_id = message["photo"][-1]["file_id"]
-            logger.info(f"📷 عکس دریافت شد: {file_id}")
-            user_states[user_id] = "sticker_waiting_text"
-            api.send_message(user_id, "✍️ حالا متن مورد نظر را ارسال کنید")
-        elif text == "⬅️ بازگشت به منو":
-            user_states[user_id] = "main_menu"
-            send_main_menu(user_id)
-        else:
-            api.send_message(user_id, "❌ لطفاً یک عکس ارسال کنید", reply_markup=sticker_menu)
+        user_states[user_id] = None
+        return
 
-    elif state == "sticker_waiting_text":
-        if text == "⬅️ بازگشت به منو":
-            user_states[user_id] = "main_menu"
-            send_main_menu(user_id)
-        else:
-            api.send_message(user_id, f"✅ متن '{text}' روی عکس اعمال شد و استیکر ساخته شد")
-            user_states[user_id] = "main_menu"
-            send_main_menu(user_id)
+    # ------------------ تنظیمات هوش مصنوعی ------------------
+    if text == "🤖 هوش مصنوعی (تنظیمات)":
+        keyboard = {
+            "keyboard": [
+                [{"text": "🎨 تغییر رنگ متن"}, {"text": "🔠 تغییر فونت"}],
+                [{"text": "🔝 موقعیت متن"}, {"text": "🔠 سایز متن"}],
+                [{"text": "♻️ ریست تنظیمات"}],
+                [{"text": "🔙 بازگشت"}]
+            ],
+            "resize_keyboard": True
+        }
+        api.send_message(chat_id, "⚙️ تنظیمات دلخواهت رو انتخاب کن:", reply_markup=keyboard)
+        return
 
-    # ----- تنظیمات هوش مصنوعی -----
-    elif state == "ai_settings":
-        if text == "🎨 رنگ متن":
-            user_settings[user_id]["color"] = "red"
-            api.send_message(user_id, "✅ رنگ متن روی قرمز تنظیم شد")
+    if text == "🎨 تغییر رنگ متن":
+        user_states[user_id] = "set_color"
+        api.send_message(chat_id, "🎨 لطفا رنگ متن رو وارد کن (مثل: red یا #FF0000)")
+        return
 
-        elif text == "🔠 فونت":
-            user_settings[user_id]["font"] = "fonts/fancy.ttf"
-            api.send_message(user_id, "✅ فونت تغییر کرد")
+    if user_states.get(user_id) == "set_color" and text:
+        user_settings.setdefault(user_id, {})
+        user_settings[user_id]["color"] = text
+        api.send_message(chat_id, "✅ رنگ متن ذخیره شد!")
+        user_states[user_id] = None
+        return
 
-        elif text == "📍 موقعیت متن":
-            user_settings[user_id]["position"] = "top"
-            api.send_message(user_id, "✅ متن به بالای تصویر منتقل شد")
+    if text == "🔠 تغییر فونت":
+        user_states[user_id] = "set_font"
+        api.send_message(chat_id, "🔠 اسم فونت رو وارد کن (مثلا: Arial.ttf)")
+        return
 
-        elif text == "🔄 ریست تنظیمات":
-            user_settings[user_id] = {
-                "font": "fonts/default.ttf",
-                "color": "white",
-                "position": "bottom"
-            }
-            api.send_message(user_id, "♻️ تنظیمات ریست شد")
+    if user_states.get(user_id) == "set_font" and text:
+        user_settings.setdefault(user_id, {})
+        user_settings[user_id]["font"] = text
+        api.send_message(chat_id, "✅ فونت ذخیره شد!")
+        user_states[user_id] = None
+        return
 
-        elif text == "📝 شروع نوشتن":
-            user_states[user_id] = "ai_waiting_text"
-            api.send_message(user_id, "✍️ متن خود را ارسال کنید")
+    if text == "🔝 موقعیت متن":
+        user_states[user_id] = "set_position"
+        api.send_message(chat_id, "📍 موقعیت رو وارد کن (top / center / bottom)")
+        return
 
-        elif text == "⬅️ بازگشت به منو":
-            user_states[user_id] = "main_menu"
-            send_main_menu(user_id)
+    if user_states.get(user_id) == "set_position" and text:
+        user_settings.setdefault(user_id, {})
+        user_settings[user_id]["position"] = text
+        api.send_message(chat_id, "✅ موقعیت ذخیره شد!")
+        user_states[user_id] = None
+        return
 
-        else:
-            api.send_message(user_id, "❌ گزینه نامعتبر است", reply_markup=ai_menu)
+    if text == "🔠 سایز متن":
+        user_states[user_id] = "set_size"
+        api.send_message(chat_id, "🔢 لطفا سایز متن رو وارد کن (مثل: 32)")
+        return
 
-    elif state == "ai_waiting_text":
-        font = user_settings[user_id]["font"]
-        color = user_settings[user_id]["color"]
-        pos = user_settings[user_id]["position"]
+    if user_states.get(user_id) == "set_size" and text.isdigit():
+        user_settings.setdefault(user_id, {})
+        user_settings[user_id]["size"] = int(text)
+        api.send_message(chat_id, "✅ سایز ذخیره شد!")
+        user_states[user_id] = None
+        return
 
-        api.send_message(user_id, f"✅ متن '{text}' با تنظیمات فونت={font}, رنگ={color}, موقعیت={pos} اعمال شد")
-        user_states[user_id] = "main_menu"
-        send_main_menu(user_id)
+    if text == "♻️ ریست تنظیمات":
+        user_settings[user_id] = {}
+        api.send_message(chat_id, "♻️ تنظیمات به حالت پیش‌فرض برگشت.")
+        return
+
+    if text == "🔙 بازگشت":
+        send_main_menu(chat_id)
+        return
+
+    # ------------------ راهنما ------------------
+    if text == "ℹ️ راهنما":
+        api.send_message(chat_id, "📖 راهنما:\n\n- 🎭 استیکرساز → عکس + متن بده، استیکر آماده میشه.\n- 🤖 تنظیمات → رنگ، فونت، موقعیت، سایز متن رو تغییر بده.\n- ♻️ ریست → تنظیماتت پاک میشه.\n- 🔙 بازگشت → برگشت به منو اصلی.")
+        return
+
+    # ------------------ پیش‌فرض ------------------
+    api.send_message(chat_id, "❓ متوجه نشدم. لطفا از منو استفاده کن.")
