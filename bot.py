@@ -1,7 +1,7 @@
 import logging
 from flask import Flask, request
-from services import legacy as legacy_services
 from utils.telegram_api import TelegramAPI
+from handlers import messages, callbacks  # ✅ تغییر اینجا
 
 # ------------------ تنظیمات ------------------
 BOT_TOKEN = "8324626018:AAEiEd_zcpuw10s1nIWr5bryj1yyZDX0yl0"  # 🔑 توکن واقعی رباتت
@@ -26,9 +26,9 @@ def webhook():
 
     try:
         if "message" in update:
-            legacy_services.messages.handle_message(update["message"])
+            messages.handle_message(update["message"])
         elif "callback_query" in update:
-            legacy_services.callbacks.handle_callback(update["callback_query"])
+            callbacks.handle_callback(update["callback_query"])
     except Exception as e:
         logging.error(f"❌ Error handling update: {e}")
 
@@ -36,7 +36,6 @@ def webhook():
 
 # ------------------ اجرای اصلی ------------------
 if __name__ == "__main__":
-    logging.info("Legacy services initialized successfully.")
     logging.info("🚀 Starting bot...")
 
     # ست کردن وبهوک
