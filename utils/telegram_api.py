@@ -44,3 +44,9 @@ class TelegramAPI:
             return dest_path
         else:
             raise Exception(f"❌ خطا در دانلود فایل: {resp.text}")
+
+    def set_webhook(self, url: str):
+        """تنظیم وبهوک"""
+        params = {"url": url}
+        resp = self.request("setWebhook", params=params)
+        return resp
