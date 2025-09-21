@@ -3,50 +3,58 @@ import logging
 from flask import Flask, request
 from services import legacy as legacy_services
 from handlers import messages, callbacks
-from config import BOT_TOKEN
 
-# ---------------------- Logging ----------------------
+# ---------------- Logging ----------------
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s %(levelname)s:%(message)s"
+    format="%(asctime)s [%(levelname)s]: %(message)s"
 )
 logger = logging.getLogger(__name__)
 
-# ---------------------- Flask ----------------------
+# ---------------- Init ----------------
 app = Flask(__name__)
 api = legacy_services.api
+BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE")
 
-# ---------------------- Webhook ----------------------
-@app.route(f"/{BOT_TOKEN}", methods=["POST"])
+# ---------------- Routes ----------------
+@app.route(f"/webhook/{BOT_TOKEN}", methods=["POST"])
 def webhook():
-    """تلگرام اینجا آپدیت‌ها رو می‌فرسته"""
-    update = request.get_json(force=True, silent=True)
-
-    if not update:
-        logger.warning("⚠️ دریافت آپدیت خالی از تلگرام")
-        return "no update", 200
-
-    logger.info(f"📩 Update: {update}")
-
+    """دریافت آپدیت‌های تلگرام"""
     try:
+        update = request.get_json(force=True, silent=True)
+        if not update:
+            return "no update", 200
+
+        logger.info(f"📩 Received update: {update}")
+
         if "message" in update:
             messages.handle_message(update["message"])
         elif "callback_query" in update:
             callbacks.handle_callback(update["callback_query"])
+
+        return "ok", 200
     except Exception as e:
-        logger.error(f"❌ Error handling update: {e}")
+        logger.exception(f"❌ Error in webhook: {e}")
+        return "error", 200  # همیشه جواب بدیم تا تلگرام retry نکنه
 
-    return "ok", 200   # ✅ مهم: همیشه جواب بده
+@app.route("/", methods=["GET"])
+def home():
+    return "🤖 Bot is running!", 200
 
-# ---------------------- Startup ----------------------
+# ---------------- Main ----------------
 if __name__ == "__main__":
     logger.info("🚀 Starting bot...")
 
-    # ست وبهوک
-    webhook_url = f"https://mybot-production-61d8.up.railway.app/{BOT_TOKEN}"
-    api.set_webhook(webhook_url)
-    logger.info("✅ Webhook set successfully!")
+    # ست کردن وبهوک
+    webhook_url = f"https://mybot-production-61d8.up.railway.app/webhook/{BOT_TOKEN}"
+    try:
+        resp = api.request("setWebhook", {"url": webhook_url})
+        if resp.get("ok"):
+            logger.info("✅ Webhook set successfully!")
+        else:
+            logger.error(f"❌ Failed to set webhook: {resp}")
+    except Exception as e:
+        logger.error(f"❌ Error setting webhook: {e}")
 
-    # اجرای Flask روی Railway
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    # اجرای Flask
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
