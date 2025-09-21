@@ -1,93 +1,69 @@
 import os
-import logging
 from PIL import Image, ImageDraw, ImageFont
 
-logger = logging.getLogger(__name__)
+def process_sticker(user_id, photo_path, text, settings):
+    """
+    Process the photo to add text and create the sticker with user-defined settings.
+    """
+    try:
+        # Get settings for text
+        color = settings.get("color", "white")  # Default color is white
+        font_size = settings.get("size", 32)  # Default font size is 32
+        position = settings.get("position", "center")  # Default position is center
+        font_path = os.path.join("fonts", settings.get("font", "Arial.ttf"))  # Default font is Arial.ttf
 
-class StickerManager:
-    def __init__(self, api, base_dir="data/stickers", fonts_dir="data/fonts"):
-        self.api = api
-        self.base_dir = base_dir
-        self.fonts_dir = fonts_dir
-        self.user_flows = {}
-
-        os.makedirs(self.base_dir, exist_ok=True)
-        os.makedirs(self.fonts_dir, exist_ok=True)
-
-    def start_flow(self, user_id):
-        self.user_flows[user_id] = {"step": "pack_name"}
-        self.api.send_message(user_id, "📦 نام پکیج استیکر را وارد کنید:")
-
-    def cancel_flow(self, user_id):
-        if user_id in self.user_flows:
-            del self.user_flows[user_id]
-
-    def set_pack_name(self, user_id, pack_name):
-        self.user_flows[user_id]["pack_name"] = pack_name
-        self.user_flows[user_id]["step"] = "photo"
-        self.api.send_message(user_id, "📷 لطفاً عکس استیکر را ارسال کنید:")
-
-    def process_photo(self, user_id, file_id):
-        flow = self.user_flows.get(user_id)
-        if not flow or flow["step"] != "photo":
-            return
-
-        path = os.path.join(self.base_dir, f"{user_id}_sticker.png")
-        self.api.download_file(file_id, path)
-        flow["photo_path"] = path
-        flow["step"] = "text"
-
-        self.api.send_message(user_id, "✍️ متن مورد نظر برای استیکر را ارسال کنید:")
-
-    def add_text_and_build(self, user_id, text):
-        flow = self.user_flows.get(user_id)
-        if not flow or flow["step"] != "text":
-            return
-
-        photo_path = flow["photo_path"]
-        pack_name = flow["pack_name"]
-
-        final_path = os.path.join(self.base_dir, f"{user_id}_final.png")
-
-        # ------------------ فونت ------------------
-        font_path = self._default_font()
-        try:
-            font = ImageFont.truetype(font_path, 60)
-        except:
-            font = ImageFont.load_default()
-
+        # Open the image
         image = Image.open(photo_path).convert("RGBA")
         draw = ImageDraw.Draw(image)
 
-        bbox = draw.textbbox((0, 0), text, font=font)
-        text_w, text_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        x, y = (image.width - text_w) // 2, image.height - text_h - 20
-        draw.text((x, y), text, font=font, fill="white")
-
-        # تغییر اندازه به 512x512
-        image = image.resize((512, 512))
-        image.save(final_path, "PNG")
-
-        # ------------------ استیکر پک ------------------
-        set_name = f"pack_{user_id}_by_{self.api.username}"
-        title = f"پک {user_id}"
-
-        if not self.api.sticker_set_exists(set_name):
-            self.api.create_new_sticker_set(user_id, set_name, title, final_path)
-        else:
-            self.api.add_sticker_to_set(user_id, set_name, final_path)
-
-        # ارسال استیکر + لینک پک
-        self.api.send_sticker(user_id, final_path)
-        self.api.send_message(user_id, f"✅ استیکر ساخته شد!\n🔗 لینک پک:\nhttps://t.me/addstickers/{set_name}")
-
-        del self.user_flows[user_id]
-
-    def _default_font(self):
+        # Load the font
         try:
-            fonts = [f for f in os.listdir(self.fonts_dir) if f.endswith(".ttf")]
-            if fonts:
-                return os.path.join(self.fonts_dir, fonts[0])
+            font = ImageFont.truetype(font_path, font_size)
         except:
-            pass
+            font = ImageFont.load_default()
+
+        # Calculate text size and position
+        text_width, text_height = draw.textsize(text, font=font)
+
+        if position == "top":
+            x = (image.width - text_width) // 2
+            y = 20  # Top margin
+        elif position == "bottom":
+            x = (image.width - text_width) // 2
+            y = image.height - text_height - 20  # Bottom margin
+        else:
+            x = (image.width - text_width) // 2
+            y = (image.height - text_height) // 2  # Center position
+
+        # Draw the text
+        draw.text((x, y), text, font=font, fill=color)
+
+        # Save the final image
+        final_path = f"final_{user_id}_sticker.png"
+        image.save(final_path)
+        return final_path
+
+    except Exception as e:
+        print(f"❌ Error in sticker creation: {e}")
+        return None
+
+def create_sticker(user_id, photo_path, text, settings, api):
+    """
+    Create a sticker set for the user with the provided photo and text.
+    """
+    final_image_path = process_sticker(user_id, photo_path, text, settings)
+    if final_image_path:
+        # Create the sticker set name
+        sticker_set_name = f"pack_{user_id}_by_{api.username}"
+
+        # Check if the sticker set exists
+        if not api.sticker_set_exists(sticker_set_name):
+            # Create new sticker set
+            api.create_new_sticker_set(user_id, sticker_set_name, f"استیکرهای {user_id}", final_image_path, emoji="😀")
+            return sticker_set_name
+        else:
+            # Add the sticker to the existing set
+            api.add_sticker_to_set(user_id, sticker_set_name, final_image_path, emoji="😀")
+            return sticker_set_name
+    else:
         return None
