@@ -1,53 +1,50 @@
-import os
 import logging
 from flask import Flask, request
 from services import legacy as legacy_services
-from config import BOT_TOKEN
+from utils.telegram_api import TelegramAPI
 
-# ⚡ لاگینگ
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
+# ------------------ تنظیمات ------------------
+BOT_TOKEN = "8324626018:AAEiEd_zcpuw10s1nIWr5bryj1yyZDX0yl0"  # 🔑 توکن واقعی رباتت
+DOMAIN = "https://mybot-production-61d8.up.railway.app"        # 🌍 دامین Railway
+WEBHOOK_URL = f"{DOMAIN}/webhook/{BOT_TOKEN}"
 
-# ⚡ Flask
+# ------------------ لاگر ------------------
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s]:%(message)s"
+)
+
+# ------------------ Flask ------------------
 app = Flask(__name__)
+api = TelegramAPI(BOT_TOKEN)
 
-# ⚡ سرویس‌ها
-api = legacy_services.api
-menu_manager = legacy_services.menu_manager
-sticker_manager = legacy_services.sticker_manager
-ai_manager = legacy_services.ai_manager
-subscription_manager = legacy_services.subscription_manager
-
-# 🌍 گرفتن دامین از محیط Railway
-DOMAIN = os.getenv("DOMAIN", "mybot-production-61d8.up.railway.app")
-
-# ⚡ مسیر وبهوک درست
+# ------------------ Route وبهوک ------------------
 @app.route(f"/webhook/{BOT_TOKEN}", methods=["POST"])
 def webhook():
-    update = request.get_json()
-    if not update:
-        return {"ok": True}
+    update = request.get_json(force=True)
+    logging.info(f"📩 Update received: {update}")
 
-    if "message" in update:
-        from handlers import messages
-        messages.handle_message(update["message"])
+    try:
+        if "message" in update:
+            legacy_services.messages.handle_message(update["message"])
+        elif "callback_query" in update:
+            legacy_services.callbacks.handle_callback(update["callback_query"])
+    except Exception as e:
+        logging.error(f"❌ Error handling update: {e}")
 
-    elif "callback_query" in update:
-        from handlers import callbacks
-        callbacks.handle_callback(update["callback_query"])
+    return "ok", 200
 
-    return {"ok": True}
-
-
+# ------------------ اجرای اصلی ------------------
 if __name__ == "__main__":
-    logger.info("🚀 Starting bot...")
+    logging.info("Legacy services initialized successfully.")
+    logging.info("🚀 Starting bot...")
 
-    # 🔹 ست کردن وبهوک درست
-    webhook_url = f"https://{DOMAIN}/webhook/{BOT_TOKEN}"
-    resp = api.set_webhook(webhook_url)
-    if resp.get("ok"):
-        logger.info("✅ Webhook set successfully!")
-    else:
-        logger.error(f"❌ Error setting webhook: {resp}")
+    # ست کردن وبهوک
+    try:
+        resp = api.set_webhook(WEBHOOK_URL)
+        logging.info(f"✅ Webhook set successfully: {resp}")
+    except Exception as e:
+        logging.error(f"❌ Error setting webhook: {e}")
 
-    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 8080)))
+    # اجرای Flask
+    app.run(host="0.0.0.0", port=8080)
