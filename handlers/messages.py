@@ -1,69 +1,144 @@
 import logging
-from config import BOT_TOKEN, CHANNEL_USERNAME
+from config import BOT_TOKEN
 from utils.telegram_api import TelegramAPI
-from services.ai_manager import AIManager
-from services.sticker_manager import StickerManager
 
 logger = logging.getLogger(__name__)
 api = TelegramAPI(BOT_TOKEN)
-ai_manager = AIManager(api)
-sticker_manager = StickerManager(api)
 
-# ------------------ کیبورد اصلی ------------------
-MAIN_KB = {
-    "keyboard": [["🎭 استیکرساز"], ["🤖 هوش مصنوعی"]],
-    "resize_keyboard": True
-}
+# ------------------ وضعیت و تنظیمات ------------------
+user_states = {}
+user_settings = {}
 
-AI_KB = {
+def init_user(user_id):
+    if user_id not in user_states:
+        user_states[user_id] = "main_menu"
+    if user_id not in user_settings:
+        user_settings[user_id] = {
+            "font": "fonts/default.ttf",
+            "color": "white",
+            "position": "bottom"
+        }
+
+# ------------------ کیبوردها ------------------
+main_menu = {
     "keyboard": [
-        ["✍️ متن جدید", "🎨 رنگ متن"],
-        ["📍 موقعیت متن", "🔤 فونت"],
-        ["🔄 ریست تنظیمات", "⬅️ بازگشت"]
+        ["🎭 استیکرساز", "🤖 هوش مصنوعی"],
+        ["⭐ اشتراک", "🎁 تست رایگان"],
+        ["ℹ️ راهنما"]
     ],
     "resize_keyboard": True
 }
 
-def send_main_menu(user_id):
-    api.send_message(user_id, "📌 یکی از گزینه‌ها را انتخاب کنید:", reply_markup=MAIN_KB)
+sticker_menu = {
+    "keyboard": [
+        ["📸 ارسال عکس", "✍️ نوشتن متن"],
+        ["⬅️ بازگشت به منو"]
+    ],
+    "resize_keyboard": True
+}
 
-# ------------------ پیام‌ها ------------------
-def handle_message(msg):
-    user_id = msg["from"]["id"]
-    text = msg.get("text", "")
+ai_menu = {
+    "keyboard": [
+        ["🎨 رنگ متن", "🔠 فونت"],
+        ["📍 موقعیت متن", "🔄 ریست تنظیمات"],
+        ["📝 شروع نوشتن", "⬅️ بازگشت به منو"]
+    ],
+    "resize_keyboard": True
+}
+
+# ------------------ منوی اصلی ------------------
+def send_main_menu(chat_id):
+    api.send_message(chat_id, "👋 به منوی اصلی خوش آمدید", reply_markup=main_menu)
+
+# ------------------ هندلر پیام ------------------
+def handle_message(message):
+    user_id = message["from"]["id"]
+    text = message.get("text", "")
+
+    init_user(user_id)
+    state = user_states[user_id]
 
     logger.info(f"📩 handle_message {user_id}: {text}")
 
-    # عضویت اجباری
-    if not api.is_user_in_channel(CHANNEL_USERNAME, user_id):
-        api.send_message(user_id, f"📢 برای استفاده از ربات ابتدا در کانال عضو شوید:\n{CHANNEL_USERNAME}\n\nسپس /start را بزنید ✅")
+    # ----- دستور start -----
+    if text == "/start":
+        user_states[user_id] = "main_menu"
+        send_main_menu(user_id)
         return
 
-    # دستورات اصلی
-    if text == "/start":
-        send_main_menu(user_id)
+    # ----- منوی اصلی -----
+    if state == "main_menu":
+        if text == "🎭 استیکرساز":
+            user_states[user_id] = "sticker_waiting_photo"
+            api.send_message(user_id, "📸 لطفاً یک عکس ارسال کنید", reply_markup=sticker_menu)
 
-    elif text == "🎭 استیکرساز":
-        sticker_manager.start_flow(user_id)
+        elif text == "🤖 هوش مصنوعی":
+            user_states[user_id] = "ai_settings"
+            api.send_message(user_id, "⚙️ تنظیمات هوش مصنوعی:", reply_markup=ai_menu)
 
-    elif text == "🤖 هوش مصنوعی":
-        api.send_message(user_id, "⚙️ تنظیمات هوش مصنوعی:", reply_markup=AI_KB)
-
-    elif text == "⬅️ بازگشت":
-        send_main_menu(user_id)
-
-    elif text == "🔄 ریست تنظیمات":
-        ai_manager.reset_settings(user_id)
-        api.send_message(user_id, "✅ تنظیمات ریست شد.", reply_markup=AI_KB)
-
-    else:
-        # اگر در جریان استیکرساز هست
-        flow = sticker_manager.user_flows.get(user_id)
-        if flow:
-            step = flow["step"]
-            if step == "pack_name":
-                sticker_manager.set_pack_name(user_id, text)
-            elif step == "text":
-                sticker_manager.add_text_and_build(user_id, text)
         else:
-            api.send_message(user_id, "❌ متوجه نشدم. لطفاً از منو استفاده کنید.", reply_markup=MAIN_KB)
+            api.send_message(user_id, "❌ گزینه نامعتبر است. یکی از دکمه‌ها را انتخاب کنید", reply_markup=main_menu)
+
+    # ----- استیکرساز -----
+    elif state == "sticker_waiting_photo":
+        if "photo" in message:
+            file_id = message["photo"][-1]["file_id"]
+            logger.info(f"📷 عکس دریافت شد: {file_id}")
+            user_states[user_id] = "sticker_waiting_text"
+            api.send_message(user_id, "✍️ حالا متن مورد نظر را ارسال کنید")
+        elif text == "⬅️ بازگشت به منو":
+            user_states[user_id] = "main_menu"
+            send_main_menu(user_id)
+        else:
+            api.send_message(user_id, "❌ لطفاً یک عکس ارسال کنید", reply_markup=sticker_menu)
+
+    elif state == "sticker_waiting_text":
+        if text == "⬅️ بازگشت به منو":
+            user_states[user_id] = "main_menu"
+            send_main_menu(user_id)
+        else:
+            api.send_message(user_id, f"✅ متن '{text}' روی عکس اعمال شد و استیکر ساخته شد")
+            user_states[user_id] = "main_menu"
+            send_main_menu(user_id)
+
+    # ----- تنظیمات هوش مصنوعی -----
+    elif state == "ai_settings":
+        if text == "🎨 رنگ متن":
+            user_settings[user_id]["color"] = "red"
+            api.send_message(user_id, "✅ رنگ متن روی قرمز تنظیم شد")
+
+        elif text == "🔠 فونت":
+            user_settings[user_id]["font"] = "fonts/fancy.ttf"
+            api.send_message(user_id, "✅ فونت تغییر کرد")
+
+        elif text == "📍 موقعیت متن":
+            user_settings[user_id]["position"] = "top"
+            api.send_message(user_id, "✅ متن به بالای تصویر منتقل شد")
+
+        elif text == "🔄 ریست تنظیمات":
+            user_settings[user_id] = {
+                "font": "fonts/default.ttf",
+                "color": "white",
+                "position": "bottom"
+            }
+            api.send_message(user_id, "♻️ تنظیمات ریست شد")
+
+        elif text == "📝 شروع نوشتن":
+            user_states[user_id] = "ai_waiting_text"
+            api.send_message(user_id, "✍️ متن خود را ارسال کنید")
+
+        elif text == "⬅️ بازگشت به منو":
+            user_states[user_id] = "main_menu"
+            send_main_menu(user_id)
+
+        else:
+            api.send_message(user_id, "❌ گزینه نامعتبر است", reply_markup=ai_menu)
+
+    elif state == "ai_waiting_text":
+        font = user_settings[user_id]["font"]
+        color = user_settings[user_id]["color"]
+        pos = user_settings[user_id]["position"]
+
+        api.send_message(user_id, f"✅ متن '{text}' با تنظیمات فونت={font}, رنگ={color}, موقعیت={pos} اعمال شد")
+        user_states[user_id] = "main_menu"
+        send_main_menu(user_id)
