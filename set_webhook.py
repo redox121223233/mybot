@@ -2,7 +2,7 @@ import requests
 from config import BOT_TOKEN
 
 # 🔹 اینجا دامنه خودت رو بذار
-DOMAIN = "https://your-domain.com"   # ⚠️ تغییر بده به آدرس سرور خودت
+DOMAIN = "mybot-production-61d8.up.railway.app"   # ⚠️ تغییر بده به آدرس سرور خودت
 WEBHOOK_URL = f"{DOMAIN}/{BOT_TOKEN}"
 
 
@@ -43,3 +43,4 @@ if __name__ == "__main__":
         get_webhook_info()
     else:
         print("❌ گزینه نامعتبر")
+
