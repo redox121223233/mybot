@@ -1,25 +1,31 @@
-
+import logging
 from flask import Flask, request
-from utils.logger import logger
 from services import legacy as legacy_services
+from handlers import messages
 
-from handlers import messages, callbacks
+# لاگر
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s:%(message)s")
 
+# فلَسک
 app = Flask(__name__)
-from config import BOT_TOKEN
 
-TOKEN = BOT_TOKEN
+# توکن ربات از legacy
+TOKEN = legacy_services.api.BOT_TOKEN
 
-
+# مسیر وبهوک
 @app.route(f"/{TOKEN}", methods=["POST"])
 def webhook():
-    update = request.get_json(force=True)
-    logger.info("Received update: %s", update)
+    update = request.get_json()
+    logging.info(f"Received update: {update}")
+
     if "message" in update:
         messages.handle_message(update["message"])
     elif "callback_query" in update:
-        callbacks.handle_callback(update["callback_query"])
-    return "ok"
+        # در صورت نیاز کال‌بک‌ها هم اینجا هندل میشن
+        pass
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=8080)
+    return "ok", 200
+
+
+if __name__ == "__main__":
+    app.run(host="0.0.0.0", port=5000)
