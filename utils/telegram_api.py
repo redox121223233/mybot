@@ -1,6 +1,7 @@
 import requests
 import logging
 import os
+import json
 
 logger = logging.getLogger(__name__)
 
@@ -13,7 +14,7 @@ class TelegramAPI:
     def request(self, method: str, params=None, files=None):
         url = f"{self.base_url}/{method}"
         try:
-            response = requests.post(url, params=params, files=files)
+            response = requests.post(url, data=params, files=files)
             if response.status_code != 200:
                 raise Exception(f"❌ خطای HTTP {response.status_code}: {response.text}")
             return response.json()
@@ -25,7 +26,7 @@ class TelegramAPI:
     def send_message(self, chat_id, text, reply_markup=None):
         payload = {"chat_id": chat_id, "text": text}
         if reply_markup:
-            payload["reply_markup"] = reply_markup
+            payload["reply_markup"] = json.dumps(reply_markup)
         resp = self.request("sendMessage", params=payload)
         logger.info(f"send_message: {resp}")
         return resp
@@ -88,7 +89,6 @@ class TelegramAPI:
     # ------------------ عضویت در کانال ------------------
     def is_user_in_channel(self, channel_username, user_id):
         try:
-            # اگه @ دادی پاک می‌کنه
             if channel_username.startswith("@"):
                 channel_username = channel_username[1:]
 
