@@ -1,14 +1,11 @@
-# =========================
-# تنظیمات اصلی ربات
-# =========================
-
 # 🔑 توکن ربات
 BOT_TOKEN = "8324626018:AAEiEd_zcpuw10s1nIWr5bryj1yyZDX0yl0"
 
-# 📢 لینک کانال (یکی رو فعال کن)
-CHANNEL_LINK = "@redoxBOT_STICKER"         # کانال public
-# CHANNEL_LINK = -1001234567890      # کانال private (chat_id منفی)
+# 🌍 دامین Railway
+DOMAIN = "https://mybot-production-61d8.up.railway.app"
 
-# 📂 مسیر دیتای لوکال
-DATA_DIR = "data"
+# 📢 نام کاربری کانال (بدون لینک کامل)
+CHANNEL_USERNAME = "@redoxBOT_STICKER"
 
+# 🌍 لینک وبهوک
+WEBHOOK_URL = f"{DOMAIN}/webhook/{BOT_TOKEN}"
