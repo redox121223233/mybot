@@ -50,3 +50,16 @@ class TelegramAPI:
         params = {"url": url}
         resp = self.request("setWebhook", params=params)
         return resp
+
+    def is_user_in_channel(self, channel_username: str, user_id: int) -> bool:
+        """بررسی عضویت کاربر در کانال"""
+        try:
+            resp = self.request("getChatMember", params={
+                "chat_id": channel_username,
+                "user_id": user_id
+            })
+            status = resp["result"]["status"]
+            return status in ["member", "administrator", "creator"]
+        except Exception as e:
+            logger.error(f"❌ خطا در بررسی عضویت: {e}")
+            return False
