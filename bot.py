@@ -2,54 +2,52 @@ import os
 import logging
 from flask import Flask, request
 from services import legacy as legacy_services
-from handlers import messages
+from config import BOT_TOKEN
 
-# ---------------- Logging ----------------
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s]: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S",
-)
+# ⚡ لاگینگ
+logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# ---------------- Flask ----------------
+# ⚡ Flask
 app = Flask(__name__)
 
-# ---------------- Legacy services ----------------
+# ⚡ سرویس‌ها
 api = legacy_services.api
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
-if not BOT_TOKEN:
-    logger.error("❌ BOT_TOKEN is not set in environment variables!")
+menu_manager = legacy_services.menu_manager
+sticker_manager = legacy_services.sticker_manager
+ai_manager = legacy_services.ai_manager
+subscription_manager = legacy_services.subscription_manager
 
-# ---------------- Routes ----------------
+# 🌍 گرفتن دامین از محیط Railway
+DOMAIN = os.getenv("DOMAIN", "mybot-production-61d8.up.railway.app")
+
+# ⚡ مسیر وبهوک درست
 @app.route(f"/webhook/{BOT_TOKEN}", methods=["POST"])
 def webhook():
     update = request.get_json()
-    logger.info(f"📩 Received update: {update}")
+    if not update:
+        return {"ok": True}
 
     if "message" in update:
+        from handlers import messages
         messages.handle_message(update["message"])
+
     elif "callback_query" in update:
         from handlers import callbacks
         callbacks.handle_callback(update["callback_query"])
 
-    return "OK", 200
+    return {"ok": True}
 
-# ---------------- Main ----------------
+
 if __name__ == "__main__":
     logger.info("🚀 Starting bot...")
 
-    # ست کردن وبهوک
-    domain = os.environ.get("DOMAIN", "mybot-production-61d8.up.railway.app")
-    webhook_url = f"https://{domain}/webhook/{BOT_TOKEN}"
-    try:
-        resp = api.set_webhook(webhook_url)
-        if resp.get("ok"):
-            logger.info("✅ Webhook set successfully!")
-        else:
-            logger.error(f"❌ Failed to set webhook: {resp}")
-    except Exception as e:
-        logger.error(f"❌ Error setting webhook: {e}")
+    # 🔹 ست کردن وبهوک درست
+    webhook_url = f"https://{DOMAIN}/webhook/{BOT_TOKEN}"
+    resp = api.set_webhook(webhook_url)
+    if resp.get("ok"):
+        logger.info("✅ Webhook set successfully!")
+    else:
+        logger.error(f"❌ Error setting webhook: {resp}")
 
-    # اجرای Flask
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    app.run(host="0.0.0.0", port=int(os.getenv("PORT", 8080)))
