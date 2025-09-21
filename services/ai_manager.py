@@ -1,4 +1,3 @@
-# services/ai_manager.py
 import os
 import logging
 from PIL import Image, ImageDraw, ImageFont
@@ -6,129 +5,99 @@ from PIL import Image, ImageDraw, ImageFont
 logger = logging.getLogger(__name__)
 
 class AIManager:
-    def __init__(self, api, base_dir):
+    def __init__(self, api, base_dir="data/ai", fonts_dir="data/fonts"):
         self.api = api
-        self.base_dir = base_dir or "data/ai"
+        self.base_dir = base_dir
+        self.fonts_dir = fonts_dir
+        self.user_settings = {}  # user_id -> {"color":..., "position":..., "font":...}
+
         os.makedirs(self.base_dir, exist_ok=True)
-        self.user_flows = {}  # user_id -> {"step": "idle"|"photo"|"text", "photo_path":...}
+        os.makedirs(self.fonts_dir, exist_ok=True)
 
-    def start_flow(self, user_id):
-        self.user_flows[user_id] = {"step": "waiting"}  # waiting for text or photo
-        self.api.send_message(user_id, "🤖 هوش مصنوعی فعال شد. می‌تونی متن یا عکس + دستور طراحی ارسال کنی.\nمثال دستور: 'متن: سلام; موقعیت: بالا-راست; رنگ: زرد'")
+    # ------------------ مدیریت تنظیمات ------------------
+    def reset_settings(self, user_id):
+        self.user_settings[user_id] = {
+            "color": (255, 255, 255, 255),  # سفید
+            "position": "bottom-center",
+            "font": self._default_font()
+        }
+        logger.info(f"🔄 تنظیمات ریست شد برای {user_id}")
 
-    def cancel_flow(self, user_id):
-        if user_id in self.user_flows:
-            del self.user_flows[user_id]
+    def set_color(self, user_id, color_name):
+        colors = {
+            "سفید": (255, 255, 255, 255),
+            "مشکی": (0, 0, 0, 255),
+            "زرد": (255, 215, 0, 255),
+            "قرمز": (255, 0, 0, 255)
+        }
+        self.user_settings[user_id]["color"] = colors.get(color_name, (255, 255, 255, 255))
+        logger.info(f"🎨 رنگ برای {user_id} تغییر کرد: {color_name}")
 
-    def is_in_flow(self, user_id):
-        return user_id in self.user_flows
+    def set_position(self, user_id, pos):
+        self.user_settings[user_id]["position"] = pos
+        logger.info(f"📍 موقعیت متن برای {user_id} تغییر کرد: {pos}")
 
-    def process_ai_photo(self, user_id, file_id):
-        flow = self.user_flows.get(user_id) or {}
-        dest = os.path.join(self.base_dir, f"{user_id}_ai.png")
+    def set_font(self, user_id, font_name):
+        path = os.path.join(self.fonts_dir, font_name)
+        if os.path.exists(path):
+            self.user_settings[user_id]["font"] = path
+            logger.info(f"🔤 فونت برای {user_id} تغییر کرد: {font_name}")
+
+    def _default_font(self):
         try:
-            self.api.download_file(file_id, dest)
-            flow["photo_path"] = dest
-            flow["step"] = "awaiting_instructions"
-            self.user_flows[user_id] = flow
-            self.api.send_message(user_id, "📷 عکس دریافت شد — لطفاً دستور طراحی (متن/موقعیت/رنگ) را ارسال کن.\nمثال: متن: سلام; موقعیت: پایین-وسط; رنگ: سفید")
-        except Exception as e:
-            logger.error(f"AI: download photo error: {e}")
-            self.api.send_message(user_id, "❌ خطا در دریافت عکس.")
-
-    def process_ai_text(self, user_id, text):
-        flow = self.user_flows.get(user_id)
-        if not flow:
-            self.api.send_message(user_id, "ابتدا '🤖 هوش مصنوعی' را از منو انتخاب کن.")
-            return
-
-        photo = flow.get("photo_path")
-        if not photo:
-            # if no photo, we can just echo or do text-only response
-            # simple echo-like behaviour
-            self.api.send_message(user_id, f"🤖 پاسخ هوش مصنوعی (تکست):\n{text}")
-            return
-
-        # parse simple params: متن:, موقعیت:, رنگ:
-        parts = {}
-        for part in text.split(";"):
-            if ":" in part:
-                k,v = part.split(":",1)
-                parts[k.strip().lower()] = v.strip()
-
-        content = parts.get("متن") or parts.get("text") or text
-        color_name = parts.get("رنگ","white")
-        position = parts.get("موقعیت","bottom-center")
-
-        # map color
-        colors = {"سفید":(255,255,255,255),"white":(255,255,255,255),
-                  "مشکی":(0,0,0,255),"black":(0,0,0,255),
-                  "زرد":(255,215,0,255),"red":(255,0,0,255)}
-        col = colors.get(color_name.lower(), (255,255,255,255))
-
-        try:
-            out = self._overlay_text_on_image(photo, content, col, position, user_id)
-            # send result image
-            self.api.send_message(user_id, "✅ تصویر شما ساخته شد؛ ارسال می‌شود ...")
-            try:
-                self.api.send_sticker(user_id, out)  # try as sticker first (if 512x512)
-            except Exception:
-                # fallback: send as photo
-                with open(out, "rb") as f:
-                    # use sendMessage with photo via Telegram sendPhoto endpoint
-                    self.api.request("sendPhoto", params={"chat_id": user_id}, files={"photo": open(out, "rb")})
-            self.cancel_flow(user_id)
-        except Exception as e:
-            logger.exception("AI processing failed")
-            self.api.send_message(user_id, "❌ خطا در تولید تصویر.")
-
-    def _overlay_text_on_image(self, path, text, color, position, user_id):
-        img = Image.open(path).convert("RGBA")
-        # resize similar to sticker (fit into 512 if large)
-        target = 512
-        if img.width > target or img.height > target:
-            ratio = min(target / img.width, target / img.height)
-            img = img.resize((int(img.width*ratio), int(img.height*ratio)), Image.LANCZOS)
-
-        final = Image.new("RGBA", (target, target), (0,0,0,0))
-        paste_x = (target - img.width)//2
-        paste_y = (target - img.height)//2
-        final.paste(img, (paste_x, paste_y), img if img.mode == "RGBA" else None)
-
-        draw = ImageDraw.Draw(final)
-        # font
-        try:
-            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 40)
+            fonts = [f for f in os.listdir(self.fonts_dir) if f.endswith(".ttf")]
+            if fonts:
+                return os.path.join(self.fonts_dir, fonts[0])
         except Exception:
+            pass
+        return None
+
+    def get_settings(self, user_id):
+        if user_id not in self.user_settings:
+            self.reset_settings(user_id)
+        return self.user_settings[user_id]
+
+    # ------------------ پردازش عکس ------------------
+    def add_text_to_image(self, user_id, image_path, text, output_path):
+        settings = self.get_settings(user_id)
+
+        image = Image.open(image_path).convert("RGBA")
+        draw = ImageDraw.Draw(image)
+
+        # انتخاب فونت
+        font_path = settings.get("font")
+        try:
+            if font_path and os.path.exists(font_path):
+                font = ImageFont.truetype(font_path, 48)
+            else:
+                font = ImageFont.load_default()
+        except:
             font = ImageFont.load_default()
 
-        try:
-            bbox = draw.textbbox((0,0), text, font=font)
-            tw = bbox[2]-bbox[0]; th = bbox[3]-bbox[1]
-        except Exception:
-            tw, th = font.getsize(text)
+        # متن
+        color = settings.get("color", (255, 255, 255, 255))
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_w, text_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
 
-        # position map
-        pos = position.replace(" ", "").lower()
-        if "top" in pos:
-            y = 10
-        elif "bottom" in pos:
-            y = target - th - 10
+        # موقعیت
+        pos_name = settings.get("position", "bottom-center")
+        if pos_name == "bottom-center":
+            pos = ((image.width - text_w) // 2, image.height - text_h - 20)
+        elif pos_name == "top-center":
+            pos = ((image.width - text_w) // 2, 20)
+        elif pos_name == "center":
+            pos = ((image.width - text_w) // 2, (image.height - text_h) // 2)
+        elif pos_name == "bottom-left":
+            pos = (20, image.height - text_h - 20)
+        elif pos_name == "bottom-right":
+            pos = (image.width - text_w - 20, image.height - text_h - 20)
         else:
-            y = (target - th)//2
+            pos = (20, 20)
 
-        if "left" in pos:
-            x = 10
-        elif "right" in pos:
-            x = target - tw - 10
-        else:
-            x = (target - tw)//2
+        # نوشتن متن
+        draw.text(pos, text, font=font, fill=color)
 
-        # outline + text
-        for ox,oy in [(-2,-2),(2,-2),(-2,2),(2,2)]:
-            draw.text((x+ox, y+oy), text, font=font, fill=(0,0,0,200))
-        draw.text((x,y), text, font=font, fill=color)
-
-        out = os.path.join(self.base_dir, f"{user_id}_ai_out.png")
-        final.save(out, format="PNG")
-        return out
+        # ذخیره
+        image.save(output_path, "PNG")
+        logger.info(f"✅ عکس نهایی ساخته شد: {output_path}")
+        return output_path
