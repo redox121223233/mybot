@@ -1,58 +1,67 @@
 import logging
+from config import BOT_TOKEN, CHANNEL_LINK
 from utils.telegram_api import TelegramAPI
-from config import CHANNEL_LINK, BOT_TOKEN   # ✅ توکن و لینک کانال
-
-api = TelegramAPI(BOT_TOKEN)  # ✅ ساخت api با توکن
+from services import legacy as legacy_services
 
 logger = logging.getLogger(__name__)
 
-# ➖➖ منوی اصلی ➖➖
-def main_menu(user_id):
-    keyboard = {
-        "keyboard": [
-            ["🎭 استیکر ساز"],
-            ["🤖 هوش مصنوعی"],
-            ["ℹ️ درباره ما"]
-        ],
-        "resize_keyboard": True
-    }
-    api.send_message(user_id, "📍 منوی اصلی:", reply_markup=keyboard)
+api = TelegramAPI(BOT_TOKEN)
+menu_manager = legacy_services.menu_manager
+sticker_manager = legacy_services.sticker_manager
+ai_manager = legacy_services.ai_manager
+subscription_manager = legacy_services.subscription_manager
 
-# ➖➖ هندل پیام‌ها ➖➖
-def handle_message(message):
-    user_id = message["from"]["id"]
-    text = message.get("text", "")
 
+def handle_message(msg: dict):
+    """مدیریت پیام‌های دریافتی از کاربر"""
+    user_id = msg["from"]["id"]
+    text = msg.get("text", "")
     logger.info(f"📩 handle_message {user_id}: {text}")
 
-    # 🔐 عضویت اجباری
+    # --------- عضویت اجباری ---------
     if not api.is_user_in_channel(user_id, CHANNEL_LINK):
-        join_button = {
-            "inline_keyboard": [[{"text": "عضویت در کانال ✅", "url": CHANNEL_LINK}]]
-        }
-        api.send_message(user_id, "برای استفاده از ربات باید در کانال عضو شوید 👇", reply_markup=join_button)
+        api.send_message(
+            user_id,
+            "🚨 برای استفاده از ربات باید عضو کانال بشی:",
+            reply_markup={
+                "inline_keyboard": [
+                    [{"text": "📢 عضویت در کانال", "url": f"https://t.me/{CHANNEL_LINK.replace('@', '')}"}],
+                    [{"text": "🔄 چک مجدد", "callback_data": "check_membership"}]
+                ]
+            }
+        )
         return
 
-    # دستورات
+    # --------- دستورات ---------
     if text == "/start":
-        main_menu(user_id)
+        legacy_services.menu_manager.show_main_menu(user_id)
 
-    elif text == "🎭 استیکر ساز":
-        api.send_message(
-            user_id,
-            "📦 نام پک استیکر خود را وارد کنید:",
-            reply_markup={"keyboard": [["⬅️ بازگشت"]], "resize_keyboard": True}
-        )
+    elif text == "🎭 استیکرساز":
+        api.send_message(user_id, "📦 لطفاً نام پک استیکر خود را وارد کنید ✍️",
+                         reply_markup=menu_manager.back_button())
+        sticker_manager.start_sticker_flow(user_id)
+
+    elif text == "⭐ اشتراک":
+        subscription_manager.show_subscription_menu(user_id)
 
     elif text == "🤖 هوش مصنوعی":
-        api.send_message(
-            user_id,
-            "✍️ پیام خود را وارد کنید تا هوش مصنوعی پاسخ دهد:",
-            reply_markup={"keyboard": [["⬅️ بازگشت"]], "resize_keyboard": True}
-        )
+        api.send_message(user_id, "متن یا دستور طراحی خود را وارد کنید 🧠",
+                         reply_markup=menu_manager.back_button())
+        ai_manager.start_ai_flow(user_id)
 
     elif text == "⬅️ بازگشت":
-        main_menu(user_id)
+        menu_manager.show_main_menu(user_id)
+
+    elif "photo" in msg:
+        file_id = msg["photo"][-1]["file_id"]
+        if sticker_manager.is_in_sticker_flow(user_id):
+            sticker_manager.process_sticker_photo(user_id, file_id)
+        elif ai_manager.is_in_ai_flow(user_id):
+            ai_manager.process_ai_photo(user_id, file_id)
+        else:
+            api.send_message(user_id, "📌 از منوی اصلی یکی از گزینه‌ها را انتخاب کنید.",
+                             reply_markup=menu_manager.main_menu())
 
     else:
-        api.send_message(user_id, "❓ متوجه نشدم. از منو استفاده کنید.")
+        api.send_message(user_id, "❓ متوجه نشدم. از منوی اصلی استفاده کنید.",
+                         reply_markup=menu_manager.main_menu())
