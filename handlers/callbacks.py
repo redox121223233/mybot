@@ -1,43 +1,31 @@
+# handlers/callbacks.py
 import logging
-from config import BOT_TOKEN
 from utils.telegram_api import TelegramAPI
-from handlers.messages import send_main_menu, user_settings
+from config import BOT_TOKEN, CHANNEL_USERNAME
+from handlers.messages import send_main_menu
 
-logger = logging.getLogger(__name__)
 api = TelegramAPI(BOT_TOKEN)
+logger = logging.getLogger(__name__)
 
 def handle_callback(callback_query):
+    chat_id = callback_query["message"]["chat"]["id"]
     user_id = callback_query["from"]["id"]
     data = callback_query["data"]
 
-    logger.info(f"🔘 handle_callback {user_id}: {data}")
+    logger.info(f"📩 handle_callback {user_id}: {data}")
 
-    if data == "main_menu":
-        send_main_menu(user_id)
-
-    elif data.startswith("set_color_"):
-        color = data.split("_")[2]
-        user_settings[user_id]["color"] = color
-        api.send_message(user_id, f"✅ رنگ متن روی {color} تنظیم شد")
-
-    elif data.startswith("set_font_"):
-        font = data.split("_")[2]
-        font_file = "fonts/default.ttf" if font == "default" else "fonts/fancy.ttf"
-        user_settings[user_id]["font"] = font_file
-        api.send_message(user_id, f"✅ فونت تغییر کرد ({font})")
-
-    elif data.startswith("set_pos_"):
-        pos = data.split("_")[2]
-        user_settings[user_id]["position"] = pos
-        api.send_message(user_id, f"✅ موقعیت متن روی {pos} تنظیم شد")
-
-    elif data == "reset_settings":
-        user_settings[user_id] = {
-            "font": "fonts/default.ttf",
-            "color": "white",
-            "position": "bottom"
-        }
-        api.send_message(user_id, "♻️ تنظیمات ریست شد")
-
-    else:
-        api.send_message(user_id, "❌ این دکمه ناشناخته است")
+    if data == "check_membership":
+        if api.is_user_in_channel(user_id):
+            api.send_message(chat_id, "✅ عضویت شما تایید شد.")
+            send_main_menu(chat_id)
+        else:
+            api.send_message(
+                chat_id,
+                f"❌ هنوز عضو کانال نیستید!\n{CHANNEL_USERNAME}",
+                reply_markup={
+                    "inline_keyboard": [
+                        [{"text": "📢 عضویت در کانال", "url": f"https://t.me/{CHANNEL_USERNAME.replace('@','')}"}],
+                        [{"text": "✅ بررسی مجدد", "callback_data": "check_membership"}]
+                    ]
+                }
+            )
