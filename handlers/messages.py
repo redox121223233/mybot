@@ -1,77 +1,52 @@
 import logging
-import os
 from config import CHANNEL_USERNAME
-from utils.telegram_api import TelegramAPI
-from service.ai_manager import generate_sticker   # تغییر مسیر
-from service.sticker_manager import update_user_settings, reset_user_settings  # تغییر مسیر
+from services.ai_manager import generate_sticker
+from services.sticker_manager import handle_sticker_upload
+from utils.settings_manager import update_user_settings, reset_user_settings
 
-api = TelegramAPI()
 logger = logging.getLogger(__name__)
 
-def send_main_menu(chat_id):
-    keyboard = {
+def handle_message(api, message):
+    chat_id = message["chat"]["id"]
+    text = message.get("text", "")
+    photos = message.get("photo")
+
+    logger.info(f"📩 handle_message {chat_id}: {text}")
+
+    # Start
+    if text == "/start":
+        if not api.is_user_in_channel(CHANNEL_USERNAME, chat_id):
+            api.send_message(
+                chat_id,
+                f"📢 برای استفاده از ربات ابتدا در کانال عضو شوید:\n{CHANNEL_USERNAME}\n\nسپس /start را بزنید ✅"
+            )
+            return
+        send_main_menu(api, chat_id)
+
+    # Sticker maker
+    elif text == "🎭 استیکرساز":
+        api.send_message(chat_id, "🖼 لطفا عکس مورد نظر را ارسال کنید تا استیکر ساخته شود.")
+
+    elif photos:
+        handle_sticker_upload(api, chat_id, photos)
+
+    # AI
+    elif text == "🤖 هوش مصنوعی":
+        api.send_message(chat_id, "✍️ متن یا دستور خود را بفرستید تا تبدیل به استیکر شود.")
+
+    elif text.startswith("تنظیمات"):
+        api.send_message(chat_id, "⚙️ تنظیمات استیکر به‌زودی فعال می‌شود.")
+
+    else:
+        api.send_message(chat_id, "❓ متوجه نشدم. لطفا از منوی اصلی استفاده کنید.")
+
+def send_main_menu(api, chat_id):
+    reply_markup = {
         "keyboard": [
             [{"text": "🎭 استیکرساز"}],
             [{"text": "🤖 هوش مصنوعی"}],
-            [{"text": "⚙️ تنظیمات استیکر"}, {"text": "♻️ ریست تنظیمات"}]
+            [{"text": "⚙️ تنظیمات"}, {"text": "♻️ ریست تنظیمات"}]
         ],
         "resize_keyboard": True
     }
-    api.send_message(chat_id, "📍 یکی از گزینه‌ها را انتخاب کنید:", reply_markup=keyboard)
-
-def handle_message(message):
-    user_id = message["from"]["id"]
-    chat_id = message["chat"]["id"]
-    text = message.get("text")
-    photos = message.get("photo")
-
-    logger.info(f"📩 handle_message {user_id}: {text or '📷 photo'}")
-
-    # عضویت اجباری
-    try:
-        member = api.get_chat_member(CHANNEL_USERNAME, user_id)
-        status = member["result"]["status"]
-        if status not in ["member", "administrator", "creator"]:
-            api.send_message(chat_id, f"📢 برای استفاده از ربات ابتدا عضو شوید:\n{CHANNEL_USERNAME}\nسپس /start را بزنید ✅")
-            return
-    except Exception as e:
-        logger.error(f"❌ خطا در بررسی عضویت: {e}")
-        return
-
-    # شروع
-    if text == "/start":
-        send_main_menu(chat_id)
-
-    elif text == "🎭 استیکرساز":
-        api.send_message(chat_id, "📷 یک عکس ارسال کنید یا متنی بنویسید تا تبدیل به استیکر شود.")
-
-    elif text == "🤖 هوش مصنوعی":
-        api.send_message(chat_id, "✍️ متن خود را وارد کنید تا تبدیل به استیکر هوشمند شود.")
-
-    elif text == "⚙️ تنظیمات استیکر":
-        api.send_message(chat_id, "🎨 تنظیمات:\n1️⃣ رنگ متن\n2️⃣ اندازه فونت\n3️⃣ موقعیت متن")
-
-    elif text == "♻️ ریست تنظیمات":
-        reset_user_settings(user_id)
-        api.send_message(chat_id, "✅ تنظیمات پیش‌فرض بازیابی شد.")
-
-    elif photos:
-        file_id = photos[-1]["file_id"]
-        dest_path = f"/tmp/{user_id}_photo.png"
-        api.download_file(file_id, dest_path)
-
-        sticker_path = generate_sticker(user_id, "متن شما اینجاست", dest_path)
-        if sticker_path:
-            api.send_sticker(chat_id, sticker_path)
-        else:
-            api.send_message(chat_id, "❌ مشکلی در ساخت استیکر پیش آمد.")
-
-    elif text:
-        sticker_path = generate_sticker(user_id, text)
-        if sticker_path:
-            api.send_sticker(chat_id, sticker_path)
-        else:
-            api.send_message(chat_id, "❌ مشکلی در ساخت استیکر پیش آمد.")
-
-    else:
-        api.send_message(chat_id, "❌ متوجه نشدم، لطفاً دوباره تلاش کنید.")
+    api.send_message(chat_id, "👋 به ربات خوش آمدید!\nیکی از گزینه‌ها را انتخاب کنید:", reply_markup=reply_markup)
