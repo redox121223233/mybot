@@ -1,50 +1,72 @@
+# handlers/messages.py
 import logging
-from services.ai_manager import generate_sticker
+from utils.telegram_api import TelegramAPI
+from config import BOT_TOKEN
 from services.sticker_manager import handle_sticker_upload
+from services.ai_manager import generate_sticker
 from services.setting_manager import get_user_settings
-from services.menu_manager import get_main_menu
 
 logger = logging.getLogger(__name__)
+api = TelegramAPI(BOT_TOKEN)
 
+# وضعیت کاربرها (مثلاً انتخاب استیکرساز، هوش مصنوعی و ...)
+user_states = {}
 
-def handle_message(update: dict, api):
-    """
-    هندل کردن پیام‌های کاربر
-    """
-    if not isinstance(update, dict):
-        logger.error(f"❌ Update is not a dict: {type(update)}")
-        return
+def handle_message(update):
+    try:
+        message = update.get("message", {})
+        user_id = message.get("from", {}).get("id")
+        text = message.get("text")
+        photos = message.get("photo")
 
-    message = update.get("message", {})
-    chat_id = message.get("chat", {}).get("id")
-    user_id = message.get("from", {}).get("id")
-    text = message.get("text")
-    photos = message.get("photo")
+        logger.info(f"📩 handle_message {user_id}: {text if text else '[photo]'}")
 
-    logger.info(f"📩 handle_message {user_id}: {text or '[photo]'}")
+        if not user_id:
+            return
 
-    # ================= دستورات =================
-    if text == "/start":
-        api.send_message(
-            chat_id,
-            "👋 خوش آمدید!\nیکی از گزینه‌ها رو انتخاب کنید:",
-            reply_markup=get_main_menu()
-        )
+        # اگر کاربر /start زد
+        if text == "/start":
+            api.send_message(
+                user_id,
+                "👋 خوش آمدید!\nیکی از گزینه‌ها رو انتخاب کنید:",
+                reply_markup={
+                    "keyboard": [[{"text": "🎭 استیکرساز"}],
+                                 [{"text": "🤖 هوش مصنوعی"}],
+                                 [{"text": "⚙️ تنظیمات"}]],
+                    "resize_keyboard": True
+                }
+            )
+            user_states[user_id] = None
+            return
 
-    elif text == "🎭 استیکرساز":
-        api.send_message(chat_id, "📸 لطفاً یک عکس ارسال کنید تا به استیکر تبدیل بشه.")
+        # استیکرساز
+        if text == "🎭 استیکرساز":
+            api.send_message(user_id, "📸 لطفاً یک عکس ارسال کنید تا به استیکر تبدیل بشه.")
+            user_states[user_id] = "sticker"
+            return
 
-    elif text == "🤖 هوش مصنوعی":
-        api.send_message(chat_id, "📝 متن خودت رو بفرست تا تبدیل به استیکر بشه.")
+        # هوش مصنوعی
+        if text == "🤖 هوش مصنوعی":
+            api.send_message(user_id, "📝 متن خودت رو بفرست تا تبدیل به استیکر بشه.")
+            user_states[user_id] = "ai"
+            return
 
-    elif text:
-        # کاربر متن داده → تولید استیکر هوش مصنوعی
-        sticker = generate_sticker(text, user_id)
-        api.send_message(chat_id, sticker)
+        # تنظیمات
+        if text == "⚙️ تنظیمات":
+            settings = get_user_settings(user_id)
+            api.send_message(user_id, f"⚙️ تنظیمات فعلی شما:\n{settings}")
+            return
 
-    elif photos:
-        # کاربر عکس داده → هندل استیکرساز
-        handle_sticker_upload(api, chat_id, user_id, photos)
+        # اگر کاربر عکس فرستاد و تو حالت استیکرسازه
+        if photos and user_states.get(user_id) == "sticker":
+            handle_sticker_upload(update, user_id, pack_name="test_pack")
+            return
 
-    else:
-        api.send_message(chat_id, "❌ متوجه نشدم. از دکمه‌ها استفاده کن.")
+        # اگر کاربر متن فرستاد و تو حالت هوش مصنوعیه
+        if text and user_states.get(user_id) == "ai":
+            result = generate_sticker(text, user_id)
+            api.send_message(user_id, result)
+            return
+
+    except Exception as e:
+        logger.error(f"❌ Error handling update: {e}", exc_info=True)
