@@ -1,10 +1,12 @@
 import os
 import logging
+from config import BOT_TOKEN   # ✅ توکن از config.py
 from utils.telegram_api import TelegramAPI
 
 logger = logging.getLogger(__name__)
 
-api = TelegramAPI()
+# ✅ نمونه API با توکن
+api = TelegramAPI(BOT_TOKEN)
 DATA_DIR = "/tmp"   # مسیر ذخیره موقت عکس‌ها
 
 
