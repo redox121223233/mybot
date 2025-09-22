@@ -1,25 +1,33 @@
 import os
 import logging
-from config import BOT_TOKEN
 from utils.telegram_api import TelegramAPI
+from PIL import Image
 
 logger = logging.getLogger(__name__)
 
-# ✅ نمونه API
-api = TelegramAPI(BOT_TOKEN)
-DATA_DIR = "/tmp"
+api = TelegramAPI(token=os.getenv("BOT_TOKEN"))
+DATA_DIR = "/tmp"   # مسیر ذخیره موقت عکس‌ها
 
 
-def handle_sticker_upload(update: dict, user_id: int, pack_name: str, text: str = None):
+def resize_to_sticker_size(input_path, output_path):
+    """
+    تغییر اندازه تصویر به 512x512 (فرمت PNG)
+    """
+    with Image.open(input_path) as img:
+        img = img.convert("RGBA")  # استیکر باید شفافیت داشته باشه
+        img = img.resize((512, 512), Image.LANCZOS)
+        img.save(output_path, format="PNG")
+
+
+def handle_sticker_upload(update, user_id, pack_name, text=None):
     """
     گرفتن عکس کاربر و ساختن/اضافه کردن استیکر به پک
-    :param update: dict آپدیت تلگرام
+    :param update: آپدیت تلگرام (دیکشنری کامل)
     :param user_id: آی‌دی کاربر
-    :param pack_name: نام پک
+    :param pack_name: نام پک استیکر
     :param text: متن استیکر (اختیاری)
     """
     try:
-        # ✅ مطمئن میشیم که update یک دیکشنری هست
         if not isinstance(update, dict):
             logger.error(f"❌ update دیکشنری نیست: {type(update)}")
             return False
@@ -38,6 +46,10 @@ def handle_sticker_upload(update: dict, user_id: int, pack_name: str, text: str 
         dest_path = os.path.join(DATA_DIR, f"{user_id}_sticker.png")
         api.download_file(file_id, dest_path)
 
+        # ✅ تغییر سایز به 512x512
+        resized_path = os.path.join(DATA_DIR, f"{user_id}_sticker_resized.png")
+        resize_to_sticker_size(dest_path, resized_path)
+
         bot_username = "matnsticker_bot"
         full_pack_name = f"{pack_name}_by_{bot_username}"
 
@@ -47,14 +59,14 @@ def handle_sticker_upload(update: dict, user_id: int, pack_name: str, text: str 
                 user_id=user_id,
                 name=full_pack_name,
                 title=f"Sticker Pack by {user_id}",
-                png_path=dest_path,
+                png_path=resized_path,
                 emoji="😀"
             )
         else:
             api.add_sticker_to_set(
                 user_id=user_id,
                 name=full_pack_name,
-                png_path=dest_path,
+                png_path=resized_path,
                 emoji="😀"
             )
 
@@ -66,7 +78,7 @@ def handle_sticker_upload(update: dict, user_id: int, pack_name: str, text: str 
         return False
 
 
-def reset_user_settings(user_id: int):
+def reset_user_settings(user_id):
     """
     ریست کردن تنظیمات کاربر (مثلاً وقتی از نو شروع کنه)
     """
