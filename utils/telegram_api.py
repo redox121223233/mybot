@@ -85,16 +85,23 @@ class TelegramAPI:
         except:
             return False
 
-    # ------------------ بررسی عضویت کانال ------------------
+    # ------------------ عضویت در کانال ------------------
     def is_user_in_channel(self, channel_username, user_id):
         try:
-            # ✅ برای کانال عمومی باید @ بماند
+            # مطمئن می‌شیم همیشه @ وجود داره
+            if not channel_username.startswith("@"):
+                channel_username = "@" + channel_username
+
+            logger.info(f"🔍 Checking membership: chat_id={channel_username}, user_id={user_id}")
+
             resp = self.request("getChatMember", params={
-                "chat_id": channel_username,   # مثل @redoxbot_sticker
+                "chat_id": channel_username,
                 "user_id": user_id
             })
 
             status = resp["result"]["status"]
+            logger.info(f"👤 User {user_id} status in {channel_username}: {status}")
+
             return status in ["member", "creator", "administrator"]
 
         except Exception as e:
