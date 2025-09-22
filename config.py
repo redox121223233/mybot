@@ -1,4 +1,3 @@
-# config.py
 import os
 
 # ======= تنظیمات اصلی =======
@@ -8,5 +7,6 @@ CHANNEL_USERNAME = "@redoxbot_sticker"  # یوزرنیم کانال عمومی (
 # مسیر ذخیره‌سازی محلی
 DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
 FONTS_DIR = os.path.join(DATA_DIR, "fonts")
+
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(FONTS_DIR, exist_ok=True)
