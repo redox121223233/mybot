@@ -1,35 +1,38 @@
 # services/sticker_manager.py
+import os
 import logging
 from utils.telegram_api import TelegramAPI
-from config import BOT_TOKEN
+from config import BOT_TOKEN, DATA_DIR
 
 logger = logging.getLogger(__name__)
 api = TelegramAPI(BOT_TOKEN)
 
-def handle_sticker_creation(chat_id, photo_file_id, user_id):
+STICKERS_DIR = os.path.join(DATA_DIR, "stickers")
+os.makedirs(STICKERS_DIR, exist_ok=True)
+
+def handle_sticker_upload(chat_id, file_id, user_id=None):
     """
-    مدیریت فرایند استیکرسازی با عکس ارسال‌شده توسط کاربر
+    📸 دریافت عکس کاربر و ساخت استیکر ساده
+    :param chat_id: چت مقصد
+    :param file_id: file_id عکس ارسال‌شده توسط کاربر
+    :param user_id: (اختیاری) شناسه کاربر
     """
     try:
-        logger.info(f"📥 دریافت عکس از کاربر {user_id}, file_id={photo_file_id}")
+        # مسیر ذخیره‌سازی عکس
+        photo_path = os.path.join(STICKERS_DIR, f"{file_id}.jpg")
 
-        # دانلود فایل
-        dest_path = f"data/downloads/{user_id}_input.jpg"
-        api.download_file(photo_file_id, dest_path)
+        # دانلود فایل از تلگرام
+        api.download_file(file_id, photo_path)
 
-        # اینجا باید پردازش تصویر بشه (نوشتن متن روی عکس، فونت، رنگ و ...)
-        # فعلاً شبیه‌سازی می‌کنیم
-        result_path = f"data/stickers/{user_id}_sticker.png"
+        # شبیه‌سازی تبدیل به استیکر (اینجا میشه AI یا PIL اضافه کرد)
+        logger.info(f"🎨 استیکر ساخته شد برای {chat_id} از {photo_path}")
 
-        # شبیه‌سازی خروجی
-        with open(result_path, "wb") as f:
-            f.write(b"FAKE_STICKER_CONTENT")
+        # ارسال به کاربر
+        api.send_sticker(chat_id, photo_path)
 
-        logger.info(f"✅ استیکر ساخته شد: {result_path}")
-
-        # ارسال استیکر
-        api.send_sticker(chat_id, result_path)
+        return True
 
     except Exception as e:
-        logger.error(f"❌ خطا در ساخت استیکر: {e}")
-        api.send_message(chat_id, "❌ خطا در ساخت استیکر! لطفاً دوباره امتحان کنید.")
+        logger.error(f"❌ خطا در handle_sticker_upload: {e}")
+        api.send_message(chat_id, "❌ خطا در ساخت استیکر. دوباره تلاش کنید.")
+        return False
