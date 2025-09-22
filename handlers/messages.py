@@ -1,14 +1,11 @@
 # handlers/messages.py
-
 import logging
 from config import BOT_TOKEN
 from utils.telegram_api import TelegramAPI
 from services.sticker_manager import handle_sticker_upload
 from services.ai_manager import generate_sticker
-from services.setting_manager import get_user_settings
+from services.setting_manager import get_user_settings   # ✅ اصلاح شد
 
-api = TelegramAPI(BOT_TOKEN)
-logger = logging.getLogger(__name__)
 
 
 # 📌 منوی اصلی
