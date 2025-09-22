@@ -2,8 +2,8 @@ import logging
 import os
 from config import CHANNEL_USERNAME
 from utils.telegram_api import TelegramAPI
-from utils.ai_manager import generate_sticker
-from utils.sticker_manager import update_user_settings, reset_user_settings
+from service.ai_manager import generate_sticker   # تغییر مسیر
+from service.sticker_manager import update_user_settings, reset_user_settings  # تغییر مسیر
 
 api = TelegramAPI()
 logger = logging.getLogger(__name__)
