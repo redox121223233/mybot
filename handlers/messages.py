@@ -1,52 +1,65 @@
+# handlers/messages.py
 import logging
 from config import CHANNEL_USERNAME
-from services.ai_manager import generate_sticker
+from utils.telegram_api import TelegramAPI
+from config import BOT_TOKEN
 from services.sticker_manager import handle_sticker_upload
-from utils.settings_manager import update_user_settings, reset_user_settings
+from services.ai_manager import generate_sticker
 
 logger = logging.getLogger(__name__)
+api = TelegramAPI(BOT_TOKEN)
 
-def handle_message(api, message):
-    chat_id = message["chat"]["id"]
-    text = message.get("text", "")
-    photos = message.get("photo")
-
-    logger.info(f"📩 handle_message {chat_id}: {text}")
-
-    # Start
-    if text == "/start":
-        if not api.is_user_in_channel(CHANNEL_USERNAME, chat_id):
-            api.send_message(
-                chat_id,
-                f"📢 برای استفاده از ربات ابتدا در کانال عضو شوید:\n{CHANNEL_USERNAME}\n\nسپس /start را بزنید ✅"
-            )
-            return
-        send_main_menu(api, chat_id)
-
-    # Sticker maker
-    elif text == "🎭 استیکرساز":
-        api.send_message(chat_id, "🖼 لطفا عکس مورد نظر را ارسال کنید تا استیکر ساخته شود.")
-
-    elif photos:
-        handle_sticker_upload(api, chat_id, photos)
-
-    # AI
-    elif text == "🤖 هوش مصنوعی":
-        api.send_message(chat_id, "✍️ متن یا دستور خود را بفرستید تا تبدیل به استیکر شود.")
-
-    elif text.startswith("تنظیمات"):
-        api.send_message(chat_id, "⚙️ تنظیمات استیکر به‌زودی فعال می‌شود.")
-
-    else:
-        api.send_message(chat_id, "❓ متوجه نشدم. لطفا از منوی اصلی استفاده کنید.")
-
-def send_main_menu(api, chat_id):
-    reply_markup = {
+# ------------------ ارسال منوی اصلی ------------------
+def send_main_menu(chat_id):
+    keyboard = {
         "keyboard": [
             [{"text": "🎭 استیکرساز"}],
             [{"text": "🤖 هوش مصنوعی"}],
-            [{"text": "⚙️ تنظیمات"}, {"text": "♻️ ریست تنظیمات"}]
         ],
         "resize_keyboard": True
     }
-    api.send_message(chat_id, "👋 به ربات خوش آمدید!\nیکی از گزینه‌ها را انتخاب کنید:", reply_markup=reply_markup)
+    api.send_message(chat_id, "✨ به ربات خوش آمدید!\nیکی از گزینه‌ها را انتخاب کنید:", reply_markup=keyboard)
+
+# ------------------ مدیریت پیام ------------------
+def handle_message(message):
+    chat_id = message["chat"]["id"]
+    user_id = message["from"]["id"]
+    text = message.get("text", "")
+    photo = message.get("photo")
+
+    logger.info(f"📩 handle_message {user_id}: {text}")
+
+    try:
+        # ------------------ دستور /start ------------------
+        if text == "/start":
+            send_main_menu(chat_id)
+            return
+
+        # ------------------ استیکرساز ------------------
+        if text == "🎭 استیکرساز":
+            api.send_message(chat_id, "📸 لطفاً یک عکس بفرستید تا استیکر بسازم!")
+            return
+
+        # اگر عکس ارسال شد → استیکرساز
+        if photo:
+            file_id = photo[-1]["file_id"]  # بزرگ‌ترین سایز عکس
+            handle_sticker_upload(chat_id, file_id, user_id)
+            return
+
+        # ------------------ هوش مصنوعی ------------------
+        if text == "🤖 هوش مصنوعی":
+            api.send_message(chat_id, "🧠 یک متن بفرست تا تبدیل به استیکر کنم!")
+            return
+
+        # اگر کاربر متن عادی فرستاد → تبدیل به استیکر با هوش مصنوعی
+        if text:
+            sticker = generate_sticker(text, user_id)
+            api.send_message(chat_id, f"✨ {sticker}")
+            return
+
+        # ------------------ حالت پیش‌فرض ------------------
+        api.send_message(chat_id, "❓ متوجه نشدم، لطفاً از منو یکی رو انتخاب کن.")
+
+    except Exception as e:
+        logger.error(f"❌ Error in handle_message: {e}")
+        api.send_message(chat_id, "❌ خطایی رخ داد، دوباره امتحان کنید.")
