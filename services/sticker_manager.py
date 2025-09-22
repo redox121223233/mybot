@@ -1,39 +1,62 @@
 import logging
 import os
-import requests
+from utils.telegram_api import TelegramAPI
 from config import BOT_TOKEN, DATA_DIR
 
 logger = logging.getLogger(__name__)
+api = TelegramAPI(BOT_TOKEN)
 
-# مسیر موقت برای استیکرها
-STICKER_DIR = os.path.join(DATA_DIR, "stickers")
-os.makedirs(STICKER_DIR, exist_ok=True)
 
-def handle_sticker_upload(api, chat_id, file_id, user_id):
+def handle_sticker_upload(message, user_id, pack_name, text=None):
     """
-    مدیریت آپلود عکس برای ساخت استیکر
+    گرفتن عکس کاربر و ساختن/اضافه کردن استیکر به پک
+    :param message: آپدیت تلگرام شامل photo
+    :param user_id: آی‌دی کاربر
+    :param pack_name: نام پک استیکر (یونیک)
+    :param text: متن استیکر (اختیاری)
     """
+
     try:
-        logger.info(f"⬆️ دریافت عکس برای استیکر: user={user_id}, file_id={file_id}")
+        # ✅ گرفتن بزرگ‌ترین سایز عکس
+        photos = message.get("photo")
+        if not photos:
+            logger.error("❌ هیچ عکسی پیدا نشد.")
+            return False
 
-        # دریافت لینک فایل
-        file_info = api.get_file(file_id)
-        file_url = f"https://api.telegram.org/file/bot{BOT_TOKEN}/{file_info['file_path']}"
+        file_id = photos[-1]["file_id"]  # بزرگ‌ترین سایز
+        logger.info(f"⬆️ دریافت عکس برای استیکر: user_id={user_id}, file_id={file_id}")
 
-        # دانلود فایل
-        response = requests.get(file_url)
-        if response.status_code != 200:
-            logger.error("❌ دانلود فایل ناموفق: %s", response.text)
-            return None
+        # ✅ دانلود فایل
+        dest_path = os.path.join(DATA_DIR, f"{user_id}_sticker.png")
+        api.download_file(file_id, dest_path)
 
-        # ذخیره موقت
-        output_path = os.path.join(STICKER_DIR, f"sticker_{user_id}.png")
-        with open(output_path, "wb") as f:
-            f.write(response.content)
+        # ✅ اسم پک باید یکتا باشه و به _by_bot ختم بشه
+        # توجه: bot_username باید واقعی باشه (username رباتت)
+        bot_username = "matnsticker_bot"
+        full_pack_name = f"{pack_name}_by_{bot_username}"
 
-        logger.info(f"✅ فایل ذخیره شد: {output_path}")
-        return output_path
+        # ✅ بررسی وجود پک
+        if not api.sticker_set_exists(full_pack_name):
+            logger.info(f"📦 ساخت پک جدید: {full_pack_name}")
+            api.create_new_sticker_set(
+                user_id=user_id,
+                name=full_pack_name,
+                title=f"Sticker Pack by {user_id}",
+                png_path=dest_path,
+                emoji="😀"
+            )
+        else:
+            logger.info(f"➕ افزودن استیکر جدید به پک: {full_pack_name}")
+            api.add_sticker_to_set(
+                user_id=user_id,
+                name=full_pack_name,
+                png_path=dest_path,
+                emoji="😀"
+            )
+
+        logger.info("✅ استیکر با موفقیت ساخته/اضافه شد.")
+        return True
 
     except Exception as e:
-        logger.error("❌ خطا در آپلود استیکر", exc_info=True)
-        return None
+        logger.error(f"❌ خطا در آپلود استیکر: {e}", exc_info=True)
+        return False
