@@ -1,7 +1,7 @@
 import os
 import logging
 from utils.telegram_api import TelegramAPI
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 
 logger = logging.getLogger(__name__)
 
@@ -9,23 +9,33 @@ api = TelegramAPI(token=os.getenv("BOT_TOKEN"))
 DATA_DIR = "/tmp"   # مسیر ذخیره موقت عکس‌ها
 
 
-def resize_to_sticker_size(input_path, output_path):
+def resize_to_sticker_size(input_path, output_path, text=None):
     """
-    تغییر اندازه تصویر به 512x512 (فرمت PNG)
+    تغییر اندازه تصویر به 512x512 و نوشتن متن روی آن (اختیاری)
     """
     with Image.open(input_path) as img:
-        img = img.convert("RGBA")  # استیکر باید شفافیت داشته باشه
+        img = img.convert("RGBA")
         img = img.resize((512, 512), Image.LANCZOS)
+
+        if text:
+            draw = ImageDraw.Draw(img)
+            try:
+                font = ImageFont.truetype("arial.ttf", 36)
+            except:
+                font = ImageFont.load_default()
+
+            # وسط چین
+            text_w, text_h = draw.textsize(text, font=font)
+            x = (img.width - text_w) // 2
+            y = img.height - text_h - 10
+            draw.text((x, y), text, font=font, fill="white")
+
         img.save(output_path, format="PNG")
 
 
 def handle_sticker_upload(update, user_id, pack_name, text=None):
     """
-    گرفتن عکس کاربر و ساختن/اضافه کردن استیکر به پک
-    :param update: آپدیت تلگرام (دیکشنری کامل)
-    :param user_id: آی‌دی کاربر
-    :param pack_name: نام پک استیکر
-    :param text: متن استیکر (اختیاری)
+    گرفتن عکس کاربر و ساختن/اضافه کردن استیکر به پک + ارسال به کاربر (send_sticker)
     """
     try:
         if not isinstance(update, dict):
@@ -46,9 +56,9 @@ def handle_sticker_upload(update, user_id, pack_name, text=None):
         dest_path = os.path.join(DATA_DIR, f"{user_id}_sticker.png")
         api.download_file(file_id, dest_path)
 
-        # ✅ تغییر سایز به 512x512
-        resized_path = os.path.join(DATA_DIR, f"{user_id}_sticker_resized.png")
-        resize_to_sticker_size(dest_path, resized_path)
+        # ✅ تغییر سایز و نوشتن متن
+        resized_path = os.path.join(DATA_DIR, f"{user_id}_sticker_ready.png")
+        resize_to_sticker_size(dest_path, resized_path, text=text)
 
         bot_username = "matnsticker_bot"
         full_pack_name = f"{pack_name}_by_{bot_username}"
@@ -70,24 +80,13 @@ def handle_sticker_upload(update, user_id, pack_name, text=None):
                 emoji="😀"
             )
 
-        logger.info("✅ استیکر با موفقیت ساخته/اضافه شد.")
+        # ✅ ارسال استیکر به کاربر (نه فایل PNG)
+        api.send_sticker(user_id, resized_path)
+
+        logger.info("✅ استیکر ساخته و برای کاربر ارسال شد (send_sticker).")
         return True
 
     except Exception as e:
         logger.error(f"❌ خطا در آپلود استیکر: {e}", exc_info=True)
-        return False
-
-
-def reset_user_settings(user_id):
-    """
-    ریست کردن تنظیمات کاربر (مثلاً وقتی از نو شروع کنه)
-    """
-    try:
-        settings_path = os.path.join(DATA_DIR, f"{user_id}_settings.json")
-        if os.path.exists(settings_path):
-            os.remove(settings_path)
-            logger.info(f"🔄 تنظیمات کاربر {user_id} ریست شد.")
-        return True
-    except Exception as e:
-        logger.error(f"❌ خطا در ریست تنظیمات کاربر {user_id}: {e}", exc_info=True)
+        api.send_message(user_id, "❌ خطا در ساخت استیکر. دوباره تلاش کن.")
         return False
