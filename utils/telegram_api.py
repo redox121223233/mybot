@@ -1,4 +1,3 @@
-# utils/telegram_api.py
 import requests
 import logging
 import os
@@ -14,16 +13,7 @@ class TelegramAPI:
     def request(self, method: str, params=None, files=None):
         url = f"{self.base_url}/{method}"
         try:
-            if files:
-                # برای متدهایی که نیاز به آپلود فایل دارند
-                response = requests.post(url, data=params, files=files)
-            elif method in ["getMe", "getChatMember", "getFile", "getStickerSet"]:
-                # متدهایی که باید GET باشند
-                response = requests.get(url, params=params)
-            else:
-                # بقیه متدها با POST
-                response = requests.post(url, data=params)
-
+            response = requests.post(url, params=params, files=files)
             if response.status_code != 200:
                 raise Exception(f"❌ خطای HTTP {response.status_code}: {response.text}")
             return response.json()
@@ -65,7 +55,8 @@ class TelegramAPI:
 
     # ------------------ وبهوک ------------------
     def set_webhook(self, url):
-        return self.request("setWebhook", params={"url": url})
+        resp = self.request("setWebhook", params={"url": url})
+        return resp
 
     # ------------------ مدیریت استیکر پک ------------------
     def create_new_sticker_set(self, user_id, name, title, png_path, emoji="😀"):
@@ -94,14 +85,12 @@ class TelegramAPI:
         except:
             return False
 
-    # ------------------ عضویت در کانال ------------------
+    # ------------------ بررسی عضویت کانال ------------------
     def is_user_in_channel(self, channel_username, user_id):
         try:
-            if channel_username.startswith("@"):
-                channel_username = channel_username[1:]
-
+            # ✅ برای کانال عمومی باید @ بماند
             resp = self.request("getChatMember", params={
-                "chat_id": f"@{channel_username}",
+                "chat_id": channel_username,   # مثل @redoxbot_sticker
                 "user_id": user_id
             })
 
