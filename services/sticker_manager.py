@@ -1,24 +1,29 @@
 import os
 import logging
-from config import BOT_TOKEN   # ✅ توکن از config.py
+from config import BOT_TOKEN
 from utils.telegram_api import TelegramAPI
 
 logger = logging.getLogger(__name__)
 
-# ✅ نمونه API با توکن
+# ✅ نمونه API
 api = TelegramAPI(BOT_TOKEN)
-DATA_DIR = "/tmp"   # مسیر ذخیره موقت عکس‌ها
+DATA_DIR = "/tmp"
 
 
-def handle_sticker_upload(update, user_id, pack_name, text=None):
+def handle_sticker_upload(update: dict, user_id: int, pack_name: str, text: str = None):
     """
     گرفتن عکس کاربر و ساختن/اضافه کردن استیکر به پک
-    :param update: آپدیت تلگرام (دیکشنری کامل)
+    :param update: dict آپدیت تلگرام
     :param user_id: آی‌دی کاربر
-    :param pack_name: نام پک استیکر
+    :param pack_name: نام پک
     :param text: متن استیکر (اختیاری)
     """
     try:
+        # ✅ مطمئن میشیم که update یک دیکشنری هست
+        if not isinstance(update, dict):
+            logger.error(f"❌ update دیکشنری نیست: {type(update)}")
+            return False
+
         message = update.get("message", {})
         photos = message.get("photo")
         if not photos:
@@ -61,7 +66,7 @@ def handle_sticker_upload(update, user_id, pack_name, text=None):
         return False
 
 
-def reset_user_settings(user_id):
+def reset_user_settings(user_id: int):
     """
     ریست کردن تنظیمات کاربر (مثلاً وقتی از نو شروع کنه)
     """
