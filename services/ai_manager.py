@@ -1,24 +1,40 @@
-import os
+import logging
 from PIL import Image, ImageDraw, ImageFont
-from config import DATA_DIR, FONTS_DIR
+import os
+from config import FONTS_DIR, DATA_DIR
 
-DEFAULT_FONT = os.path.join(FONTS_DIR, "Vazirmatn-Regular.ttf")
+logger = logging.getLogger(__name__)
 
-def generate_sticker(text: str, user_id: int, font_size=48, color="white"):
-    """ساخت استیکر ساده با متن روی پس‌زمینه شفاف"""
-    width, height = 512, 512
-    img = Image.new("RGBA", (width, height), (0, 0, 0, 0))
-    draw = ImageDraw.Draw(img)
-
+def generate_sticker(prompt: str, output_path: str, settings: dict):
+    """تولید استیکر بر اساس متن کاربر + تنظیمات ذخیره شده"""
     try:
-        font = ImageFont.truetype(DEFAULT_FONT, font_size)
-    except:
-        font = ImageFont.load_default()
+        img = Image.new("RGBA", (512, 512), (255, 255, 255, 0))
+        draw = ImageDraw.Draw(img)
 
-    w, h = draw.textsize(text, font=font)
-    draw.text(((width - w) / 2, (height - h) / 2),
-              text, font=font, fill=color)
+        font_path = os.path.join(FONTS_DIR, settings.get("font", "Vazir.ttf"))
+        font_size = settings.get("font_size", 48)
+        font_color = settings.get("font_color", "black")
+        position = settings.get("position", "center")
 
-    path = os.path.join(DATA_DIR, f"ai_sticker_{user_id}.png")
-    img.save(path, "PNG")
-    return path
+        font = ImageFont.truetype(font_path, font_size)
+
+        text_w, text_h = draw.textsize(prompt, font=font)
+        if position == "center":
+            pos = ((512 - text_w) // 2, (512 - text_h) // 2)
+        elif position == "top":
+            pos = ((512 - text_w) // 2, 50)
+        elif position == "bottom":
+            pos = ((512 - text_w) // 2, 512 - text_h - 50)
+        else:
+            pos = (50, 50)
+
+        draw.text(pos, prompt, font=font, fill=font_color)
+
+        os.makedirs(os.path.dirname(output_path), exist_ok=True)
+        img.save(output_path, "PNG")
+        logger.info(f"✅ Sticker generated: {output_path}")
+        return output_path
+
+    except Exception as e:
+        logger.error(f"❌ Error generating sticker: {e}")
+        raise
