@@ -1,6 +1,6 @@
 # services/ai_manager.py
 import logging
-from services.settings_manager import get_user_settings
+from services.setting_manager import get_user_settings
 
 logger = logging.getLogger(__name__)
 
