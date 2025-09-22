@@ -1,70 +1,87 @@
+import os
 import logging
-from utils.telegram_api import TelegramAPI
-from config import BOT_TOKEN
+from datetime import datetime
+from config import DATA_DIR, FONTS_DIR
+from services.setting_manager import get_user_settings
+
+from PIL import Image, ImageDraw, ImageFont
 
 logger = logging.getLogger(__name__)
-api = TelegramAPI(BOT_TOKEN)
 
-# وضعیت کاربران
-ai_states = {}
+# 📁 مسیر خروجی استیکرهای ساخته‌شده
+AI_OUTPUT_DIR = os.path.join(DATA_DIR, "ai_stickers")
+os.makedirs(AI_OUTPUT_DIR, exist_ok=True)
 
-def start_ai_flow(user_id, chat_id):
-    ai_states[user_id] = {"step": "await_text"}
-    api.send_message(chat_id, "🤖 متن یا ایده‌ات رو بفرست تا استیکر هوش مصنوعی بسازیم:")
 
-def handle_ai_message(message):
-    user_id = message["from"]["id"]
-    chat_id = message["chat"]["id"]
-    text = message.get("text")
+def generate_sticker(prompt: str, user_id: int | None = None) -> str:
+    """
+    تولید استیکر بر اساس متن کاربر و تنظیمات شخصی‌سازی‌شده.
+    خروجی: مسیر فایل PNG ذخیره‌شده
+    """
 
-    state = ai_states.get(user_id, {})
+    # 🛠 گرفتن تنظیمات کاربر
+    settings = get_user_settings(user_id)
+    text_color = settings.get("text_color", "#000000")
+    font_size = int(settings.get("font_size", 32))
+    font_name = settings.get("font_name", "arial.ttf")
+    position = settings.get("position", "center")
 
-    # مرحله گرفتن متن
-    if state.get("step") == "await_text" and text:
-        state["prompt"] = text.strip()
-        state["step"] = "confirm"
-        api.send_message(
-            chat_id,
-            f"🔍 متن دریافتی:\n\n{text}\n\nآیا همین متن برای ساخت استیکر استفاده شود؟ (بزن بله یا نه)"
-        )
-        return
+    logger.info(f"🎨 Generating AI sticker: user={user_id}, prompt={prompt}, settings={settings}")
 
-    # مرحله تأیید
-    if state.get("step") == "confirm" and text:
-        if text.strip() in ["بله", "Yes", "yes", "اره"]:
-            build_ai_sticker(user_id, chat_id)
-        else:
-            state["step"] = "await_text"
-            api.send_message(chat_id, "✍️ متن جدیدت رو بفرست:")
-        return
-
-    api.send_message(chat_id, "❌ متوجه نشدم! از گزینه‌ها استفاده کن.")
-
-def build_ai_sticker(user_id, chat_id):
-    state = ai_states.get(user_id, {})
-    prompt = state.get("prompt")
-
-    if not prompt:
-        api.send_message(chat_id, "⚠️ متنی پیدا نشد! دوباره شروع کن.")
-        return
+    # مسیر فایل خروجی
+    fname = f"sticker_{user_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
+    out_path = os.path.join(AI_OUTPUT_DIR, fname)
 
     try:
-        # اینجا میشه هوش مصنوعی تصویرساز مثل DALL·E یا StableDiffusion وصل کرد
-        fake_result = f"[استیکر ساخته‌شده از متن: {prompt}]"
-        api.send_message(chat_id, f"✅ استیکر ساخته شد:\n{fake_result}")
+        # 📐 اندازه تصویر پایه
+        W, H = 512, 512
+        img = Image.new("RGBA", (W, H), (255, 255, 255, 0))
+        draw = ImageDraw.Draw(img)
+
+        # 📂 لود کردن فونت انتخاب‌شده
+        font_path = os.path.join(FONTS_DIR, font_name)
+        if not os.path.exists(font_path):
+            logger.warning(f"⚠️ فونت {font_name} پیدا نشد. استفاده از پیش‌فرض.")
+            font = ImageFont.load_default()
+        else:
+            font = ImageFont.truetype(font_path, font_size)
+
+        # ✍️ تقسیم متن به چند خط
+        words = prompt.split()
+        lines = []
+        line = ""
+        max_chars = 25
+        for w in words:
+            if len(line + " " + w) > max_chars:
+                lines.append(line)
+                line = w
+            else:
+                line = (line + " " + w).strip()
+        if line:
+            lines.append(line)
+
+        # 📍 موقعیت متن
+        total_height = len(lines) * (font_size + 5)
+        if position == "top":
+            y = 10
+        elif position == "bottom":
+            y = H - total_height - 10
+        else:  # center
+            y = (H - total_height) // 2
+
+        # 🖌 کشیدن متن روی تصویر
+        for ln in lines:
+            w, h = draw.textsize(ln, font=font)
+            x = (W - w) // 2
+            draw.text((x, y), ln, font=font, fill=text_color)
+            y += font_size + 5
+
+        # 💾 ذخیره تصویر
+        img.save(out_path)
+        logger.info(f"✅ Sticker saved: {out_path}")
+
+        return out_path
+
     except Exception as e:
-        logger.error(f"❌ خطا در ساخت استیکر AI: {e}")
-        api.send_message(chat_id, "❌ خطا در ساخت استیکر هوش مصنوعی.")
-
-    ai_states.pop(user_id, None)
-
-def send_ai_help(chat_id):
-    help_text = (
-        "📘 راهنمای هوش مصنوعی:\n\n"
-        "1️⃣ متن یا ایده‌ای بفرست (مثل: «یک ربات در فضا»).\n"
-        "2️⃣ ربات ازت تأیید می‌گیره.\n"
-        "3️⃣ با بله، استیکر ساخته میشه.\n"
-        "4️⃣ با نه، می‌تونی متن جدید بدی.\n\n"
-        "⚙️ آینده: امکان انتخاب رنگ، فونت و موقعیت متن."
-    )
-    api.send_message(chat_id, help_text)
+        logger.exception("❌ خطا در تولید استیکر")
+        return f"[خطا در تولید استیکر برای متن: {prompt}]"
