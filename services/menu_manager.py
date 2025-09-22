@@ -1,29 +1,24 @@
-class MenuManager:
-    def __init__(self, api, bot_token):
-        self.api = api
-        self.bot_token = bot_token
+# services/menu_manager.py
+import json
 
-    def main_menu(self):
-        """منوی اصلی ربات"""
-        return {
-            "keyboard": [
-                [{"text": "🎭 استیکرساز"}],
-                [{"text": "⭐ اشتراک"}],
-                [{"text": "🎁 تست رایگان"}],
-                [{"text": "🤖 هوش مصنوعی"}],
-            ],
-            "resize_keyboard": True
-        }
+# ------------------ منوی اصلی ------------------
+def get_main_menu():
+    return json.dumps({
+        "keyboard": [
+            [{"text": "🎭 استیکرساز"}],
+            [{"text": "🤖 هوش مصنوعی"}],
+            [{"text": "⚙️ تنظیمات"}, {"text": "🔄 بازنشانی"}]
+        ],
+        "resize_keyboard": True,
+        "one_time_keyboard": False
+    })
 
-    def back_button(self):
-        """دکمه بازگشت به منوی اصلی"""
-        return {
-            "keyboard": [
-                [{"text": "⬅️ بازگشت"}]
-            ],
-            "resize_keyboard": True
-        }
-
-    def show_main_menu(self, user_id):
-        """ارسال منوی اصلی به کاربر"""
-        self.api.send_message(user_id, "منوی اصلی 👇", reply_markup=self.main_menu())
+# ------------------ منوی تنظیمات ------------------
+def get_settings_menu():
+    return json.dumps({
+        "keyboard": [
+            [{"text": "🎨 تغییر رنگ متن"}, {"text": "🔤 تغییر فونت"}],
+            [{"text": "📍 تغییر موقعیت"}, {"text": "⬅️ بازگشت"}]
+        ],
+        "resize_keyboard": True
+    })
