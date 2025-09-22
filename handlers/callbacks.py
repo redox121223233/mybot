@@ -2,7 +2,7 @@
 import logging
 from config import BOT_TOKEN
 from utils.telegram_api import TelegramAPI
-from services.setting_manager import reset_user_settings   # ✅ مسیر درست
+from services.settings_manager import reset_user_settings   # ✅ مسیر درست
 from services.menu_manager import get_main_menu
 
 logger = logging.getLogger(__name__)
