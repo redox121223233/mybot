@@ -1,87 +1,58 @@
-import os
 import logging
-from datetime import datetime
-from config import DATA_DIR, FONTS_DIR
-from services.setting_manager import get_user_settings
-
+import os
 from PIL import Image, ImageDraw, ImageFont
+from services.setting_manager import get_user_settings
+from config import FONTS_DIR
 
 logger = logging.getLogger(__name__)
 
-# 📁 مسیر خروجی استیکرهای ساخته‌شده
-AI_OUTPUT_DIR = os.path.join(DATA_DIR, "ai_stickers")
-os.makedirs(AI_OUTPUT_DIR, exist_ok=True)
-
-
-def generate_sticker(prompt: str, user_id: int | None = None) -> str:
+def generate_sticker(prompt, user_id):
     """
-    تولید استیکر بر اساس متن کاربر و تنظیمات شخصی‌سازی‌شده.
-    خروجی: مسیر فایل PNG ذخیره‌شده
+    ساخت استیکر متنی هوش مصنوعی با تنظیمات کاربر
     """
-
-    # 🛠 گرفتن تنظیمات کاربر
-    settings = get_user_settings(user_id)
-    text_color = settings.get("text_color", "#000000")
-    font_size = int(settings.get("font_size", 32))
-    font_name = settings.get("font_name", "arial.ttf")
-    position = settings.get("position", "center")
-
-    logger.info(f"🎨 Generating AI sticker: user={user_id}, prompt={prompt}, settings={settings}")
-
-    # مسیر فایل خروجی
-    fname = f"sticker_{user_id}_{datetime.now().strftime('%Y%m%d%H%M%S')}.png"
-    out_path = os.path.join(AI_OUTPUT_DIR, fname)
-
     try:
-        # 📐 اندازه تصویر پایه
-        W, H = 512, 512
-        img = Image.new("RGBA", (W, H), (255, 255, 255, 0))
+        settings = get_user_settings(user_id)
+        logger.info(f"🎨 Generating AI sticker: user={user_id}, prompt={prompt}, settings={settings}")
+
+        # ساخت پس‌زمینه شفاف
+        img = Image.new("RGBA", (512, 512), (255, 255, 255, 0))
         draw = ImageDraw.Draw(img)
 
-        # 📂 لود کردن فونت انتخاب‌شده
+        # مسیر فونت
+        font_name = settings.get("font", "arial.ttf")
         font_path = os.path.join(FONTS_DIR, font_name)
-        if not os.path.exists(font_path):
-            logger.warning(f"⚠️ فونت {font_name} پیدا نشد. استفاده از پیش‌فرض.")
+
+        try:
+            font = ImageFont.truetype(font_path, settings.get("size", 32))
+        except Exception:
+            logger.warning("⚠️ فونت %s پیدا نشد. استفاده از پیش‌فرض.", font_name)
             font = ImageFont.load_default()
-        else:
-            font = ImageFont.truetype(font_path, font_size)
 
-        # ✍️ تقسیم متن به چند خط
-        words = prompt.split()
-        lines = []
-        line = ""
-        max_chars = 25
-        for w in words:
-            if len(line + " " + w) > max_chars:
-                lines.append(line)
-                line = w
-            else:
-                line = (line + " " + w).strip()
-        if line:
-            lines.append(line)
+        # متن رو خط به خط پردازش می‌کنیم
+        lines = prompt.split("\n")
+        color = settings.get("color", "black")
+        position = settings.get("position", "center")
 
-        # 📍 موقعیت متن
-        total_height = len(lines) * (font_size + 5)
-        if position == "top":
-            y = 10
-        elif position == "bottom":
-            y = H - total_height - 10
-        else:  # center
-            y = (H - total_height) // 2
-
-        # 🖌 کشیدن متن روی تصویر
+        y_offset = 50
         for ln in lines:
-            w, h = draw.textsize(ln, font=font)
-            x = (W - w) // 2
-            draw.text((x, y), ln, font=font, fill=text_color)
-            y += font_size + 5
+            # 🔥 اصلاح برای Pillow جدید
+            bbox = draw.textbbox((0, 0), ln, font=font)
+            w, h = bbox[2] - bbox[0], bbox[3] - bbox[1]
 
-        # 💾 ذخیره تصویر
-        img.save(out_path)
-        logger.info(f"✅ Sticker saved: {out_path}")
+            if position == "center":
+                x = (512 - w) // 2
+            elif position == "left":
+                x = 20
+            else:  # right
+                x = 512 - w - 20
 
-        return out_path
+            draw.text((x, y_offset), ln, font=font, fill=color)
+            y_offset += h + 10
+
+        output_path = f"/tmp/ai_sticker_{user_id}.png"
+        img.save(output_path, "PNG")
+        return output_path
 
     except Exception as e:
-        logger.exception("❌ خطا در تولید استیکر")
-        return f"[خطا در تولید استیکر برای متن: {prompt}]"
+        logger.error("❌ خطا در تولید استیکر", exc_info=True)
+        return None
