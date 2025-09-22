@@ -1,5 +1,4 @@
 import logging
-import json
 from utils.telegram_api import TelegramAPI
 from services.sticker_manager import handle_sticker_upload
 
@@ -30,7 +29,7 @@ def handle_message(update):
             api.send_message(
                 chat_id,
                 "👋 خوش آمدید!\nیکی از گزینه‌ها رو انتخاب کنید:",
-                reply_markup=json.dumps(keyboard, ensure_ascii=False)
+                reply_markup=keyboard   # ❌ نه json.dumps → همون dict
             )
 
         elif text == "🎭 استیکرساز":
