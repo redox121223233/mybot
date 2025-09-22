@@ -4,28 +4,24 @@ from utils.telegram_api import TelegramAPI
 from config import BOT_TOKEN, CHANNEL_USERNAME
 from handlers.messages import send_main_menu
 
-api = TelegramAPI(BOT_TOKEN)
 logger = logging.getLogger(__name__)
+api = TelegramAPI(BOT_TOKEN)
 
-def handle_callback(callback_query):
-    chat_id = callback_query["message"]["chat"]["id"]
+def handle_callback(callback_query: dict):
+    data = callback_query.get("data")
     user_id = callback_query["from"]["id"]
-    data = callback_query["data"]
+    chat_id = callback_query["message"]["chat"]["id"]
+    message_id = callback_query["message"]["message_id"]
 
     logger.info(f"📩 handle_callback {user_id}: {data}")
 
     if data == "check_membership":
-        if api.is_user_in_channel(user_id):
-            api.send_message(chat_id, "✅ عضویت شما تایید شد.")
-            send_main_menu(chat_id)
-        else:
-            api.send_message(
-                chat_id,
-                f"❌ هنوز عضو کانال نیستید!\n{CHANNEL_USERNAME}",
-                reply_markup={
-                    "inline_keyboard": [
-                        [{"text": "📢 عضویت در کانال", "url": f"https://t.me/{CHANNEL_USERNAME.replace('@','')}"}],
-                        [{"text": "✅ بررسی مجدد", "callback_data": "check_membership"}]
-                    ]
-                }
-            )
+        try:
+            if api.is_user_in_channel(CHANNEL_USERNAME, user_id):
+                api.send_message(chat_id, "✅ عضویت شما تایید شد. حالا می‌توانید از ربات استفاده کنید.")
+                send_main_menu(chat_id)
+            else:
+                api.send_message(chat_id, f"❌ هنوز عضو نبودی. لطفاً ابتدا در کانال عضو شوید:\n{CHANNEL_USERNAME}")
+        except Exception as e:
+            logger.error(f"❌ خطا در بررسی عضویت: {e}")
+            api.send_message(chat_id, "❌ مشکلی در بررسی عضویت پیش آمد. بعداً دوباره امتحان کنید.")
