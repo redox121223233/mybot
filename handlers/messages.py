@@ -1,52 +1,57 @@
-import logging
+from services.sticker_manager import handle_sticker_upload, handle_text_choice, handle_text_input
 from utils.telegram_api import TelegramAPI
-from services.sticker_manager import handle_sticker_upload
+import os
 
-logger = logging.getLogger(__name__)
-api = TelegramAPI()
+api = TelegramAPI(token=os.getenv("BOT_TOKEN"))
 
+# مدیریت مرحله‌ها برای هر کاربر
+user_states = {}
 
 def handle_message(update):
-    try:
-        message = update.get("message", {})
-        chat_id = message.get("chat", {}).get("id")
-        user_id = message.get("from", {}).get("id")
-        text = message.get("text")
+    message = update.get("message", {})
+    user_id = message["from"]["id"]
+    text = message.get("text")
+    photos = message.get("photo")
 
-        logger.info(f"📩 handle_message {user_id}: {text}")
+    # 1️⃣ اگه عکس فرستاد → برو مرحله انتخاب متن
+    if photos:
+        handle_sticker_upload(update, user_id, pack_name="custompack")
+        user_states[user_id] = "waiting_for_text_choice"
+        return
 
-        if text == "/start":
-            keyboard = {
-                "keyboard": [
-                    [{"text": "🎭 استیکرساز"}],
-                    [{"text": "🤖 هوش مصنوعی"}],
-                    [{"text": "⚙️ تنظیمات"}],
-                ],
-                "resize_keyboard": True,
-                "one_time_keyboard": False
-            }
-
-            api.send_message(
-                chat_id,
-                "👋 خوش آمدید!\nیکی از گزینه‌ها رو انتخاب کنید:",
-                reply_markup=keyboard   # ❌ نه json.dumps → همون dict
-            )
-
-        elif text == "🎭 استیکرساز":
-            api.send_message(chat_id, "📸 لطفاً یک عکس ارسال کنید تا به استیکر تبدیل بشه.")
-
-        elif "photo" in message:
-            photos = message.get("photo")
-            if photos:
-                pack_name = f"pack_{user_id}"
-                success = handle_sticker_upload(update, user_id, pack_name)
-                if success:
-                    api.send_message(chat_id, "✅ استیکر ساخته شد!")
-                else:
-                    api.send_message(chat_id, "❌ خطا در ساخت استیکر. دوباره تلاش کنید.")
-
+    # 2️⃣ اگه منتظر انتخاب متن بودیم
+    if user_states.get(user_id) == "waiting_for_text_choice":
+        if text in ["بله ✍️", "خیر 🚀"]:
+            handle_text_choice(user_id, text)
+            if text == "بله ✍️":
+                user_states[user_id] = "waiting_for_text_input"
+            else:
+                user_states.pop(user_id, None)
         else:
-            api.send_message(chat_id, "❓ گزینه نامعتبر. لطفاً یکی از دکمه‌ها رو انتخاب کنید.")
+            api.send_message(user_id, "فقط بله ✍️ یا خیر 🚀 رو انتخاب کن.")
+        return
 
-    except Exception as e:
-        logger.error(f"❌ Error handling update: {e}", exc_info=True)
+    # 3️⃣ اگه منتظر متن بودیم
+    if user_states.get(user_id) == "waiting_for_text_input":
+        if text:
+            handle_text_input(user_id, text)
+            user_states.pop(user_id, None)
+        else:
+            api.send_message(user_id, "✍️ یه متن بفرست.")
+        return
+
+    # شروع اولیه
+    if text == "/start":
+        api.send_message(user_id, "👋 خوش آمدی! یک گزینه انتخاب کن:", reply_markup={
+            "keyboard": [[{"text": "🎭 استیکرساز"}], [{"text": "🤖 هوش مصنوعی"}]],
+            "resize_keyboard": True
+        })
+        return
+
+    if text == "🎭 استیکرساز":
+        api.send_message(user_id, "📸 لطفاً یک عکس ارسال کن تا استیکر بسازم.")
+        user_states[user_id] = "waiting_for_photo"
+        return
+
+    api.send_message(user_id, "متوجه نشدم، یکی از گزینه‌ها رو بفرست.")
+
