@@ -1,19 +1,11 @@
 import os
 
-# ======= تنظیمات اصلی =======
-BOT_TOKEN = "8324626018:AAEiEd_zcpuw10s1nIWr5bryj1yyZDX0yl0"
-CHANNEL_USERNAME = "@redoxbot_sticker"  # کانال عمومی
+# 🔑 توکن و تنظیمات از Railway ENV
+TELEGRAM_TOKEN = os.getenv("TELEGRAM_TOKEN")
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
-# مسیر ذخیره‌سازی محلی
-DATA_DIR = os.path.join(os.path.dirname(__file__), "data")
-FONTS_DIR = os.path.join(DATA_DIR, "fonts")
-os.makedirs(DATA_DIR, exist_ok=True)
-os.makedirs(FONTS_DIR, exist_ok=True)
+if not TELEGRAM_TOKEN:
+    raise ValueError("❌ متغیر محیطی TELEGRAM_TOKEN تنظیم نشده!")
 
-# تنظیمات پیش‌فرض استیکر
-DEFAULT_SETTINGS = {
-    "font": "Vazirmatn-Regular.ttf",
-    "font_size": 48,
-    "font_color": "black",
-    "position": "center"
-}
+if not WEBHOOK_URL:
+    print("⚠️ WEBHOOK_URL تنظیم نشده. فقط لوکال کار میکنه")
