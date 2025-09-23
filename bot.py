@@ -6,7 +6,7 @@ from typing import Dict, Any, Optional, Tuple, List
 from datetime import datetime, timezone
 
 from aiogram import Bot, Dispatcher, F, Router
-from aiogram.types import Message, CallbackQuery, BotCommand, BufferedInputFile
+from aiogram.types import Message, CallbackQuery, BotCommand, BufferedInputFile, InputSticker
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode, ChatMemberStatus
@@ -27,15 +27,15 @@ SUPPORT_USERNAME = "@onedaytoalive"
 ADMIN_ID = 6053579919
 
 MAINTENANCE = False  # حالت نگهداری بخش AI
-DAILY_LIMIT = 5      # سهمیه روزانه (ادمین نامحدود)
+DAILY_LIMIT = 5      # سهمیه روزانه AI (ادمین نامحدود)
+BOT_USERNAME = ""    # بعداً در main پر می‌شود
 
 # ============ حافظه ساده (in-memory) ============
-USERS: Dict[int, Dict[str, Any]] = {}     # {user_id: {ai_used:int, vote:str|None, day_start:int}}
-SESSIONS: Dict[int, Dict[str, Any]] = {}  # {user_id: {"mode":..., "ai":{}, "simple":{}}}
+USERS: Dict[int, Dict[str, Any]] = {}     # {user_id: {ai_used:int, vote:str|None, day_start:int, pack:{title,name,created:bool}}}
+SESSIONS: Dict[int, Dict[str, Any]] = {}  # {user_id: {"mode":..., "ai":{}, "simple":{}, "pack_wizard":{}, "await_feedback":bool, "last_sticker":bytes}}
 ADMIN_PENDING: Dict[int, Dict[str, Any]] = {}
 
 def _today_start_ts() -> int:
-    # نیمه‌شب UTC برای سادگی (قابل تغییر به منطقه زمانی دلخواه)
     now = datetime.now(timezone.utc)
     midnight = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
     return int(midnight.timestamp())
@@ -72,13 +72,13 @@ def _fmt_eta(secs: int) -> str:
 
 def user(uid: int) -> Dict[str, Any]:
     if uid not in USERS:
-        USERS[uid] = {"ai_used": 0, "vote": None, "day_start": _today_start_ts()}
+        USERS[uid] = {"ai_used": 0, "vote": None, "day_start": _today_start_ts(), "pack": None}
     _reset_daily_if_needed(USERS[uid])
     return USERS[uid]
 
 def sess(uid: int) -> Dict[str, Any]:
     if uid not in SESSIONS:
-        SESSIONS[uid] = {"mode": "menu", "ai": {}, "simple": {}}
+        SESSIONS[uid] = {"mode": "menu", "ai": {}, "simple": {}, "pack_wizard": {}, "await_feedback": False, "last_sticker": None}
     return SESSIONS[uid]
 
 def reset_mode(uid: int):
@@ -86,6 +86,9 @@ def reset_mode(uid: int):
     s["mode"] = "menu"
     s["ai"] = {}
     s["simple"] = {}
+    s["await_feedback"] = False
+    s["last_sticker"] = None
+    s["pack_wizard"] = {}
 
 # ============ داده‌ها و NLU ساده ============
 DEFAULT_PALETTE = [
@@ -198,7 +201,6 @@ def fit_font_size(draw: ImageDraw.ImageDraw, text: str, font_path: str, base: in
     return max(size, 18)
 
 def _make_default_bg(size=(512, 512)) -> Image.Image:
-    # تلاش برای خواندن تمپلیت آماده از پوشه templates کنار bot.py
     tpl_dir = os.path.join(os.path.dirname(__file__), "templates")
     candidates = ["gradient.png", "gradient.webp", "default.png", "default.webp"]
     for name in candidates:
@@ -211,7 +213,6 @@ def _make_default_bg(size=(512, 512)) -> Image.Image:
                 return img
             except Exception:
                 pass
-    # اگر تمپلیت نبود، یک گرادیان ملایم می‌سازیم
     w, h = size
     img = Image.new("RGBA", size, (20, 20, 35, 255))
     top = (56, 189, 248)
@@ -250,7 +251,7 @@ def render_image(text: str, position: str, font_key: str, color_hex: str, size_k
     padding = 28
     box_w, box_h = W - 2 * padding, H - 2 * padding
 
-    size_map = {"small": 64, "medium": 96, "large": 128}  # بزرگ‌تر برای فارسی
+    size_map = {"small": 64, "medium": 96, "large": 128}
     base_size = size_map.get(size_key, 96)
 
     font_path = resolve_font_path(font_key)
@@ -296,6 +297,75 @@ def render_image(text: str, position: str, font_key: str, color_hex: str, size_k
     img.save(buf, format="WEBP" if as_webp else "PNG")
     return buf.getvalue()
 
+# ============ ابزار پک ============
+def _normalize_shortname(base: str) -> str:
+    # فقط حروف/عدد/زیرخط، کوچک‌سازی
+    base = re.sub(r"[^a-zA-Z0-9_]", "", base or "").lower()
+    base = base[:32] if len(base) > 32 else base
+    if not base:
+        base = "pack"
+    # پایان لازم: _by_<botusername>
+    suffix = f"_by_{BOT_USERNAME}".lower()
+    if not base.endswith(suffix):
+        base = f"{base}{suffix}"
+    return base
+
+async def _ensure_pack_created(bot: Bot, uid: int, webp_bytes: bytes) -> Tuple[bool, str]:
+    # True اگر ساخته شد یا وجود داشت
+    u = user(uid)
+    pack = u.get("pack")
+    if not pack or not pack.get("name") or not pack.get("title"):
+        return (False, "اطلاعات پک کامل نیست.")
+    name = _normalize_shortname(pack["name"])
+    title = pack["title"]
+    if pack.get("created"):
+        return (True, name)
+    try:
+        input_sticker = InputSticker(
+            sticker=BufferedInputFile(webp_bytes, filename="sticker.webp"),
+            emoji_list=["🙂"]
+        )
+        await bot.create_new_sticker_set(
+            user_id=uid,
+            name=name,
+            title=title,
+            stickers=[input_sticker],
+            sticker_format="static"
+        )
+        u["pack"]["created"] = True
+        return (True, name)
+    except Exception as e:
+        # اگر قبلاً وجود داشته، created را True کن تا add کار کند
+        if "STICKERSET_INVALID" in str(e) or "stickerset_invalid" in str(e):
+            u["pack"]["created"] = True
+            return (True, name)
+        return (False, f"ساخت پک نشد: {e}")
+
+async def _add_to_pack(bot: Bot, uid: int, webp_bytes: bytes) -> str:
+    ok, res = await _ensure_pack_created(bot, uid, webp_bytes)
+    if not ok:
+        return res
+    name = res
+    # اگر پک تازه ساخته شد، همین استیکر داخلش هست؛ برای دفعات بعدی اضافه می‌کنیم
+    u = user(uid)
+    if u["pack"].get("just_created_once"):
+        # جلوگیری از افزودن دوباره همان استیکر اول
+        u["pack"]["just_created_once"] = False
+        return f"پک شما آماده است: https://t.me/addstickers/{name}"
+    try:
+        input_sticker = InputSticker(
+            sticker=BufferedInputFile(webp_bytes, filename="sticker.webp"),
+            emoji_list=["🙂"]
+        )
+        await bot.add_sticker_to_set(
+            user_id=uid,
+            name=name,
+            sticker=input_sticker
+        )
+        return f"به پک اضافه شد ✅\nلینک پک: https://t.me/addstickers/{name}"
+    except Exception as e:
+        return f"افزودن به پک نشد: {e}"
+
 # ============ کیبوردها ============
 def main_menu_kb(is_admin: bool = False):
     kb = InlineKeyboardBuilder()
@@ -307,7 +377,7 @@ def main_menu_kb(is_admin: bool = False):
     kb.button(text="پشتیبانی 🛟", callback_data="menu:support")
     if is_admin:
         kb.button(text="پنل ادمین 🛠", callback_data="menu:admin")
-    kb.adjust(2, 2, 2, 1)  # چینش شیک‌تر
+    kb.adjust(2, 2, 2, 1)
     return kb.as_markup()
 
 def join_kb():
@@ -323,6 +393,40 @@ def back_to_menu_kb(is_admin: bool = False):
     if is_admin:
         kb.button(text="پنل ادمین 🛠", callback_data="menu:admin")
     kb.adjust(1, 1)
+    return kb.as_markup()
+
+def yes_no_kb(yes_cb: str, no_cb: str):
+    kb = InlineKeyboardBuilder()
+    kb.button(text="بله ✅", callback_data=yes_cb)
+    kb.button(text="خیر ❌", callback_data=no_cb)
+    kb.adjust(2)
+    return kb.as_markup()
+
+def simple_bg_kb():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="شفاف ♻️", callback_data="simple:bg:transparent")
+    kb.button(text="پیش‌فرض 🎨", callback_data="simple:bg:default")
+    kb.button(text="ارسال عکس 🖼", callback_data="simple:bg:want_photo")
+    kb.adjust(3)
+    return kb.as_markup()
+
+def after_preview_kb(prefix: str):
+    # prefix: simple یا ai
+    kb = InlineKeyboardBuilder()
+    kb.button(text="تایید ✅", callback_data=f"{prefix}:confirm")
+    kb.button(text="ویرایش ✏️", callback_data=f"{prefix}:edit")
+    kb.button(text="بازگشت ⬅️", callback_data="menu:home")
+    kb.adjust(2, 1)
+    return kb.as_markup()
+
+def rate_kb():
+    return yes_no_kb("rate:yes", "rate:no")
+
+def add_to_pack_kb():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="افزودن به پک 📦", callback_data="pack:add")
+    kb.button(text="نه، لازم نیست", callback_data="pack:skip")
+    kb.adjust(2)
     return kb.as_markup()
 
 # ============ عضویت اجباری ============
@@ -348,6 +452,19 @@ async def ensure_membership(message_or_cb) -> bool:
             await message_or_cb.answer()
         return False
     return True
+
+# ============ ویزارد ساخت پک ============
+async def need_pack_setup(uid: int) -> bool:
+    u = user(uid)
+    return not u.get("pack") or not u["pack"].get("title") or not u["pack"].get("name")
+
+async def start_pack_wizard(message_or_cb, uid: int):
+    s = sess(uid)
+    s["mode"] = "pack_wizard"
+    s["pack_wizard"] = {"stage": "ask_title"}
+    await (message_or_cb.message if isinstance(message_or_cb, CallbackQuery) else message_or_cb).answer(
+        "اول عنوان پک را بنویس (مثلاً: استیکرهای من):"
+    )
 
 # ============ ربات و روتر ============
 router = Router()
@@ -388,12 +505,12 @@ async def on_help(cb: CallbackQuery):
         return
     txt = (
         "راهنما ℹ️\n"
-        "• استیکر ساده 🪄: یک متن بده؛ پس‌زمینه شفاف یا عکس دلخواه انتخاب کن؛ پیش‌نمایش و تایید.\n"
-        "• استیکر هوش مصنوعی 🤖: متن بده؛ بعد موقعیت، فونت، رنگ، اندازه، و پس‌زمینه (شفاف/پیش‌فرض/عکس) را انتخاب کن.\n"
-        "• سهمیه امروز ⏳: تعداد استیکرهای باقی‌مانده امروز و زمان تمدید را می‌بینی.\n"
+        "• استیکر ساده 🪄: متن بده؛ پس‌زمینه را انتخاب کن (شفاف/پیش‌فرض/عکس)، پیش‌نمایش بگیر و تایید کن. بعد از تایید می‌تونی به پک خودت اضافه کنی.\n"
+        "• استیکر هوش مصنوعی 🤖: متن بده؛ موقعیت، فونت، رنگ، اندازه و پس‌زمینه را انتخاب کن؛ پیش‌نمایش و تایید. بعد از تایید می‌تونی به پک اضافه کنی.\n"
+        "• سهمیه امروز ⏳: تعداد باقی‌مانده امروز و زمان تمدید سهمیه AI را می‌بینی.\n"
         "• اشتراک / نظرسنجی 📊: رأی بده که اشتراک اضافه شود یا نه.\n"
         "• پشتیبانی 🛟: ارتباط با پشتیبانی.\n"
-        "• پنل ادمین 🛠: فقط برای ادمین قابل دسترسی است."
+        "• نکته پک: قبل از ساخت اولین استیکر، عنوان و نام پک را وارد کن. نام باید انگلیسی باشد؛ آخرش خودکار به شکل _by_نام‌بات تنظیم می‌شود."
     )
     await cb.message.answer(txt, reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
     await cb.answer("نمایش راهنما")
@@ -446,10 +563,51 @@ async def on_vote(cb: CallbackQuery):
 async def on_simple(cb: CallbackQuery):
     if not await ensure_membership(cb):
         return
+    if await need_pack_setup(cb.from_user.id):
+        return await start_pack_wizard(cb, cb.from_user.id)
     s = sess(cb.from_user.id)
     s["mode"] = "simple"
     s["simple"] = {"state": "ASK_TEXT", "text": None, "bg_mode": None, "bg_photo": None}
     await cb.message.answer("متن استیکر ساده رو بفرست ✍️", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+    await cb.answer()
+
+@router.callback_query(F.data.func(lambda d: d and d.startswith("simple:bg:")))
+async def on_simple_bg(cb: CallbackQuery):
+    if not await ensure_membership(cb):
+        return
+    st = sess(cb.from_user.id)["simple"]
+    act = cb.data.split(":")[-1]
+    if act == "transparent":
+        st["bg_mode"] = "transparent"
+    elif act == "default":
+        st["bg_mode"] = "default"
+    elif act == "want_photo":
+        st["state"] = "WAIT_BG_PHOTO"
+        await cb.message.answer("عکس پس‌زمینه را ارسال کن 🖼")
+        return await cb.answer("منتظر عکس")
+    # اگر متن نداریم، برگرد
+    if not st.get("text"):
+        await cb.answer("اول متن بده", show_alert=True)
+        return
+    img = render_image(text=st["text"], position="center", font_key="Default", color_hex="#FFFFFF",
+                       size_key="medium", bg_mode=st.get("bg_mode") or "transparent", as_webp=False)
+    file_obj = BufferedInputFile(img, filename="preview.png")
+    await cb.message.answer_photo(file_obj, caption="پیش‌نمایش آماده است", reply_markup=after_preview_kb("simple"))
+    await cb.answer("پیش‌نمایش")
+
+@router.callback_query(F.data == "simple:confirm")
+async def on_simple_confirm(cb: CallbackQuery):
+    st = sess(cb.from_user.id)["simple"]
+    webp = render_image(text=st["text"], position="center", font_key="Default", color_hex="#FFFFFF",
+                        size_key="medium", bg_mode=st.get("bg_mode") or "transparent", bg_photo=st.get("bg_photo"), as_webp=True)
+    sess(cb.from_user.id)["last_sticker"] = webp
+    await cb.message.answer_sticker(BufferedInputFile(webp, filename="sticker.webp"))
+    await cb.message.answer("از این استیکر راضی بودی؟", reply_markup=rate_kb())
+    await cb.answer("ارسال شد")
+
+@router.callback_query(F.data == "simple:edit")
+async def on_simple_edit(cb: CallbackQuery):
+    await cb.message.answer("پس‌زمینه را انتخاب کن:", reply_markup=simple_bg_kb())
     await cb.answer()
 
 # ----- استیکر هوش مصنوعی -----
@@ -457,6 +615,8 @@ async def on_simple(cb: CallbackQuery):
 async def on_ai(cb: CallbackQuery):
     if not await ensure_membership(cb):
         return
+    if await need_pack_setup(cb.from_user.id):
+        return await start_pack_wizard(cb, cb.from_user.id)
     if MAINTENANCE:
         await cb.message.answer("بخش هوش مصنوعی موقتاً در دست تعمیر است 🛠", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
         await cb.answer()
@@ -475,207 +635,6 @@ async def on_ai(cb: CallbackQuery):
     await cb.message.answer(f"متن استیکر رو بفرست ✍️\n(سهمیه امروز: {'نامحدود' if is_admin else f'{left} از {DAILY_LIMIT}'} | تمدید: {eta})", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
     await cb.answer()
 
-# ----- پنل ادمین -----
-def admin_kb():
-    kb = InlineKeyboardBuilder()
-    kb.button(text="آمار 📈", callback_data="admin:stats")
-    kb.button(text="رأی‌ها 📊", callback_data="admin:votes")
-    kb.button(text="ریست سهمیه کاربر 🔄", callback_data="admin:reset_one")
-    kb.button(text="ریست همه سهمیه‌ها 🧹", callback_data="admin:reset_all")
-    kb.button(text="ارسال پیام به کاربر ✉️", callback_data="admin:pm")
-    kb.button(text=f"{'خاموش' if MAINTENANCE else 'روشن'} کردن نگهداری 🛠", callback_data="admin:toggle_maint")
-    kb.adjust(2, 2, 2)
-    return kb.as_markup()
-
-@router.callback_query(F.data == "menu:admin")
-async def on_admin(cb: CallbackQuery):
-    if cb.from_user.id != ADMIN_ID:
-        await cb.answer("اجازه دسترسی ندارید", show_alert=True)
-        return
-    await cb.message.answer("پنل ادمین:", reply_markup=admin_kb())
-    await cb.answer()
-
-@router.callback_query(F.data == "admin:stats")
-async def admin_stats(cb: CallbackQuery):
-    if cb.from_user.id != ADMIN_ID:
-        return await cb.answer("No", show_alert=True)
-    total_users = len(USERS)
-    used_today = sum(1 for v in USERS.values() if v.get("ai_used", 0) > 0)
-    votes_yes = sum(1 for v in USERS.values() if v.get("vote") == "yes")
-    votes_no = sum(1 for v in USERS.values() if v.get("vote") == "no")
-    await cb.message.answer(f"کاربران: {total_users}\nکاربرانی که امروز AI استفاده کردند: {used_today}\nرأی‌ها: بله {votes_yes} | خیر {votes_no}")
-    await cb.answer()
-
-@router.callback_query(F.data == "admin:votes")
-async def admin_votes(cb: CallbackQuery):
-    if cb.from_user.id != ADMIN_ID:
-        return await cb.answer("No", show_alert=True)
-    yes = [uid for uid, v in USERS.items() if v.get("vote") == "yes"]
-    no = [uid for uid, v in USERS.items() if v.get("vote") == "no"]
-    txt = f"بله: {len(yes)}\n{yes[:20]}\n\nخیر: {len(no)}\n{no[:20]}"
-    await cb.message.answer(txt)
-    await cb.answer()
-
-@router.callback_query(F.data == "admin:reset_one")
-async def admin_reset_one(cb: CallbackQuery):
-    if cb.from_user.id != ADMIN_ID:
-        return await cb.answer("No", show_alert=True)
-    ADMIN_PENDING[ADMIN_ID] = {"action": "reset_quota"}
-    await cb.message.answer("ID کاربر را بفرست تا سهمیه AI او ریست شود.")
-    await cb.answer()
-
-@router.callback_query(F.data == "admin:reset_all")
-async def admin_reset_all(cb: CallbackQuery):
-    if cb.from_user.id != ADMIN_ID:
-        return await cb.answer("No", show_alert=True)
-    for v in USERS.values():
-        v["ai_used"] = 0
-        v["day_start"] = _today_start_ts()
-    await cb.message.answer("همه سهمیه‌ها ریست شد ✅")
-    await cb.answer()
-
-@router.callback_query(F.data == "admin:pm")
-async def admin_pm(cb: CallbackQuery):
-    if cb.from_user.id != ADMIN_ID:
-        return await cb.answer("No", show_alert=True)
-    ADMIN_PENDING[ADMIN_ID] = {"action": "pm_user", "stage": "ask_id"}
-    await cb.message.answer("ID کاربر را بفرست:")
-    await cb.answer()
-
-@router.callback_query(F.data == "admin:toggle_maint")
-async def admin_toggle_maint(cb: CallbackQuery):
-    global MAINTENANCE
-    if cb.from_user.id != ADMIN_ID:
-        return await cb.answer("No", show_alert=True)
-    MAINTENANCE = not MAINTENANCE
-    await cb.message.answer(f"حالت نگهداری: {'فعال' if MAINTENANCE else 'غیرفعال'}")
-    await cb.answer()
-
-# ============ مدیریت پیام‌ها ============
-@router.message()
-async def on_message(message: Message):
-    uid = message.from_user.id
-    if not await ensure_membership(message):
-        return
-
-    # پردازش درخواست‌های معلق ادمین
-    if uid == ADMIN_ID and ADMIN_PENDING.get(ADMIN_ID):
-        p = ADMIN_PENDING[ADMIN_ID]
-        if p["action"] == "reset_quota":
-            try:
-                target = int((message.text or "").strip())
-                if target in USERS:
-                    USERS[target]["ai_used"] = 0
-                    USERS[target]["day_start"] = _today_start_ts()
-                    await message.answer(f"سهمیه کاربر {target} ریست شد ✅")
-                else:
-                    await message.answer("این کاربر هنوز در دیتای ربات نیست.")
-            except Exception:
-                await message.answer("ID معتبر بفرست.")
-            ADMIN_PENDING.pop(ADMIN_ID, None)
-            return
-        if p["action"] == "pm_user":
-            stage = p.get("stage")
-            if stage == "ask_id":
-                try:
-                    ADMIN_PENDING[ADMIN_ID]["target"] = int((message.text or "").strip())
-                    ADMIN_PENDING[ADMIN_ID]["stage"] = "ask_msg"
-                    await message.answer("متن پیام را بفرست:")
-                except Exception:
-                    await message.answer("ID معتبر بفرست.")
-                return
-            elif stage == "ask_msg":
-                target = p.get("target")
-                try:
-                    await message.bot.send_message(chat_id=target, text=f"[پیام ادمین]\n{message.text}")
-                    await message.answer("ارسال شد ✅")
-                except Exception as e:
-                    await message.answer(f"ارسال نشد: {e}")
-                ADMIN_PENDING.pop(ADMIN_ID, None)
-                return
-
-    s = sess(uid)
-    mode = s.get("mode", "menu")
-
-    # استیکر ساده
-    if mode == "simple":
-        st = s["simple"]
-        if st["state"] == "ASK_TEXT" and message.text:
-            st["text"] = message.text.strip()
-            st["state"] = "ASK_BG"
-            kb = InlineKeyboardBuilder()
-            kb.button(text="شفاف ♻️", callback_data="simple:bg:transparent")
-            kb.button(text="ارسال عکس 🖼", callback_data="simple:bg:want_photo")
-            kb.adjust(2)
-            await message.answer("پس‌زمینه چطور باشه؟", reply_markup=kb.as_markup())
-            return
-        elif st["state"] == "WAIT_BG_PHOTO" and message.photo:
-            largest = message.photo[-1]
-            buf = BytesIO()
-            await message.bot.download(largest, destination=buf)
-            st["bg_mode"] = "photo"
-            st["bg_photo"] = buf.getvalue()
-            img = render_image(text=st["text"], position="center", font_key="Default", color_hex="#FFFFFF",
-                               size_key="medium", bg_mode=st["bg_mode"], bg_photo=st["bg_photo"], as_webp=False)
-            file_obj = BufferedInputFile(img, filename="preview.png")
-            kb = InlineKeyboardBuilder()
-            kb.button(text="تایید ✅", callback_data="simple:confirm")
-            kb.button(text="بازگشت ⬅️", callback_data="menu:home")
-            kb.adjust(2)
-            await message.answer_photo(file_obj, caption="پیش‌نمایش آماده است", reply_markup=kb.as_markup())
-            return
-        else:
-            if message.photo and st.get("state") == "ASK_BG":
-                largest = message.photo[-1]
-                buf = BytesIO()
-                await message.bot.download(largest, destination=buf)
-                st["bg_mode"] = "photo"
-                st["bg_photo"] = buf.getvalue()
-                img = render_image(text=st["text"], position="center", font_key="Default", color_hex="#FFFFFF",
-                                   size_key="medium", bg_mode="photo", bg_photo=st["bg_photo"], as_webp=False)
-                file_obj = BufferedInputFile(img, filename="preview.png")
-                kb = InlineKeyboardBuilder()
-                kb.button(text="تایید ✅", callback_data="simple:confirm")
-                kb.button(text="بازگشت ⬅️", callback_data="menu:home")
-                kb.adjust(2)
-                await message.answer_photo(file_obj, caption="پیش‌نمایش آماده است", reply_markup=kb.as_markup())
-                return
-            await message.answer("لطفاً متن یا عکس موردنظر را بفرست.")
-            return
-
-    # استیکر هوش مصنوعی
-    if mode == "ai":
-        a = s["ai"]
-        u = user(uid)
-        is_admin = (uid == ADMIN_ID)
-        left = _quota_left(u, is_admin)
-        if a["text"] is None and message.text:
-            if left <= 0 and not is_admin:
-                eta = _fmt_eta(_seconds_to_reset(u))
-                await message.answer(f"سهمیه امروز تمام شد. تمدید در: {eta}")
-                return
-            a["text"] = message.text.strip()
-            inferred = infer_from_text(a["text"])
-            a.update(inferred)
-            kb = InlineKeyboardBuilder()
-            for label, val in [("بالا ⬆️", "top"), ("وسط ⚪️", "center"), ("پایین ⬇️", "bottom")]:
-                kb.button(text=label, callback_data=f"ai:pos:{val}")
-            kb.adjust(3)
-            await message.answer("متن کجا قرار بگیرد؟", reply_markup=kb.as_markup())
-            return
-        if a.get("bg") == "photo" and a.get("bg_photo") is None and message.photo:
-            largest = message.photo[-1]
-            buf = BytesIO()
-            await message.bot.download(largest, destination=buf)
-            a["bg_photo"] = buf.getvalue()
-            if all(a.get(k) for k in ["text", "position", "font", "color", "size"]):
-                await send_ai_preview(message, uid)
-            else:
-                await message.answer("ادامه تنظیمات را با دکمه‌ها انتخاب کن.")
-            return
-
-    await message.answer("از منو یکی را انتخاب کن:", reply_markup=main_menu_kb(is_admin=(uid == ADMIN_ID)))
-
 async def send_ai_preview(message_or_cb, uid: int):
     a = sess(uid)["ai"]
     img = render_image(
@@ -689,17 +648,11 @@ async def send_ai_preview(message_or_cb, uid: int):
         as_webp=False
     )
     file_obj = BufferedInputFile(img, filename="preview.png")
-    kb = InlineKeyboardBuilder()
-    kb.button(text="تایید ✅", callback_data="ai:confirm")
-    kb.button(text="ویرایش ✏️", callback_data="ai:edit")
-    kb.button(text="بازگشت ⬅️", callback_data="menu:home")
-    kb.adjust(2, 1)
     if isinstance(message_or_cb, Message):
-        await message_or_cb.answer_photo(file_obj, caption="پیش‌نمایش آماده است", reply_markup=kb.as_markup())
+        await message_or_cb.answer_photo(file_obj, caption="پیش‌نمایش آماده است", reply_markup=after_preview_kb("ai"))
     else:
-        await message_or_cb.message.answer_photo(file_obj, caption="پیش‌نمایش آماده است", reply_markup=kb.as_markup())
+        await message_or_cb.message.answer_photo(file_obj, caption="پیش‌نمایش آماده است", reply_markup=after_preview_kb("ai"))
 
-# ----- کال‌بک‌های AI -----
 @router.callback_query(F.data.func(lambda d: d and d.startswith("ai:")))
 async def on_ai_callbacks(cb: CallbackQuery):
     if not await ensure_membership(cb):
@@ -716,7 +669,7 @@ async def on_ai_callbacks(cb: CallbackQuery):
     action = parts[1] if len(parts) > 1 else ""
     value = parts[2] if len(parts) > 2 else ""
 
-    if not is_admin and left <= 0 and action != "edit":
+    if not is_admin and left <= 0 and action not in ("edit",):
         eta = _fmt_eta(_seconds_to_reset(u))
         return await cb.answer(f"سهمیه امروز تمام شد. تمدید: {eta}", show_alert=True)
 
@@ -805,7 +758,6 @@ async def on_ai_callbacks(cb: CallbackQuery):
         await cb.answer()
 
     if action == "confirm":
-        # چک نهایی سهمیه
         left = _quota_left(u, is_admin)
         if left <= 0 and not is_admin:
             eta = _fmt_eta(_seconds_to_reset(u))
@@ -820,11 +772,265 @@ async def on_ai_callbacks(cb: CallbackQuery):
             bg_photo=a.get("bg_photo"),
             as_webp=True
         )
+        sess(cb.from_user.id)["last_sticker"] = img
         await cb.message.answer_sticker(BufferedInputFile(img, filename="sticker.webp"))
         if not is_admin:
             u["ai_used"] = int(u.get("ai_used", 0)) + 1
-        reset_mode(cb.from_user.id)
-        return await cb.answer("استیکر ارسال شد ✅")
+        await cb.message.answer("از این استیکر راضی بودی؟", reply_markup=rate_kb())
+        return await cb.answer("ارسال شد")
+
+# ============ مدیریت پیام‌ها ============
+@router.message()
+async def on_message(message: Message):
+    uid = message.from_user.id
+    if not await ensure_membership(message):
+        return
+
+    # ویزارد پک
+    s = sess(uid)
+    if s.get("mode") == "pack_wizard":
+        stage = s["pack_wizard"].get("stage")
+        if stage == "ask_title":
+            title = (message.text or "").strip()
+            if not title:
+                return await message.answer("عنوان نمی‌تواند خالی باشد. دوباره بنویس:")
+            s["pack_wizard"]["title"] = title
+            s["pack_wizard"]["stage"] = "ask_name"
+            return await message.answer("نام انگلیسی پک را بنویس (فقط حروف/عدد/زیرخط):")
+        elif stage == "ask_name":
+            base = (message.text or "").strip()
+            if not re.match(r"^[a-zA-Z0-9_]{1,32}$", base or ""):
+                return await message.answer("نام نامعتبر است. فقط حروف/عدد/زیرخط و حداکثر ۳۲ کاراکتر.")
+            u = user(uid)
+            u["pack"] = {"title": s["pack_wizard"]["title"], "name": base, "created": False, "just_created_once": True}
+            s["pack_wizard"] = {}
+            s["mode"] = "menu"
+            return await message.answer(f"پک تنظیم شد ✅\nنام نهایی: {_normalize_shortname(base)}\nحالا از منو یکی را انتخاب کن:", reply_markup=main_menu_kb(is_admin=(uid == ADMIN_ID)))
+
+    # ادامه منطق قبلی
+    # پردازش درخواست‌های معلق ادمین
+    if uid == ADMIN_ID and ADMIN_PENDING.get(ADMIN_ID):
+        p = ADMIN_PENDING[ADMIN_ID]
+        if p["action"] == "reset_quota":
+            try:
+                target = int((message.text or "").strip())
+                if target in USERS:
+                    USERS[target]["ai_used"] = 0
+                    USERS[target]["day_start"] = _today_start_ts()
+                    await message.answer(f"سهمیه کاربر {target} ریست شد ✅")
+                else:
+                    await message.answer("این کاربر هنوز در دیتای ربات نیست.")
+            except Exception:
+                await message.answer("ID معتبر بفرست.")
+            ADMIN_PENDING.pop(ADMIN_ID, None)
+            return
+        if p["action"] == "pm_user":
+            stage = p.get("stage")
+            if stage == "ask_id":
+                try:
+                    ADMIN_PENDING[ADMIN_ID]["target"] = int((message.text or "").strip())
+                    ADMIN_PENDING[ADMIN_ID]["stage"] = "ask_msg"
+                    await message.answer("متن پیام را بفرست:")
+                except Exception:
+                    await message.answer("ID معتبر بفرست.")
+                return
+            elif stage == "ask_msg":
+                target = p.get("target")
+                try:
+                    await message.bot.send_message(chat_id=target, text=f"[پیام ادمین]\n{message.text}")
+                    await message.answer("ارسال شد ✅")
+                except Exception as e:
+                    await message.answer(f"ارسال نشد: {e}")
+                ADMIN_PENDING.pop(ADMIN_ID, None)
+                return
+
+    mode = s.get("mode", "menu")
+
+    # استیکر ساده
+    if mode == "simple":
+        st = s["simple"]
+        if st["state"] == "ASK_TEXT" and message.text:
+            st["text"] = message.text.strip()
+            st["state"] = "ASK_BG"
+            await message.answer("پس‌زمینه را انتخاب کن:", reply_markup=simple_bg_kb())
+            return
+        elif st["state"] == "WAIT_BG_PHOTO" and message.photo:
+            largest = message.photo[-1]
+            buf = BytesIO()
+            await message.bot.download(largest, destination=buf)
+            st["bg_mode"] = "photo"
+            st["bg_photo"] = buf.getvalue()
+            img = render_image(text=st["text"], position="center", font_key="Default", color_hex="#FFFFFF",
+                               size_key="medium", bg_mode=st["bg_mode"], bg_photo=st["bg_photo"], as_webp=False)
+            file_obj = BufferedInputFile(img, filename="preview.png")
+            await message.answer_photo(file_obj, caption="پیش‌نمایش آماده است", reply_markup=after_preview_kb("simple"))
+            return
+        else:
+            if message.photo and st.get("state") == "ASK_BG":
+                largest = message.photo[-1]
+                buf = BytesIO()
+                await message.bot.download(largest, destination=buf)
+                st["bg_mode"] = "photo"
+                st["bg_photo"] = buf.getvalue()
+                img = render_image(text=st["text"], position="center", font_key="Default", color_hex="#FFFFFF",
+                                   size_key="medium", bg_mode="photo", bg_photo=st["bg_photo"], as_webp=False)
+                file_obj = BufferedInputFile(img, filename="preview.png")
+                await message.answer_photo(file_obj, caption="پیش‌نمایش آماده است", reply_markup=after_preview_kb("simple"))
+                return
+            # اگر خارج از جریان چیزی فرستاد
+            return await message.answer("از دکمه‌ها استفاده کن یا متن/عکس مناسب بفرست.")
+
+    # استیکر هوش مصنوعی
+    if mode == "ai":
+        a = s["ai"]
+        if a["text"] is None and message.text:
+            u = user(uid)
+            is_admin = (uid == ADMIN_ID)
+            left = _quota_left(u, is_admin)
+            if left <= 0 and not is_admin:
+                eta = _fmt_eta(_seconds_to_reset(u))
+                return await message.answer(f"سهمیه امروز تمام شد. تمدید در: {eta}")
+            a["text"] = message.text.strip()
+            inferred = infer_from_text(a["text"])
+            a.update(inferred)
+            kb = InlineKeyboardBuilder()
+            for label, val in [("بالا ⬆️", "top"), ("وسط ⚪️", "center"), ("پایین ⬇️", "bottom")]:
+                kb.button(text=label, callback_data=f"ai:pos:{val}")
+            kb.adjust(3)
+            await message.answer("متن کجا قرار بگیرد؟", reply_markup=kb.as_markup())
+            return
+        if a.get("bg") == "photo" and a.get("bg_photo") is None and message.photo:
+            largest = message.photo[-1]
+            buf = BytesIO()
+            await message.bot.download(largest, destination=buf)
+            a["bg_photo"] = buf.getvalue()
+            if all(a.get(k) for k in ["text", "position", "font", "color", "size"]):
+                await send_ai_preview(message, uid)
+            else:
+                await message.answer("ادامه تنظیمات را با دکمه‌ها انتخاب کن.")
+            return
+
+    # بازخورد (بعد از سوال نارضایتی)
+    if s.get("await_feedback"):
+        reason = (message.text or "").strip()
+        s["await_feedback"] = False
+        # ارسال برای ادمین (اختیاری)
+        try:
+            if uid != ADMIN_ID:
+                await message.bot.send_message(chat_id=ADMIN_ID, text=f"بازخورد کاربر {uid}:\n{reason}")
+        except Exception:
+            pass
+        return await message.answer("ممنون از بازخوردت 🙏", reply_markup=back_to_menu_kb(uid == ADMIN_ID))
+
+    await message.answer("از منو یکی را انتخاب کن:", reply_markup=main_menu_kb(is_admin=(uid == ADMIN_ID)))
+
+# ----- بازخورد و افزودن به پک -----
+@router.callback_query(F.data == "rate:yes")
+async def on_rate_yes(cb: CallbackQuery):
+    await cb.message.answer("عالیه! می‌خوای به پک‌ات اضافه کنم؟", reply_markup=add_to_pack_kb())
+    await cb.answer()
+
+@router.callback_query(F.data == "rate:no")
+async def on_rate_no(cb: CallbackQuery):
+    sess(cb.from_user.id)["await_feedback"] = True
+    await cb.message.answer("چه چیزی راضیت نکرد؟ لطفاً کوتاه توضیح بده:")
+    await cb.answer()
+
+@router.callback_query(F.data == "pack:skip")
+async def on_pack_skip(cb: CallbackQuery):
+    await cb.message.answer("باشه، اضافه نکردم. هر وقت خواستی از منو دوباره انتخاب کن.", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+    await cb.answer()
+
+@router.callback_query(F.data == "pack:add")
+async def on_pack_add(cb: CallbackQuery):
+    uid = cb.from_user.id
+    webp = sess(uid).get("last_sticker")
+    if not webp:
+        await cb.answer("استیکری برای افزودن ندارم.", show_alert=True)
+        return
+    # اگر اطلاعات پک ناقص است، ویزارد را شروع کن
+    if await need_pack_setup(uid):
+        await start_pack_wizard(cb, uid)
+        return await cb.answer("اول پک را تنظیم کن")
+    msg = await _add_to_pack(cb.bot, uid, webp)
+    await cb.message.answer(msg, reply_markup=back_to_menu_kb(uid == ADMIN_ID))
+    await cb.answer()
+
+# ----- پنل ادمین (بدون تغییرات خاص) -----
+def admin_kb():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="آمار 📈", callback_data="admin:stats")
+    kb.button(text="رأی‌ها 📊", callback_data="admin:votes")
+    kb.button(text="ریست سهمیه کاربر 🔄", callback_data="admin:reset_one")
+    kb.button(text="ریست همه سهمیه‌ها 🧹", callback_data="admin:reset_all")
+    kb.button(text="ارسال پیام به کاربر ✉️", callback_data="admin:pm")
+    kb.button(text=f"{'خاموش' if MAINTENANCE else 'روشن'} کردن نگهداری 🛠", callback_data="admin:toggle_maint")
+    kb.adjust(2, 2, 2)
+    return kb.as_markup()
+
+@router.callback_query(F.data == "menu:admin")
+async def on_admin(cb: CallbackQuery):
+    if cb.from_user.id != ADMIN_ID:
+        await cb.answer("اجازه دسترسی ندارید", show_alert=True)
+        return
+    await cb.message.answer("پنل ادمین:", reply_markup=admin_kb())
+    await cb.answer()
+
+@router.callback_query(F.data == "admin:stats")
+async def admin_stats(cb: CallbackQuery):
+    if cb.from_user.id != ADMIN_ID:
+        return await cb.answer("No", show_alert=True)
+    total_users = len(USERS)
+    used_today = sum(1 for v in USERS.values() if v.get("ai_used", 0) > 0)
+    votes_yes = sum(1 for v in USERS.values() if v.get("vote") == "yes")
+    votes_no = sum(1 for v in USERS.values() if v.get("vote") == "no")
+    await cb.message.answer(f"کاربران: {total_users}\nکاربرانی که امروز AI استفاده کردند: {used_today}\nرأی‌ها: بله {votes_yes} | خیر {votes_no}")
+    await cb.answer()
+
+@router.callback_query(F.data == "admin:votes")
+async def admin_votes(cb: CallbackQuery):
+    if cb.from_user.id != ADMIN_ID:
+        return await cb.answer("No", show_alert=True)
+    yes = [uid for uid, v in USERS.items() if v.get("vote") == "yes"]
+    no = [uid for uid, v in USERS.items() if v.get("vote") == "no"]
+    txt = f"بله: {len(yes)}\n{yes[:20]}\n\nخیر: {len(no)}\n{no[:20]}"
+    await cb.message.answer(txt)
+    await cb.answer()
+
+@router.callback_query(F.data == "admin:reset_one")
+async def admin_reset_one(cb: CallbackQuery):
+    if cb.from_user.id != ADMIN_ID:
+        return await cb.answer("No", show_alert=True)
+    ADMIN_PENDING[ADMIN_ID] = {"action": "reset_quota"}
+    await cb.message.answer("ID کاربر را بفرست تا سهمیه AI او ریست شود.")
+    await cb.answer()
+
+@router.callback_query(F.data == "admin:reset_all")
+async def admin_reset_all(cb: CallbackQuery):
+    if cb.from_user.id != ADMIN_ID:
+        return await cb.answer("No", show_alert=True)
+    for v in USERS.values():
+        v["ai_used"] = 0
+        v["day_start"] = _today_start_ts()
+    await cb.message.answer("همه سهمیه‌ها ریست شد ✅")
+    await cb.answer()
+
+@router.callback_query(F.data == "admin:pm")
+async def admin_pm(cb: CallbackQuery):
+    if cb.from_user.id != ADMIN_ID:
+        return await cb.answer("No", show_alert=True)
+    ADMIN_PENDING[ADMIN_ID] = {"action": "pm_user", "stage": "ask_id"}
+    await cb.message.answer("ID کاربر را بفرست:")
+    await cb.answer()
+
+@router.callback_query(F.data == "admin:toggle_maint")
+async def admin_toggle_maint(cb: CallbackQuery):
+    global MAINTENANCE
+    if cb.from_user.id != ADMIN_ID:
+        return await cb.answer("No", show_alert=True)
+    MAINTENANCE = not MAINTENANCE
+    await cb.message.answer(f"حالت نگهداری: {'فعال' if MAINTENANCE else 'غیرفعال'}")
+    await cb.answer()
 
 # ============ دستورات پایه و اجرا ============
 async def set_commands(bot: Bot):
@@ -833,12 +1039,14 @@ async def set_commands(bot: Bot):
     ])
 
 async def main():
+    global BOT_USERNAME
     bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    me = await bot.get_me()
+    BOT_USERNAME = me.username or "mybot"
     dp = Dispatcher()
     dp.include_router(router)
     await set_commands(bot)
 
-    # حذف وبهوک فعال برای جلوگیری از Conflict
     try:
         await bot.delete_webhook(drop_pending_updates=True)
     except Exception as e:
