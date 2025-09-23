@@ -311,7 +311,7 @@ router = Router()
 async def on_start(message: Message):
     reset_mode(message.from_user.id)
     if not await ensure_membership(message): return
-    await message.answer("سلام! خوش اومدی ✨
+    await message.answer("سلام! خوش اومدی ✨")
 یکی از گزینه‌های زیر رو انتخاب کن:", reply_markup=main_menu_kb(is_admin=(message.from_user.id==ADMIN_ID)))
 
 @router.callback_query(F.data == "check_sub")
