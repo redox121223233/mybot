@@ -1,91 +1,59 @@
 import os
-import io
 from PIL import Image, ImageDraw, ImageFont
-import requests
-from services.telegram_api import TelegramAPI
+from config import TELEGRAM_TOKEN
+from utils.state_manager import set_state, get_state
 
-api = TelegramAPI(os.getenv("TELEGRAM_TOKEN"))
+def resize_to_sticker_size(input_path, output_path, text=None):
+    img = Image.open(input_path).convert("RGBA")
+    img.thumbnail((512, 512))
 
-# ذخیره وضعیت کاربر
-user_context = {}
+    if text:
+        draw = ImageDraw.Draw(img)
+        font = ImageFont.truetype("arial.ttf", 40)
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_w, text_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        pos = ((img.width - text_w) // 2, img.height - text_h - 10)
+        draw.text(pos, text, font=font, fill="white")
 
+    img.save(output_path, "PNG")
 
-def handle_sticker_upload(chat_id, file_id):
-    """وقتی کاربر عکس می‌فرسته"""
-    # فایل عکس رو از تلگرام دانلود کن
+def handle_sticker_upload(api, chat_id, file_id):
     file_info = api.get_file(file_id)
-    file_url = f"https://api.telegram.org/file/bot{api.token}/{file_info['file_path']}"
-    response = requests.get(file_url)
+    file_path = file_info["file_path"]
 
-    # ذخیره عکس در context
-    user_context[chat_id] = {
-        "photo": Image.open(io.BytesIO(response.content)),
-        "awaiting_text": None
-    }
+    input_path = f"/tmp/{chat_id}_in.png"
+    output_path = f"/tmp/{chat_id}_out.png"
 
-    # سوال بپرس
+    api.download_file(file_path, input_path)
+
+    set_state(chat_id, "awaiting_text_choice")
     api.send_message(
         chat_id,
         "✍️ میخوای روی استیکرت متن هم بذارم؟",
         reply_markup={
             "keyboard": [[{"text": "بله ✍️"}], [{"text": "خیر 🚫"}]],
             "resize_keyboard": True,
-            "one_time_keyboard": True
-        }
+            "one_time_keyboard": True,
+        },
     )
 
-
-def handle_text_choice(chat_id, text):
-    """مدیریت جواب بله یا خیر"""
-    ctx = user_context.get(chat_id)
-    if not ctx:
-        api.send_message(chat_id, "❌ اول یه عکس بفرست.")
-        return
-
-    text = text.strip()
-
-    if text.startswith("بله"):
-        ctx["awaiting_text"] = True
-        api.send_message(chat_id, "✍️ خب! متنی که میخوای روی استیکر بیاد رو بفرست.")
-    elif text.startswith("خیر"):
-        ctx["awaiting_text"] = False
-        make_and_send_sticker(chat_id, ctx["photo"])
+def handle_text_choice(api, chat_id, choice):
+    if choice.startswith("بله"):
+        set_state(chat_id, "awaiting_text")
+        api.send_message(chat_id, "✍️ متنتو بفرست تا بذارم روی استیکر.")
     else:
-        api.send_message(chat_id, "❌ متوجه نشدم. بله یا خیر رو انتخاب کن.")
+        finalize_sticker(api, chat_id)
 
+def handle_text_input(api, chat_id, text):
+    finalize_sticker(api, chat_id, text)
 
-def handle_text_input(chat_id, text):
-    """وقتی کاربر متن استیکر رو فرستاد"""
-    ctx = user_context.get(chat_id)
-    if not ctx or ctx.get("awaiting_text") is not True:
-        api.send_message(chat_id, "❌ اول باید بگی بله یا خیر.")
-        return
+def finalize_sticker(api, chat_id, text=None):
+    input_path = f"/tmp/{chat_id}_in.png"
+    output_path = f"/tmp/{chat_id}_out.png"
 
-    image = ctx["photo"]
+    resize_to_sticker_size(input_path, output_path, text=text)
 
-    # فونت اضافه کن (یادت باشه فونت TTF رو توی پروژه بذاری مثل fonts/Vazir.ttf)
-    try:
-        font = ImageFont.truetype("fonts/Vazir.ttf", 48)
-    except:
-        font = ImageFont.load_default()
+    with open(output_path, "rb") as f:
+        api.send_sticker(chat_id, f)
 
-    draw = ImageDraw.Draw(image)
-    w, h = image.size
-    text_w, text_h = draw.textsize(text, font=font)
-
-    # وسط بچین
-    draw.text(((w - text_w) / 2, h - text_h - 20), text, font=font, fill="white")
-
-    make_and_send_sticker(chat_id, image)
-
-
-def make_and_send_sticker(chat_id, image):
-    """عکس رو به استیکر تبدیل و ارسال کن"""
-    bio = io.BytesIO()
-    bio.name = "sticker.webp"
-    image = image.convert("RGBA")
-    image.save(bio, "WEBP")
-    bio.seek(0)
-
-    api.send_sticker(chat_id, bio)
-    api.send_message(chat_id, "✅ استیکر ساخته شد!")
+    set_state(chat_id, None)
