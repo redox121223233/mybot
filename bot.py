@@ -8,6 +8,8 @@ from typing import Dict, Any, Optional, Tuple, List
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.types import Message, CallbackQuery, BotCommand, BufferedInputFile
 from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
 
 from PIL import Image, ImageDraw, ImageFont
 import arabic_reshaper
@@ -103,10 +105,9 @@ def available_font_options() -> List[Tuple[str, str]]:
 
 def resolve_font_path(font_key: Optional[str]) -> str:
     if font_key and font_key in _SYSTEM_FONTS: return _SYSTEM_FONTS[font_key]
-    # fallback to any found
     if _SYSTEM_FONTS:
         return next(iter(_SYSTEM_FONTS.values()))
-    return ""  # باعث استفاده از فونت پیش‌فرض می‌شود
+    return ""
 
 # ========================
 # رندر استیکر
@@ -202,7 +203,6 @@ def render_image(text: str, position: str, font_key: str, color_hex: str, size_k
     if as_webp:
         img.save(buf, format="WEBP")
     else:
-        # برای پیش‌نمایش، PNG کیفیت بهتری دارد
         img.save(buf, format="PNG")
     return buf.getvalue()
 
@@ -385,10 +385,18 @@ async def set_commands(bot: Bot):
     ])
 
 async def main():
-    bot = Bot(BOT_TOKEN, parse_mode="HTML")
+    # روش جدید تنظیم سبک پیام برای رفع هشدار
+    bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
     dp.include_router(router)
     await set_commands(bot)
+
+    # خاموش کردن وبهوک فعال قبل از شروع تا تداخل نداشته باشیم
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+    except Exception as e:
+        print("deleteWebhook failed (ignored):", e)
+
     print("Bot is running. Press Ctrl+C to stop.")
     await dp.start_polling(bot)
 
