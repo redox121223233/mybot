@@ -79,39 +79,39 @@ def infer_from_text(text: str) -> Dict[str, str]:
     return out
 
 # ============ فونت ============
-def find_arabic_fonts() -> Dict[str, str]:
+# استفاده از فونت‌های محلی داخل پوشه fonts کنار bot.py
+FONT_DIR = os.path.join(os.path.dirname(__file__), "fonts")
+
+LOCAL_FONT_FILES = {
+    "Vazirmatn": ["Vazirmatn-Regular.ttf", "Vazirmatn-Medium.ttf"],
+    "NotoNaskh": ["NotoNaskhArabic-Regular.ttf", "NotoNaskhArabic-Medium.ttf"],
+    "Sahel": ["Sahel.ttf", "Sahel-Bold.ttf"],
+    "IRANSans": ["IRANSans.ttf", "IRANSansX-Regular.ttf"],
+    "Default": ["NotoNaskhArabic-Regular.ttf", "Vazirmatn-Regular.ttf", "Sahel.ttf"],
+}
+
+def _load_local_fonts() -> Dict[str, str]:
     found: Dict[str, str] = {}
-    candidates = [
-        ("NotoNaskh", "NotoNaskhArabic"), ("NotoSansArabic", "NotoSansArabic"),
-        ("Vazirmatn", "Vazirmatn"), ("Amiri", "Amiri"), ("Scheherazade", "Scheherazade"),
-        ("Sahel", "Sahel"), ("IRANSans", "IRANSans")
-    ]
-    roots = ["/usr/share/fonts", "/usr/local/share/fonts", os.path.expanduser("~/.fonts"),
-             "/usr/share/fonts/truetype", "/usr/share/fonts/opentype"]
-    for root in roots:
-        if not os.path.isdir(root):
-            continue
-        for base, key in candidates:
-            if base in found:
-                continue
-            for dirpath, _, filenames in os.walk(root):
-                for fn in filenames:
-                    low = fn.lower()
-                    if any(tag.lower() in low for tag in [key, base, base.replace(" ", "")]) and (low.endswith(".ttf") or low.endswith(".otf")):
-                        found[base] = os.path.join(dirpath, fn)
-                        break
+    if os.path.isdir(FONT_DIR):
+        for logical, names in LOCAL_FONT_FILES.items():
+            for name in names:
+                p = os.path.join(FONT_DIR, name)
+                if os.path.isfile(p):
+                    found[logical] = p
+                    break
     return found
 
-_SYSTEM_FONTS = find_arabic_fonts()
+_LOCAL_FONTS = _load_local_fonts()
 
 def available_font_options() -> List[Tuple[str, str]]:
-    keys = list(_SYSTEM_FONTS.keys())
+    keys = list(_LOCAL_FONTS.keys())
     return [(k, k) for k in keys[:8]] if keys else [("Default", "Default")]
 
 def resolve_font_path(font_key: Optional[str]) -> str:
-    if font_key and font_key in _SYSTEM_FONTS:
-        return _SYSTEM_FONTS[font_key]
-    return next(iter(_SYSTEM_FONTS.values()), "")
+    if font_key and font_key in _LOCAL_FONTS:
+        return _LOCAL_FONTS[font_key]
+    # fallback: اولین فونت موجود
+    return next(iter(_LOCAL_FONTS.values()), "")
 
 # ============ رندر تصویر/استیکر ============
 CANVAS = (512, 512)
@@ -163,6 +163,23 @@ def fit_font_size(draw: ImageDraw.ImageDraw, text: str, font_path: str, base: in
     return max(size, 18)
 
 def _make_default_bg(size=(512, 512)) -> Image.Image:
+    # ابتدا تلاش برای خواندن تمپلیت آماده از پوشه templates کنار bot.py
+    tpl_dir = os.path.join(os.path.dirname(__file__), "templates")
+    # اولویت با فایل های زیر است؛ اولین موجود استفاده می‌شود
+    candidates = [
+        "gradient.png", "gradient.webp", "default.png", "default.webp"
+    ]
+    for name in candidates:
+        p = os.path.join(tpl_dir, name)
+        if os.path.isfile(p):
+            try:
+                img = Image.open(p).convert("RGBA")
+                if img.size != size:
+                    img = img.resize(size, Image.LANCZOS)
+                return img
+            except Exception:
+                pass
+    # اگر تمپلیت نبود، یک گرادیان ملایم می‌سازیم
     w, h = size
     img = Image.new("RGBA", size, (20, 20, 35, 255))
     top = (56, 189, 248)
@@ -201,8 +218,8 @@ def render_image(text: str, position: str, font_key: str, color_hex: str, size_k
     padding = 28
     box_w, box_h = W - 2 * padding, H - 2 * padding
 
-    size_map = {"small": 52, "medium": 80, "large": 112}  # کمی بزرگ‌تر برای فارسی
-    base_size = size_map.get(size_key, 80)
+    size_map = {"small": 64, "medium": 96, "large": 128}  # افزایش برای خوانایی فارسی
+    base_size = size_map.get(size_key, 96)
 
     font_path = resolve_font_path(font_key)
     try:
@@ -211,6 +228,10 @@ def render_image(text: str, position: str, font_key: str, color_hex: str, size_k
         font = ImageFont.load_default()
 
     txt = _prepare_text(text)
+    # اگر فونت محلی پیدا نشد، به اجبار یکی از فونت‌های پوشه fonts را امتحان کن تا مشکل □□□ حل شود
+    if not font_path:
+        # تلاش برای انتخاب یکی از فونت‌های محلی
+        font_path = resolve_font_path("Default")
     final_size = fit_font_size(draw, txt, font_path, base_size, box_w, box_h)
     try:
         font = ImageFont.truetype(font_path, size=final_size) if font_path else ImageFont.load_default()
@@ -388,7 +409,7 @@ async def on_ai(cb: CallbackQuery):
         return
     s = sess(cb.from_user.id)
     s["mode"] = "ai"
-    s["ai"] = {"text": None, "position": None, "font": None, "color": "#FFFFFF", "size": None, "bg": "transparent", "bg_photo": None}
+    s["ai"] = {"text": None, "position": None, "font": "Default", "color": "#FFFFFF", "size": "large", "bg": "transparent", "bg_photo": None}
     await cb.message.answer("متن استیکر رو بفرست ✍️", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
     await cb.answer()
 
@@ -671,6 +692,10 @@ async def on_ai_callbacks(cb: CallbackQuery):
             kb.button(text=name, callback_data=f"ai:color:{hx}")
         kb.adjust(3)
         await cb.message.answer("رنگ متن:", reply_markup=kb.as_markup())
+        # اگر کاربر "Default" را زده و فونت محلی موجود است، به صورت شفاف اطلاع بده
+        if value == "Default":
+            opts = ", ".join([label for label, _ in available_font_options() if label != "Default"]) or "—"
+            await cb.message.answer(f"فونت پیش‌فرض فعال شد. فونت‌های پوشه: {opts}")
         return await cb.answer("ثبت شد")
 
     if action == "color":
