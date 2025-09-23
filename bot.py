@@ -155,8 +155,7 @@ def fit_font_size(draw: ImageDraw.ImageDraw, text: str, font_path: str, base: in
         except Exception:
             font = ImageFont.load_default()
         lines = wrap_text_to_width(draw, text, font, max_w)
-        bbox = draw.multiline_textbbox((0, 0), "
-".join(lines), font=font, spacing=6, align="center", stroke_width=2)
+        bbox = draw.multiline_textbbox((0, 0), "\n".join(lines), font=font, spacing=6, align="center", stroke_width=2)
         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
         if tw <= max_w and th <= max_h:
             return size
@@ -219,8 +218,7 @@ def render_image(text: str, position: str, font_key: str, color_hex: str, size_k
         font = ImageFont.load_default()
 
     lines = wrap_text_to_width(draw, txt, font, box_w)
-    wrapped = "
-".join(lines)
+    wrapped = "\n".join(lines)
     bbox = draw.multiline_textbbox((0, 0), wrapped, font=font, spacing=6, align="center", stroke_width=2)
     tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
 
@@ -307,8 +305,7 @@ async def on_start(message: Message):
     reset_mode(message.from_user.id)
     if not await ensure_membership(message):
         return
-    await message.answer("سلام! خوش اومدی ✨
-یکی از گزینه‌های زیر رو انتخاب کن:", reply_markup=main_menu_kb(is_admin=(message.from_user.id == ADMIN_ID)))
+    await message.answer("سلام! خوش اومدی ✨\nیکی از گزینه‌های زیر رو انتخاب کن:", reply_markup=main_menu_kb(is_admin=(message.from_user.id == ADMIN_ID)))
 
 @router.callback_query(F.data == "check_sub")
 async def on_check_sub(cb: CallbackQuery):
@@ -346,9 +343,7 @@ async def on_sub(cb: CallbackQuery):
     kb.button(text="بازگشت ⬅️", callback_data="menu:home")
     kb.adjust(2, 1)
     yours = "بله" if u.get("vote") == "yes" else ("خیر" if u.get("vote") == "no" else "ثبت نشده")
-    await cb.message.answer(f"اشتراک بیاریم؟
-رأی شما: {yours}
-آمار فعلی: بله {yes} | خیر {no}", reply_markup=kb.as_markup())
+    await cb.message.answer(f"اشتراک بیاریم؟\nرأی شما: {yours}\nآمار فعلی: بله {yes} | خیر {no}", reply_markup=kb.as_markup())
     await cb.answer()
 
 @router.callback_query(F.data.func(lambda d: d and d.startswith("vote:")))
@@ -363,9 +358,7 @@ async def on_vote(cb: CallbackQuery):
         await cb.answer("نامعتبر")
     yes = sum(1 for v in USERS.values() if v.get("vote") == "yes")
     no = sum(1 for v in USERS.values() if v.get("vote") == "no")
-    txt = f"اشتراک بیاریم؟
-رأی شما: {'بله' if choice == 'yes' else 'خیر'}
-آمار فعلی: بله {yes} | خیر {no}"
+    txt = f"اشتراک بیاریم؟\nرأی شما: {'بله' if choice == 'yes' else 'خیر'}\nآمار فعلی: بله {yes} | خیر {no}"
     await cb.message.edit_text(txt, reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
 
 # ----- استیکر ساده -----
@@ -390,8 +383,7 @@ async def on_ai(cb: CallbackQuery):
         return
     u = user(cb.from_user.id)
     if u["ai_used"] >= 5:
-        await cb.message.answer("حداکثر ۵ بار رایگان استفاده کرده‌ای.
-اگر دوست داری اشتراک اضافه کنیم، در نظرسنجی رأی بده 📊", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+        await cb.message.answer("حداکثر ۵ بار رایگان استفاده کرده‌ای.\nاگر دوست داری اشتراک اضافه کنیم، در نظرسنجی رأی بده 📊", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
         await cb.answer()
         return
     s = sess(cb.from_user.id)
@@ -428,9 +420,7 @@ async def admin_stats(cb: CallbackQuery):
     used = sum(1 for v in USERS.values() if v.get("ai_used", 0) > 0)
     votes_yes = sum(1 for v in USERS.values() if v.get("vote") == "yes")
     votes_no = sum(1 for v in USERS.values() if v.get("vote") == "no")
-    await cb.message.answer(f"کاربران: {total_users}
-کاربرانی که AI استفاده کردند: {used}
-رأی‌ها: بله {votes_yes} | خیر {votes_no}")
+    await cb.message.answer(f"کاربران: {total_users}\nکاربرانی که AI استفاده کردند: {used}\nرأی‌ها: بله {votes_yes} | خیر {votes_no}")
     await cb.answer()
 
 @router.callback_query(F.data == "admin:votes")
@@ -439,11 +429,7 @@ async def admin_votes(cb: CallbackQuery):
         return await cb.answer("No", show_alert=True)
     yes = [uid for uid, v in USERS.items() if v.get("vote") == "yes"]
     no = [uid for uid, v in USERS.items() if v.get("vote") == "no"]
-    txt = f"بله: {len(yes)}
-{yes[:20]}
-
-خیر: {len(no)}
-{no[:20]}"
+    txt = f"بله: {len(yes)}\n{yes[:20]}\n\nخیر: {len(no)}\n{no[:20]}"
     await cb.message.answer(txt)
     await cb.answer()
 
@@ -516,8 +502,7 @@ async def on_message(message: Message):
             elif stage == "ask_msg":
                 target = p.get("target")
                 try:
-                    await message.bot.send_message(chat_id=target, text=f"[پیام ادمین]
-{message.text}")
+                    await message.bot.send_message(chat_id=target, text=f"[پیام ادمین]\n{message.text}")
                     await message.answer("ارسال شد ✅")
                 except Exception as e:
                     await message.answer(f"ارسال نشد: {e}")
