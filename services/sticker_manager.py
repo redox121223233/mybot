@@ -1,42 +1,47 @@
 import os
 import logging
-from utils.telegram_api import TelegramAPI
 from PIL import Image, ImageDraw, ImageFont
+from utils.telegram_api import TelegramAPI
+from config import TELEGRAM_TOKEN
 
 logger = logging.getLogger(__name__)
 
-api = TelegramAPI(token=os.getenv("TELEGRAM_BOT_TOKEN"))
-DATA_DIR = "/tmp"   # مسیر ذخیره موقت عکس‌ها
+api = TelegramAPI(TELEGRAM_TOKEN)
+DATA_DIR = "/tmp"
+
+# حافظه موقت وضعیت کاربران
+USER_STATE = {}
 
 
 def resize_to_sticker_size(input_path, output_path, text=None):
     """
-    تغییر سایز عکس به 512x512 و اضافه کردن متن اختیاری
+    تغییر اندازه تصویر به ابعاد مجاز استیکر تلگرام + افزودن متن در صورت نیاز
     """
-    with Image.open(input_path).convert("RGBA") as im:
-        im = im.resize((512, 512), Image.LANCZOS)
+    with Image.open(input_path).convert("RGBA") as img:
+        # تغییر اندازه به ابعاد مجاز (512x512)
+        img.thumbnail((512, 512))
 
         if text:
-            draw = ImageDraw.Draw(im)
+            draw = ImageDraw.Draw(img)
             try:
-                font = ImageFont.truetype("arial.ttf", 40)
+                font = ImageFont.truetype("arial.ttf", 32)
             except:
+                logger.warning("⚠️ فونت arial.ttf پیدا نشد. استفاده از پیش‌فرض.")
                 font = ImageFont.load_default()
 
-            # ✅ جایگزین textsize → استفاده از textbbox
+            # اندازه متن
             bbox = draw.textbbox((0, 0), text, font=font)
-            text_w = bbox[2] - bbox[0]
-            text_h = bbox[3] - bbox[1]
+            text_w, text_h = bbox[2] - bbox[0], bbox[3] - bbox[1]
+            x = (img.width - text_w) // 2
+            y = img.height - text_h - 10
+            draw.text((x, y), text, font=font, fill="white")
 
-            pos = ((512 - text_w) // 2, 512 - text_h - 20)
-            draw.text(pos, text, font=font, fill="white")
-
-        im.save(output_path, "PNG")
+        img.save(output_path, "PNG")
 
 
 def handle_sticker_upload(update, user_id, pack_name, text=None):
     """
-    گرفتن عکس کاربر و ساختن/اضافه کردن استیکر به پک
+    گرفتن عکس کاربر و ذخیره موقت برای ساخت استیکر
     """
     try:
         message = update.get("message", {})
@@ -45,34 +50,66 @@ def handle_sticker_upload(update, user_id, pack_name, text=None):
             logger.error("❌ هیچ عکسی پیدا نشد.")
             return False
 
-        # ✅ گرفتن بزرگ‌ترین سایز عکس
+        # ✅ بزرگ‌ترین سایز عکس
         file_id = photos[-1]["file_id"]
         logger.info(f"⬆️ دریافت عکس برای استیکر: user_id={user_id}, file_id={file_id}")
 
-        # ✅ دانلود فایل
-        raw_path = os.path.join(DATA_DIR, f"{user_id}_raw.png")
-        ready_path = os.path.join(DATA_DIR, f"{user_id}_sticker.png")
-        api.download_file(file_id, raw_path)
+        dest_path = os.path.join(DATA_DIR, f"{user_id}_raw.png")
+        api.download_file(file_id, dest_path)
 
-        # ✅ تغییر سایز + افزودن متن (اختیاری)
-        resize_to_sticker_size(raw_path, ready_path, text=text)
-
-        # ✅ ارسال مستقیم استیکر به کاربر (نه فقط پیام متن)
-        with open(ready_path, "rb") as f:
-            api.send_document(user_id, f, caption="✅ استیکرت آماده‌ست! ذخیره کن 📥")
-
-        logger.info("✅ استیکر ساخته و برای کاربر ارسال شد.")
+        # بعد از ذخیره عکس از کاربر بپرسیم که متن می‌خواد یا نه
+        keyboard = {
+            "keyboard": [[{"text": "بله ✍️"}], [{"text": "خیر 🚫"}]],
+            "resize_keyboard": True,
+            "one_time_keyboard": True,
+        }
+        api.send_message(user_id, "❓ میخوای روی استیکرت متن هم بذاری؟", reply_markup=keyboard)
         return True
 
     except Exception as e:
         logger.error(f"❌ خطا در آپلود استیکر: {e}", exc_info=True)
-        api.send_message(user_id, "❌ خطا در ساخت استیکر. دوباره تلاش کن.")
         return False
+
+
+def handle_text_choice(user_id, text):
+    """
+    بررسی انتخاب کاربر بعد از آپلود عکس (آیا متن اضافه کند یا نه؟)
+    """
+    if text.strip() == "بله ✍️":
+        USER_STATE[user_id] = "awaiting_text"
+        api.send_message(user_id, "✍️ متنتو بفرست تا بذارم روی استیکر.")
+        return True
+
+    elif text.strip() == "خیر 🚫":
+        raw_path = os.path.join(DATA_DIR, f"{user_id}_raw.png")
+        ready_path = os.path.join(DATA_DIR, f"{user_id}_sticker.png")
+        resize_to_sticker_size(raw_path, ready_path, text=None)
+        with open(ready_path, "rb") as f:
+            api.send_document(user_id, f, caption="✅ استیکرت آماده‌ست! ذخیره کن 📥")
+        return True
+
+    return False
+
+
+def handle_text_input(user_id, text):
+    """
+    دریافت متن کاربر و ساخت استیکر با متن
+    """
+    if USER_STATE.get(user_id) == "awaiting_text":
+        raw_path = os.path.join(DATA_DIR, f"{user_id}_raw.png")
+        ready_path = os.path.join(DATA_DIR, f"{user_id}_sticker.png")
+        resize_to_sticker_size(raw_path, ready_path, text=text)
+        with open(ready_path, "rb") as f:
+            api.send_document(user_id, f, caption="✅ استیکرت آماده‌ست با متن 📥")
+        USER_STATE.pop(user_id, None)
+        return True
+
+    return False
 
 
 def reset_user_settings(user_id):
     """
-    ریست کردن تنظیمات کاربر (مثلاً وقتی از نو شروع کنه)
+    ریست کردن تنظیمات کاربر
     """
     try:
         settings_path = os.path.join(DATA_DIR, f"{user_id}_settings.json")
