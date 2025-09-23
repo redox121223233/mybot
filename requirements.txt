@@ -1,4 +1,4 @@
-Pillow>=9.0.0
-
-flask
-requests
+aiogram==3.4.1
+Pillow==10.4.0
+arabic-reshaper==3.0.0
+python-bidi==0.4.2
