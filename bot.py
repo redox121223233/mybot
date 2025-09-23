@@ -2,8 +2,8 @@ import asyncio
 import os
 import re
 from io import BytesIO
-from enum import Enum
 from typing import Dict, Any, Optional, Tuple, List
+from datetime import datetime, timezone
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.types import Message, CallbackQuery, BotCommand, BufferedInputFile
@@ -27,15 +27,53 @@ SUPPORT_USERNAME = "@onedaytoalive"
 ADMIN_ID = 6053579919
 
 MAINTENANCE = False  # حالت نگهداری بخش AI
+DAILY_LIMIT = 5      # سهمیه روزانه (ادمین نامحدود)
 
 # ============ حافظه ساده (in-memory) ============
-USERS: Dict[int, Dict[str, Any]] = {}     # {user_id: {ai_used:int, vote:str|None}}
+USERS: Dict[int, Dict[str, Any]] = {}     # {user_id: {ai_used:int, vote:str|None, day_start:int}}
 SESSIONS: Dict[int, Dict[str, Any]] = {}  # {user_id: {"mode":..., "ai":{}, "simple":{}}}
 ADMIN_PENDING: Dict[int, Dict[str, Any]] = {}
 
+def _today_start_ts() -> int:
+    # نیمه‌شب UTC برای سادگی (قابل تغییر به منطقه زمانی دلخواه)
+    now = datetime.now(timezone.utc)
+    midnight = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
+    return int(midnight.timestamp())
+
+def _reset_daily_if_needed(u: Dict[str, Any]):
+    day_start = u.get("day_start")
+    today = _today_start_ts()
+    if day_start is None or day_start < today:
+        u["day_start"] = today
+        u["ai_used"] = 0
+
+def _quota_left(u: Dict[str, Any], is_admin: bool) -> int:
+    if is_admin:
+        return 999999
+    _reset_daily_if_needed(u)
+    return max(0, DAILY_LIMIT - int(u.get("ai_used", 0)))
+
+def _seconds_to_reset(u: Dict[str, Any]) -> int:
+    _reset_daily_if_needed(u)
+    now = int(datetime.now(timezone.utc).timestamp())
+    end = int(u["day_start"]) + 86400
+    return max(0, end - now)
+
+def _fmt_eta(secs: int) -> str:
+    h = secs // 3600
+    m = (secs % 3600) // 60
+    if h <= 0 and m <= 0:
+        return "کمتر از ۱ دقیقه"
+    if h <= 0:
+        return f"{m} دقیقه"
+    if m == 0:
+        return f"{h} ساعت"
+    return f"{h} ساعت و {m} دقیقه"
+
 def user(uid: int) -> Dict[str, Any]:
     if uid not in USERS:
-        USERS[uid] = {"ai_used": 0, "vote": None}
+        USERS[uid] = {"ai_used": 0, "vote": None, "day_start": _today_start_ts()}
+    _reset_daily_if_needed(USERS[uid])
     return USERS[uid]
 
 def sess(uid: int) -> Dict[str, Any]:
@@ -78,10 +116,8 @@ def infer_from_text(text: str) -> Dict[str, str]:
         out["color"] = "#" + m.group(1)
     return out
 
-# ============ فونت ============
-# استفاده از فونت‌های محلی داخل پوشه fonts کنار bot.py
+# ============ فونت‌های محلی ============
 FONT_DIR = os.path.join(os.path.dirname(__file__), "fonts")
-
 LOCAL_FONT_FILES = {
     "Vazirmatn": ["Vazirmatn-Regular.ttf", "Vazirmatn-Medium.ttf"],
     "NotoNaskh": ["NotoNaskhArabic-Regular.ttf", "NotoNaskhArabic-Medium.ttf"],
@@ -110,7 +146,6 @@ def available_font_options() -> List[Tuple[str, str]]:
 def resolve_font_path(font_key: Optional[str]) -> str:
     if font_key and font_key in _LOCAL_FONTS:
         return _LOCAL_FONTS[font_key]
-    # fallback: اولین فونت موجود
     return next(iter(_LOCAL_FONTS.values()), "")
 
 # ============ رندر تصویر/استیکر ============
@@ -163,12 +198,9 @@ def fit_font_size(draw: ImageDraw.ImageDraw, text: str, font_path: str, base: in
     return max(size, 18)
 
 def _make_default_bg(size=(512, 512)) -> Image.Image:
-    # ابتدا تلاش برای خواندن تمپلیت آماده از پوشه templates کنار bot.py
+    # تلاش برای خواندن تمپلیت آماده از پوشه templates کنار bot.py
     tpl_dir = os.path.join(os.path.dirname(__file__), "templates")
-    # اولویت با فایل های زیر است؛ اولین موجود استفاده می‌شود
-    candidates = [
-        "gradient.png", "gradient.webp", "default.png", "default.webp"
-    ]
+    candidates = ["gradient.png", "gradient.webp", "default.png", "default.webp"]
     for name in candidates:
         p = os.path.join(tpl_dir, name)
         if os.path.isfile(p):
@@ -218,7 +250,7 @@ def render_image(text: str, position: str, font_key: str, color_hex: str, size_k
     padding = 28
     box_w, box_h = W - 2 * padding, H - 2 * padding
 
-    size_map = {"small": 64, "medium": 96, "large": 128}  # افزایش برای خوانایی فارسی
+    size_map = {"small": 64, "medium": 96, "large": 128}  # بزرگ‌تر برای فارسی
     base_size = size_map.get(size_key, 96)
 
     font_path = resolve_font_path(font_key)
@@ -228,9 +260,7 @@ def render_image(text: str, position: str, font_key: str, color_hex: str, size_k
         font = ImageFont.load_default()
 
     txt = _prepare_text(text)
-    # اگر فونت محلی پیدا نشد، به اجبار یکی از فونت‌های پوشه fonts را امتحان کن تا مشکل □□□ حل شود
     if not font_path:
-        # تلاش برای انتخاب یکی از فونت‌های محلی
         font_path = resolve_font_path("Default")
     final_size = fit_font_size(draw, txt, font_path, base_size, box_w, box_h)
     try:
@@ -271,11 +301,13 @@ def main_menu_kb(is_admin: bool = False):
     kb = InlineKeyboardBuilder()
     kb.button(text="استیکر ساده 🪄", callback_data="menu:simple")
     kb.button(text="استیکر هوش مصنوعی 🤖", callback_data="menu:ai")
+    kb.button(text="سهمیه امروز ⏳", callback_data="menu:quota")
+    kb.button(text="راهنما ℹ️", callback_data="menu:help")
     kb.button(text="اشتراک / نظرسنجی 📊", callback_data="menu:sub")
     kb.button(text="پشتیبانی 🛟", callback_data="menu:support")
     if is_admin:
         kb.button(text="پنل ادمین 🛠", callback_data="menu:admin")
-    kb.adjust(2, 2, 1)
+    kb.adjust(2, 2, 2, 1)  # چینش شیک‌تر
     return kb.as_markup()
 
 def join_kb():
@@ -299,7 +331,6 @@ async def is_member(bot: Bot, uid: int) -> bool:
         cm = await bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=uid)
         return cm.status in (ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR)
     except TelegramBadRequest:
-        # اگر کانال خصوصی باشد و بات دسترسی نداشته باشد، برای جلوگیری از گیر، اجازه می‌دهیم
         return True
     except Exception:
         return False
@@ -350,6 +381,34 @@ async def on_support(cb: CallbackQuery):
         return
     await cb.message.answer(f"پشتیبانی: {SUPPORT_USERNAME}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
     await cb.answer("باز شد")
+
+@router.callback_query(F.data == "menu:help")
+async def on_help(cb: CallbackQuery):
+    if not await ensure_membership(cb):
+        return
+    txt = (
+        "راهنما ℹ️\n"
+        "• استیکر ساده 🪄: یک متن بده؛ پس‌زمینه شفاف یا عکس دلخواه انتخاب کن؛ پیش‌نمایش و تایید.\n"
+        "• استیکر هوش مصنوعی 🤖: متن بده؛ بعد موقعیت، فونت، رنگ، اندازه، و پس‌زمینه (شفاف/پیش‌فرض/عکس) را انتخاب کن.\n"
+        "• سهمیه امروز ⏳: تعداد استیکرهای باقی‌مانده امروز و زمان تمدید را می‌بینی.\n"
+        "• اشتراک / نظرسنجی 📊: رأی بده که اشتراک اضافه شود یا نه.\n"
+        "• پشتیبانی 🛟: ارتباط با پشتیبانی.\n"
+        "• پنل ادمین 🛠: فقط برای ادمین قابل دسترسی است."
+    )
+    await cb.message.answer(txt, reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+    await cb.answer("نمایش راهنما")
+
+@router.callback_query(F.data == "menu:quota")
+async def on_quota(cb: CallbackQuery):
+    if not await ensure_membership(cb):
+        return
+    u = user(cb.from_user.id)
+    is_admin = (cb.from_user.id == ADMIN_ID)
+    left = _quota_left(u, is_admin)
+    eta = _fmt_eta(_seconds_to_reset(u))
+    quota_txt = "نامحدود" if is_admin else f"{left} از {DAILY_LIMIT}"
+    await cb.message.answer(f"سهمیه امروز: {quota_txt}\nتمدید در: {eta}", reply_markup=back_to_menu_kb(is_admin))
+    await cb.answer()
 
 @router.callback_query(F.data == "menu:sub")
 async def on_sub(cb: CallbackQuery):
@@ -403,14 +462,17 @@ async def on_ai(cb: CallbackQuery):
         await cb.answer()
         return
     u = user(cb.from_user.id)
-    if u["ai_used"] >= 5:
-        await cb.message.answer("حداکثر ۵ بار رایگان استفاده کرده‌ای.\nاگر دوست داری اشتراک اضافه کنیم، در نظرسنجی رأی بده 📊", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+    is_admin = (cb.from_user.id == ADMIN_ID)
+    left = _quota_left(u, is_admin)
+    eta = _fmt_eta(_seconds_to_reset(u))
+    if left <= 0 and not is_admin:
+        await cb.message.answer(f"سهمیه امروز تمام شد. تمدید در: {eta}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
         await cb.answer()
         return
     s = sess(cb.from_user.id)
     s["mode"] = "ai"
     s["ai"] = {"text": None, "position": None, "font": "Default", "color": "#FFFFFF", "size": "large", "bg": "transparent", "bg_photo": None}
-    await cb.message.answer("متن استیکر رو بفرست ✍️", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+    await cb.message.answer(f"متن استیکر رو بفرست ✍️\n(سهمیه امروز: {'نامحدود' if is_admin else f'{left} از {DAILY_LIMIT}'} | تمدید: {eta})", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
     await cb.answer()
 
 # ----- پنل ادمین -----
@@ -438,10 +500,10 @@ async def admin_stats(cb: CallbackQuery):
     if cb.from_user.id != ADMIN_ID:
         return await cb.answer("No", show_alert=True)
     total_users = len(USERS)
-    used = sum(1 for v in USERS.values() if v.get("ai_used", 0) > 0)
+    used_today = sum(1 for v in USERS.values() if v.get("ai_used", 0) > 0)
     votes_yes = sum(1 for v in USERS.values() if v.get("vote") == "yes")
     votes_no = sum(1 for v in USERS.values() if v.get("vote") == "no")
-    await cb.message.answer(f"کاربران: {total_users}\nکاربرانی که AI استفاده کردند: {used}\nرأی‌ها: بله {votes_yes} | خیر {votes_no}")
+    await cb.message.answer(f"کاربران: {total_users}\nکاربرانی که امروز AI استفاده کردند: {used_today}\nرأی‌ها: بله {votes_yes} | خیر {votes_no}")
     await cb.answer()
 
 @router.callback_query(F.data == "admin:votes")
@@ -468,6 +530,7 @@ async def admin_reset_all(cb: CallbackQuery):
         return await cb.answer("No", show_alert=True)
     for v in USERS.values():
         v["ai_used"] = 0
+        v["day_start"] = _today_start_ts()
     await cb.message.answer("همه سهمیه‌ها ریست شد ✅")
     await cb.answer()
 
@@ -503,6 +566,7 @@ async def on_message(message: Message):
                 target = int((message.text or "").strip())
                 if target in USERS:
                     USERS[target]["ai_used"] = 0
+                    USERS[target]["day_start"] = _today_start_ts()
                     await message.answer(f"سهمیه کاربر {target} ریست شد ✅")
                 else:
                     await message.answer("این کاربر هنوز در دیتای ربات نیست.")
@@ -562,7 +626,6 @@ async def on_message(message: Message):
             return
         else:
             if message.photo and st.get("state") == "ASK_BG":
-                # اگر کاربر بجای زدن دکمه، مستقیم عکس فرستاد
                 largest = message.photo[-1]
                 buf = BytesIO()
                 await message.bot.download(largest, destination=buf)
@@ -583,7 +646,14 @@ async def on_message(message: Message):
     # استیکر هوش مصنوعی
     if mode == "ai":
         a = s["ai"]
+        u = user(uid)
+        is_admin = (uid == ADMIN_ID)
+        left = _quota_left(u, is_admin)
         if a["text"] is None and message.text:
+            if left <= 0 and not is_admin:
+                eta = _fmt_eta(_seconds_to_reset(u))
+                await message.answer(f"سهمیه امروز تمام شد. تمدید در: {eta}")
+                return
             a["text"] = message.text.strip()
             inferred = infer_from_text(a["text"])
             a.update(inferred)
@@ -629,37 +699,6 @@ async def send_ai_preview(message_or_cb, uid: int):
     else:
         await message_or_cb.message.answer_photo(file_obj, caption="پیش‌نمایش آماده است", reply_markup=kb.as_markup())
 
-# ----- کال‌بک‌های ساده -----
-@router.callback_query(F.data.func(lambda d: d and d.startswith("simple:bg:")))
-async def on_simple_bg(cb: CallbackQuery):
-    if not await ensure_membership(cb):
-        return
-    st = sess(cb.from_user.id)["simple"]
-    act = cb.data.split(":")[-1]
-    if act == "transparent":
-        st["bg_mode"] = "transparent"
-        img = render_image(text=st["text"], position="center", font_key="Default", color_hex="#FFFFFF",
-                           size_key="medium", bg_mode="transparent", as_webp=False)
-        file_obj = BufferedInputFile(img, filename="preview.png")
-        kb = InlineKeyboardBuilder()
-        kb.button(text="تایید ✅", callback_data="simple:confirm")
-        kb.button(text="بازگشت ⬅️", callback_data="menu:home")
-        kb.adjust(2)
-        await cb.message.answer_photo(file_obj, caption="پیش‌نمایش آماده است", reply_markup=kb.as_markup())
-    elif act == "want_photo":
-        st["state"] = "WAIT_BG_PHOTO"
-        await cb.message.answer("عکس پس‌زمینه را ارسال کن 🖼")
-    await cb.answer()
-
-@router.callback_query(F.data == "simple:confirm")
-async def on_simple_confirm(cb: CallbackQuery):
-    st = sess(cb.from_user.id)["simple"]
-    img = render_image(text=st["text"], position="center", font_key="Default", color_hex="#FFFFFF",
-                       size_key="medium", bg_mode=st.get("bg_mode") or "transparent", bg_photo=st.get("bg_photo"), as_webp=True)
-    await cb.message.answer_sticker(BufferedInputFile(img, filename="sticker.webp"))
-    reset_mode(cb.from_user.id)
-    await cb.answer("استیکر ارسال شد ✅")
-
 # ----- کال‌بک‌های AI -----
 @router.callback_query(F.data.func(lambda d: d and d.startswith("ai:")))
 async def on_ai_callbacks(cb: CallbackQuery):
@@ -667,14 +706,19 @@ async def on_ai_callbacks(cb: CallbackQuery):
         return
     if MAINTENANCE:
         return await cb.answer("در دست تعمیر 🛠", show_alert=True)
+
     u = user(cb.from_user.id)
-    if u["ai_used"] >= 5 and not cb.data.startswith("ai:edit"):
-        return await cb.answer("سهمیه رایگان تمام شد", show_alert=True)
+    is_admin = (cb.from_user.id == ADMIN_ID)
+    left = _quota_left(u, is_admin)
 
     a = sess(cb.from_user.id)["ai"]
     parts = cb.data.split(":", 2)
     action = parts[1] if len(parts) > 1 else ""
     value = parts[2] if len(parts) > 2 else ""
+
+    if not is_admin and left <= 0 and action != "edit":
+        eta = _fmt_eta(_seconds_to_reset(u))
+        return await cb.answer(f"سهمیه امروز تمام شد. تمدید: {eta}", show_alert=True)
 
     if action == "pos":
         a["position"] = value
@@ -692,10 +736,6 @@ async def on_ai_callbacks(cb: CallbackQuery):
             kb.button(text=name, callback_data=f"ai:color:{hx}")
         kb.adjust(3)
         await cb.message.answer("رنگ متن:", reply_markup=kb.as_markup())
-        # اگر کاربر "Default" را زده و فونت محلی موجود است، به صورت شفاف اطلاع بده
-        if value == "Default":
-            opts = ", ".join([label for label, _ in available_font_options() if label != "Default"]) or "—"
-            await cb.message.answer(f"فونت پیش‌فرض فعال شد. فونت‌های پوشه: {opts}")
         return await cb.answer("ثبت شد")
 
     if action == "color":
@@ -765,6 +805,11 @@ async def on_ai_callbacks(cb: CallbackQuery):
         await cb.answer()
 
     if action == "confirm":
+        # چک نهایی سهمیه
+        left = _quota_left(u, is_admin)
+        if left <= 0 and not is_admin:
+            eta = _fmt_eta(_seconds_to_reset(u))
+            return await cb.answer(f"سهمیه امروز تمام شد. تمدید: {eta}", show_alert=True)
         img = render_image(
             text=a.get("text") or "",
             position=a.get("position") or "center",
@@ -776,7 +821,8 @@ async def on_ai_callbacks(cb: CallbackQuery):
             as_webp=True
         )
         await cb.message.answer_sticker(BufferedInputFile(img, filename="sticker.webp"))
-        user(cb.from_user.id)["ai_used"] += 1
+        if not is_admin:
+            u["ai_used"] = int(u.get("ai_used", 0)) + 1
         reset_mode(cb.from_user.id)
         return await cb.answer("استیکر ارسال شد ✅")
 
