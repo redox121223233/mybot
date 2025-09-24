@@ -1,3 +1,10 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Advanced Telegram Sticker Bot
+Created for Railway deployment
+"""
+
 import os
 import json
 import logging
@@ -489,6 +496,188 @@ class StickerBot:
                 "حالا متن استیکر خود را وارد کنید:"
             )
     
+    async def create_sticker_with_text(self, photo_bytes: bytes, text: str) -> BytesIO:
+        """Create sticker by adding text to photo with comprehensive error handling"""
+        try:
+            # Open and process image
+            img = Image.open(BytesIO(photo_bytes))
+            
+            # Convert to RGBA if needed
+            if img.mode != 'RGBA':
+                img = img.convert('RGBA')
+            
+            # Resize to sticker dimensions
+            img = img.resize((512, 512), Image.Resampling.LANCZOS)
+            
+            # Create drawing context
+            draw = ImageDraw.Draw(img)
+            
+            # Process Persian text with proper handling
+            processed_text = self.process_persian_text(text)
+            
+            # Load font with fallback chain
+            font = self.load_font(size=40)
+            
+            # Split text into lines if too long
+            lines = self.wrap_text(processed_text, font, 450)  # Max width 450px
+            
+            # Calculate total text height
+            line_height = 50
+            total_height = len(lines) * line_height
+            
+            # Position text at bottom center
+            start_y = 512 - total_height - 30
+            
+            # Draw each line
+            for i, line in enumerate(lines):
+                # Get text dimensions
+                bbox = draw.textbbox((0, 0), line, font=font)
+                text_width = bbox[2] - bbox[0]
+                
+                # Center horizontally
+                x = (512 - text_width) // 2
+                y = start_y + (i * line_height)
+                
+                # Draw text outline for visibility
+                self.draw_text_with_outline(draw, x, y, line, font)
+            
+            # Save to BytesIO
+            output = BytesIO()
+            img.save(output, format='PNG', optimize=True)
+            output.seek(0)
+            return output
+            
+        except Exception as e:
+            logger.error(f"Error in create_sticker_with_text: {str(e)}")
+            # Create fallback simple sticker
+            return await self.create_fallback_sticker(text)
+    
+    def load_font(self, size: int = 40):
+        """Load font with comprehensive fallback system"""
+        font_paths = [
+            "fonts/Vazir-Regular.ttf",
+            "fonts/Vazirmatn-Regular.ttf", 
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/System/Library/Fonts/Arial.ttf",  # macOS
+            "C:/Windows/Fonts/arial.ttf"  # Windows
+        ]
+        
+        for font_path in font_paths:
+            try:
+                if os.path.exists(font_path):
+                    return ImageFont.truetype(font_path, size)
+            except Exception:
+                continue
+        
+        # Final fallback
+        try:
+            return ImageFont.load_default()
+        except:
+            # Create minimal font if all else fails
+            return ImageFont.load_default()
+    
+    def wrap_text(self, text: str, font, max_width: int) -> list:
+        """Wrap text to fit within max width"""
+        words = text.split()
+        lines = []
+        current_line = ""
+        
+        for word in words:
+            test_line = f"{current_line} {word}".strip()
+            
+            # Create temporary draw to measure text
+            temp_img = Image.new('RGB', (1, 1))
+            temp_draw = ImageDraw.Draw(temp_img)
+            
+            try:
+                bbox = temp_draw.textbbox((0, 0), test_line, font=font)
+                width = bbox[2] - bbox[0]
+            except:
+                # Fallback width calculation
+                width = len(test_line) * 20
+            
+            if width <= max_width:
+                current_line = test_line
+            else:
+                if current_line:
+                    lines.append(current_line)
+                current_line = word
+        
+        if current_line:
+            lines.append(current_line)
+        
+        return lines if lines else [text]
+    
+    def draw_text_with_outline(self, draw, x: int, y: int, text: str, font):
+        """Draw text with outline for better visibility"""
+        # Draw outline
+        outline_width = 3
+        for adj_x in range(-outline_width, outline_width + 1):
+            for adj_y in range(-outline_width, outline_width + 1):
+                if adj_x != 0 or adj_y != 0:
+                    try:
+                        draw.text((x + adj_x, y + adj_y), text, font=font, fill=(0, 0, 0, 200))
+                    except:
+                        pass
+        
+        # Draw main text
+        try:
+            draw.text((x, y), text, font=font, fill=(255, 255, 255, 255))
+        except Exception as e:
+            # Fallback: draw without font
+            draw.text((x, y), text, fill=(255, 255, 255, 255))
+    
+    async def create_fallback_sticker(self, text: str) -> BytesIO:
+        """Create simple fallback sticker when main creation fails"""
+        try:
+            # Create simple colored background
+            img = Image.new('RGBA', (512, 512), (70, 130, 180, 255))  # Steel blue
+            draw = ImageDraw.Draw(img)
+            
+            # Load basic font
+            font = self.load_font(size=36)
+            
+            # Process text
+            processed_text = self.process_persian_text(text)
+            lines = self.wrap_text(processed_text, font, 400)
+            
+            # Calculate position
+            line_height = 45
+            total_height = len(lines) * line_height
+            start_y = (512 - total_height) // 2
+            
+            # Draw text
+            for i, line in enumerate(lines):
+                bbox = draw.textbbox((0, 0), line, font=font)
+                text_width = bbox[2] - bbox[0]
+                x = (512 - text_width) // 2
+                y = start_y + (i * line_height)
+                
+                # Simple outline
+                for adj in [(-2, -2), (-2, 2), (2, -2), (2, 2)]:
+                    draw.text((x + adj[0], y + adj[1]), line, font=font, fill=(0, 0, 0, 150))
+                
+                # Main text
+                draw.text((x, y), line, font=font, fill=(255, 255, 255, 255))
+            
+            output = BytesIO()
+            img.save(output, format='PNG')
+            output.seek(0)
+            return output
+            
+        except Exception as e:
+            logger.error(f"Even fallback sticker creation failed: {e}")
+            # Create absolute minimal sticker
+            img = Image.new('RGBA', (512, 512), (100, 100, 100, 255))
+            draw = ImageDraw.Draw(img)
+            draw.text((50, 250), "استیکر", fill=(255, 255, 255, 255))
+            
+            output = BytesIO()
+            img.save(output, format='PNG')
+            output.seek(0)
+            return output
+
     async def create_simple_sticker(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
         """Create simple sticker"""
         user_id = update.effective_user.id
@@ -559,17 +748,25 @@ class StickerBot:
         except Exception as e:
             logger.error(f"Error creating simple sticker: {e}")
             
-            # Detailed error handling
-            error_msg = "❌ خطا در ساخت استیکر ساده!\n\n"
+            # More specific error handling
+            error_msg = "❌ خطا در ساخت استیکر!\n\n"
+            error_details = str(e).lower()
             
-            if "photo" in str(e).lower():
-                error_msg += "🖼️ مشکل در پردازش عکس"
-            elif "font" in str(e).lower():
-                error_msg += "🔤 مشکل در بارگذاری فونت"
+            if "pillow" in error_details or "image" in error_details:
+                error_msg += "🖼️ مشکل در پردازش تصویر - فرمت عکس پشتیبانی نمی‌شود"
+            elif "font" in error_details:
+                error_msg += "🔤 مشکل در بارگذاری فونت - از متن ساده‌تر استفاده کنید"
+            elif "memory" in error_details:
+                error_msg += "💾 کمبود حافظه - عکس کوچک‌تری ارسال کنید"
+            elif "network" in error_details or "download" in error_details:
+                error_msg += "🌐 مشکل در دانلود عکس - دوباره ارسال کنید"
             else:
-                error_msg += "⚠️ خطای غیرمنتظره رخ داد"
+                error_msg += f"⚠️ خطای سیستمی: {str(e)[:50]}..."
             
-            error_msg += "\n\nلطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید."
+            error_msg += "\n\n🔧 راه‌حل‌های پیشنهادی:\n"
+            error_msg += "• عکس با کیفیت کمتر ارسال کنید\n"
+            error_msg += "• متن کوتاه‌تری وارد کنید\n"
+            error_msg += "• چند دقیقه صبر کنید و دوباره تلاش کنید"
             
             keyboard = [
                 [InlineKeyboardButton("🔄 تلاش مجدد", callback_data="simple_sticker")],
@@ -1019,29 +1216,38 @@ class StickerBot:
             user_quotas[user_id]['count'] += 1
             
             # Show processing message
-            processing_msg = await update.message.reply_text("⏳ در حال ساخت استیکر...")
+            processing_msg = await update.message.reply_text("⏳ در حال ساخت استیکر پیشرفته...")
             
-            # Create sticker based on background type
+            # Create sticker based on background type with error handling
             sticker_image = None
             
-            if bg_type == 'transparent':
-                sticker_image = await self.create_transparent_sticker(text)
-            elif bg_type == 'custom' and 'background_photo' in temp_data:
-                try:
-                    photo_file = await context.bot.get_file(temp_data['background_photo'])
-                    photo_bytes = await photo_file.download_as_bytearray()
-                    sticker_image = await self.create_sticker_with_text(bytes(photo_bytes), text)
-                except Exception as photo_error:
-                    logger.error(f"Error processing custom background: {photo_error}")
+            try:
+                if bg_type == 'transparent':
+                    sticker_image = await self.create_transparent_sticker(text)
+                elif bg_type == 'custom' and 'background_photo' in temp_data:
+                    try:
+                        photo_file = await context.bot.get_file(temp_data['background_photo'])
+                        photo_bytes = await photo_file.download_as_bytearray()
+                        sticker_image = await self.create_sticker_with_text(bytes(photo_bytes), text)
+                    except Exception as photo_error:
+                        logger.error(f"Error processing custom background: {photo_error}")
+                        sticker_image = await self.create_gradient_sticker(text)
+                else:
                     sticker_image = await self.create_gradient_sticker(text)
-            else:
-                sticker_image = await self.create_gradient_sticker(text)
+                
+                # If all methods fail, use fallback
+                if sticker_image is None:
+                    sticker_image = await self.create_fallback_sticker(text)
+                    
+            except Exception as creation_error:
+                logger.error(f"All sticker creation methods failed: {creation_error}")
+                sticker_image = await self.create_fallback_sticker(text)
             
             # Delete processing message
-            await processing_msg.delete()
-            
-            if sticker_image is None:
-                raise Exception("Failed to create sticker image")
+            try:
+                await processing_msg.delete()
+            except:
+                pass
             
             # Get pack link from availability check
             pack_link = temp_data.get('pack_link', f"https://t.me/addstickers/{temp_data['pack_name'].replace(' ', '_').lower()}_{user_id}")
@@ -1082,23 +1288,45 @@ class StickerBot:
             )
             
         except Exception as e:
-            logger.error(f"Error creating advanced sticker: {e}")
+            logger.error(f"Critical error in advanced sticker creation: {e}")
             
-            # More detailed error handling
-            error_msg = "❌ خطا در ساخت استیکر!\n\n"
+            # Comprehensive error handling with specific solutions
+            error_msg = "❌ خطا در ساخت استیکر پیشرفته!\n\n"
+            error_details = str(e).lower()
             
-            if "font" in str(e).lower():
-                error_msg += "🔤 مشکل در بارگذاری فونت فارسی"
-            elif "image" in str(e).lower():
-                error_msg += "🖼️ مشکل در پردازش تصویر"
-            elif "memory" in str(e).lower():
-                error_msg += "💾 کمبود حافظه - متن کوتاه‌تری امتحان کنید"
+            if "pillow" in error_details or "image" in error_details:
+                error_msg += "🖼️ **مشکل پردازش تصویر**\n"
+                error_msg += "• فرمت عکس پشتیبانی نمی‌شود\n"
+                error_msg += "• عکس JPG یا PNG ارسال کنید"
+            elif "font" in error_details:
+                error_msg += "🔤 **مشکل فونت فارسی**\n"
+                error_msg += "• از متن ساده‌تر استفاده کنید\n"
+                error_msg += "• کاراکترهای خاص حذف کنید"
+            elif "memory" in error_details or "size" in error_details:
+                error_msg += "💾 **کمبود حافظه**\n"
+                error_msg += "• متن کوتاه‌تری وارد کنید\n"
+                error_msg += "• عکس کوچک‌تری ارسال کنید"
+            elif "network" in error_details or "download" in error_details:
+                error_msg += "🌐 **مشکل شبکه**\n"
+                error_msg += "• اتصال اینترنت را بررسی کنید\n"
+                error_msg += "• دوباره تلاش کنید"
+            elif "timeout" in error_details:
+                error_msg += "⏰ **زمان پردازش تمام شد**\n"
+                error_msg += "• متن کوتاه‌تری امتحان کنید\n"
+                error_msg += "• چند دقیقه صبر کنید"
             else:
-                error_msg += "⚠️ خطای غیرمنتظره رخ داد"
+                error_msg += f"⚠️ **خطای سیستمی**\n"
+                error_msg += f"• کد خطا: {str(e)[:30]}...\n"
+                error_msg += "• با پشتیبانی تماس بگیرید"
             
-            error_msg += "\n\nلطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید."
+            error_msg += "\n\n🔧 **راه‌حل‌های پیشنهادی:**\n"
+            error_msg += "• از استیکر ساده استفاده کنید\n"
+            error_msg += "• متن انگلیسی امتحان کنید\n"
+            error_msg += "• عکس با کیفیت کمتر ارسال کنید\n"
+            error_msg += "• 5 دقیقه صبر کنید و دوباره تلاش کنید"
             
             keyboard = [
+                [InlineKeyboardButton("🎯 استیکر ساده", callback_data="simple_sticker")],
                 [InlineKeyboardButton("🔄 تلاش مجدد", callback_data="advanced_sticker")],
                 [InlineKeyboardButton("💬 پشتیبانی", callback_data="support")],
                 [InlineKeyboardButton("🔙 منوی اصلی", callback_data="main_menu")]
