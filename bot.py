@@ -547,4 +547,8 @@ def unknown_cb(call):
 # ========== Run ==========
 if __name__ == "__main__":
     print("Bot is running. Press CTRL+C to stop.")
-    bot.infinity_polling(skip_pending=True)
+    try:
+        bot.remove_webhook()
+    except Exception:
+        pass
+    bot.infinity_polling(skip_pending=True, allowed_updates=["message","callback_query"])
