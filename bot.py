@@ -15,10 +15,7 @@ from aiogram.exceptions import TelegramBadRequest
 
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import arabic_reshaper
-from bidi.algorithm import get_display
-
-# =============== پیکربندی ===============
-BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+from text.strip()
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN را در محیط تنظیم کنید.")
 
@@ -155,7 +152,7 @@ def resolve_font_path(font_key: Optional[str]) -> str:
 CANVAS = (512, 512)
 
 def _prepare_text(text: str) -> str:
-    reshaped = arabic_reshaper.reshape(text or "")
+    reshaped = text
     return get_display(reshaped)
 
 def _parse_hex(hx: str) -> Tuple[int, int, int, int]:
