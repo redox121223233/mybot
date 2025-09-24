@@ -35,6 +35,67 @@ class StickerBot:
         self.application = Application.builder().token(BOT_TOKEN).build()
         self.setup_handlers()
     
+    def process_persian_text(self, text: str) -> str:
+        """Process Persian text for proper RTL display"""
+        try:
+            # Try to import Persian text processing libraries
+            try:
+                from arabic_reshaper import reshape
+                from bidi.algorithm import get_display
+                
+                # Reshape Arabic/Persian text
+                reshaped_text = reshape(text)
+                # Apply bidirectional algorithm
+                bidi_text = get_display(reshaped_text)
+                return bidi_text
+            except ImportError:
+                # Fallback: simple reversal for Persian text
+                if any('\u0600' <= char <= '\u06FF' for char in text):
+                    words = text.split()
+                    return ' '.join(reversed(words))
+                return text
+        except Exception as e:
+            logger.error(f"Error processing Persian text: {e}")
+            return text
+    
+    async def check_pack_name_availability(self, pack_name: str, user_id: int) -> dict:
+        """Check if pack name is available"""
+        try:
+            # Clean pack name for Telegram format
+            clean_name = pack_name.replace(' ', '_').lower()
+            bot_username = BOT_TOKEN.split(':')[0]
+            pack_link = f"{clean_name}_by_{bot_username}_bot"
+            
+            # Try to get pack info from Telegram
+            try:
+                sticker_set = await self.application.bot.get_sticker_set(pack_link)
+                # Pack exists
+                suggested_name = f"{pack_name}_{user_id}"
+                return {
+                    'available': False,
+                    'suggested_name': suggested_name,
+                    'pack_link': f"{suggested_name.replace(' ', '_').lower()}_by_{bot_username}_bot",
+                    'message': f"❌ نام پک '{pack_name}' قبلاً استفاده شده است."
+                }
+            except:
+                # Pack doesn't exist, available
+                return {
+                    'available': True,
+                    'pack_link': pack_link,
+                    'message': f"✅ نام پک '{pack_name}' در دسترس است."
+                }
+                
+        except Exception as e:
+            logger.error(f"Error checking pack availability: {e}")
+            # If error, suggest unique name
+            bot_username = BOT_TOKEN.split(':')[0]
+            unique_name = f"{pack_name}_{user_id}"
+            return {
+                'available': True,
+                'pack_link': f"{unique_name.replace(' ', '_').lower()}_by_{bot_username}_bot",
+                'message': f"✅ نام پک منحصر به فرد: {unique_name}"
+            }
+    
     def setup_handlers(self):
         """Setup all command and callback handlers"""
         self.application.add_handler(CommandHandler("start", self.start_command))
@@ -266,6 +327,25 @@ class StickerBot:
         
         elif data.startswith("bg_"):
             await self.handle_background_selection(update, context, data)
+        
+        elif data.startswith("use_suggested_"):
+            await self.handle_suggested_pack_name(update, context, data)
+        
+        elif data == "retry_pack_name":
+            user_data[user_id]['state'] = 'simple_pack_name'
+            await query.edit_message_text(
+                "🎯 **ساخت استیکر ساده**\n\n"
+                "لطفاً نام جدید برای پک استیکر خود وارد کنید:",
+                parse_mode='Markdown'
+            )
+        
+        elif data == "retry_advanced_pack_name":
+            user_data[user_id]['state'] = 'advanced_pack_name'
+            await query.edit_message_text(
+                "🤖 **ساخت استیکر پیشرفته**\n\n"
+                "لطفاً نام جدید برای پک استیکر خود وارد کنید:",
+                parse_mode='Markdown'
+            )
     
     async def start_simple_sticker(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Start simple sticker creation process"""
@@ -320,10 +400,30 @@ class StickerBot:
         state = user_data[user_id]['state']
         
         if state == 'simple_pack_name':
+            # Check pack name availability
+            availability = await self.check_pack_name_availability(text, user_id)
+            
+            if not availability['available']:
+                keyboard = [
+                    [InlineKeyboardButton(f"✅ استفاده از: {availability['suggested_name']}", callback_data=f"use_suggested_{availability['suggested_name']}")],
+                    [InlineKeyboardButton("🔄 نام جدید وارد کنم", callback_data="retry_pack_name")],
+                    [InlineKeyboardButton("🔙 بازگشت", callback_data="main_menu")]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                await update.message.reply_text(
+                    f"{availability['message']}\n\n"
+                    "لطفاً یکی از گزینه‌های زیر را انتخاب کنید:",
+                    reply_markup=reply_markup
+                )
+                return
+            
             user_data[user_id]['temp_data']['pack_name'] = text
+            user_data[user_id]['temp_data']['pack_link'] = availability['pack_link']
             user_data[user_id]['state'] = 'simple_photo'
             
             await update.message.reply_text(
+                f"{availability['message']}\n\n"
                 "📷 عالی! حالا لطفاً عکس مورد نظر خود را ارسال کنید:"
             )
         
@@ -331,7 +431,26 @@ class StickerBot:
             await self.create_simple_sticker(update, context, text)
         
         elif state == 'advanced_pack_name':
+            # Check pack name availability for advanced sticker
+            availability = await self.check_pack_name_availability(text, user_id)
+            
+            if not availability['available']:
+                keyboard = [
+                    [InlineKeyboardButton(f"✅ استفاده از: {availability['suggested_name']}", callback_data=f"use_suggested_advanced_{availability['suggested_name']}")],
+                    [InlineKeyboardButton("🔄 نام جدید وارد کنم", callback_data="retry_advanced_pack_name")],
+                    [InlineKeyboardButton("🔙 بازگشت", callback_data="main_menu")]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                
+                await update.message.reply_text(
+                    f"{availability['message']}\n\n"
+                    "لطفاً یکی از گزینه‌های زیر را انتخاب کنید:",
+                    reply_markup=reply_markup
+                )
+                return
+            
             user_data[user_id]['temp_data']['pack_name'] = text
+            user_data[user_id]['temp_data']['pack_link'] = availability['pack_link']
             await self.show_background_options(update, context)
         
         elif state == 'advanced_text':
@@ -375,38 +494,91 @@ class StickerBot:
         user_id = update.effective_user.id
         temp_data = user_data[user_id]['temp_data']
         
-        # Simulate sticker creation
-        pack_name = temp_data['pack_name']
-        pack_link = f"https://t.me/addstickers/{pack_name.replace(' ', '_')}"
-        
-        # Save to user packs
-        if 'packs' not in user_data[user_id]:
-            user_data[user_id]['packs'] = []
-        
-        user_data[user_id]['packs'].append({
-            'name': pack_name,
-            'link': pack_link,
-            'stickers': [{'text': text, 'type': 'simple'}]
-        })
-        
-        # Save to GitHub (simulate)
-        await self.save_to_github(user_id)
-        
-        keyboard = [
-            [InlineKeyboardButton("😊 راضی هستم", callback_data="feedback_satisfied")],
-            [InlineKeyboardButton("😞 راضی نیستم", callback_data="feedback_unsatisfied")],
-            [InlineKeyboardButton("🔙 منوی اصلی", callback_data="main_menu")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await update.message.reply_text(
-            f"✅ **استیکر شما با موفقیت ساخته شد!**\n\n"
-            f"📦 نام پک: {pack_name}\n"
-            f"🔗 لینک پک: {pack_link}\n\n"
-            "لطفاً نظر خود را درباره کیفیت استیکر اعلام کنید:",
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
-        )
+        try:
+            # Check quota
+            quota_info = self.get_quota_info(user_id)
+            if not quota_info['can_create']:
+                await update.message.reply_text(
+                    f"❌ سهمیه شما تمام شده! {quota_info['reset_time']} ساعت دیگر تلاش کنید."
+                )
+                return
+            
+            # Update quota
+            user_quotas[user_id]['count'] += 1
+            
+            # Show processing message
+            processing_msg = await update.message.reply_text("⏳ در حال ساخت استیکر...")
+            
+            # Get photo and create sticker
+            photo_file = await context.bot.get_file(temp_data['photo'])
+            photo_bytes = await photo_file.download_as_bytearray()
+            sticker_image = await self.create_sticker_with_text(bytes(photo_bytes), text)
+            
+            # Delete processing message
+            await processing_msg.delete()
+            
+            # Get pack link from temp data
+            pack_name = temp_data['pack_name']
+            pack_link = temp_data.get('pack_link', f"https://t.me/addstickers/{pack_name.replace(' ', '_').lower()}_{user_id}")
+            
+            # Send the actual sticker image
+            await update.message.reply_photo(
+                photo=sticker_image,
+                caption=f"✅ استیکر ساده شما آماده شد!\n📦 پک: {pack_name}"
+            )
+            
+            # Save to user packs
+            if 'packs' not in user_data[user_id]:
+                user_data[user_id]['packs'] = []
+            
+            user_data[user_id]['packs'].append({
+                'name': pack_name,
+                'link': f"https://t.me/addstickers/{pack_link}",
+                'stickers': [{'text': text, 'type': 'simple', 'created_at': datetime.now().isoformat()}]
+            })
+            
+            # Save to GitHub (simulate)
+            await self.save_to_github(user_id)
+            
+            keyboard = [
+                [InlineKeyboardButton("😊 راضی هستم", callback_data="feedback_satisfied")],
+                [InlineKeyboardButton("😞 راضی نیستم", callback_data="feedback_unsatisfied")],
+                [InlineKeyboardButton("🔙 منوی اصلی", callback_data="main_menu")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                f"🎉 **استیکر ساده با موفقیت ساخته شد!**\n\n"
+                f"📦 نام پک: {pack_name}\n"
+                f"🔗 لینک پک: https://t.me/addstickers/{pack_link}\n\n"
+                "لطفاً نظر خود را درباره کیفیت استیکر اعلام کنید:",
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+            
+        except Exception as e:
+            logger.error(f"Error creating simple sticker: {e}")
+            
+            # Detailed error handling
+            error_msg = "❌ خطا در ساخت استیکر ساده!\n\n"
+            
+            if "photo" in str(e).lower():
+                error_msg += "🖼️ مشکل در پردازش عکس"
+            elif "font" in str(e).lower():
+                error_msg += "🔤 مشکل در بارگذاری فونت"
+            else:
+                error_msg += "⚠️ خطای غیرمنتظره رخ داد"
+            
+            error_msg += "\n\nلطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید."
+            
+            keyboard = [
+                [InlineKeyboardButton("🔄 تلاش مجدد", callback_data="simple_sticker")],
+                [InlineKeyboardButton("💬 پشتیبانی", callback_data="support")],
+                [InlineKeyboardButton("🔙 منوی اصلی", callback_data="main_menu")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(error_msg, reply_markup=reply_markup)
         
         user_data[user_id]['state'] = 'main_menu'
     
@@ -725,6 +897,42 @@ class StickerBot:
                 parse_mode='Markdown'
             )
     
+    async def handle_suggested_pack_name(self, update: Update, context: ContextTypes.DEFAULT_TYPE, data: str):
+        """Handle suggested pack name selection"""
+        user_id = update.effective_user.id
+        
+        if data.startswith("use_suggested_advanced_"):
+            # Advanced sticker suggested name
+            suggested_name = data.replace("use_suggested_advanced_", "")
+            user_data[user_id]['temp_data']['pack_name'] = suggested_name
+            
+            # Generate pack link for suggested name
+            bot_username = BOT_TOKEN.split(':')[0]
+            pack_link = f"{suggested_name.replace(' ', '_').lower()}_by_{bot_username}_bot"
+            user_data[user_id]['temp_data']['pack_link'] = pack_link
+            
+            await update.callback_query.edit_message_text(
+                f"✅ **نام پک تأیید شد: {suggested_name}**\n\n"
+                "حالا نوع پس‌زمینه را انتخاب کنید:"
+            )
+            await self.show_background_options(update, context)
+            
+        elif data.startswith("use_suggested_"):
+            # Simple sticker suggested name
+            suggested_name = data.replace("use_suggested_", "")
+            user_data[user_id]['temp_data']['pack_name'] = suggested_name
+            
+            # Generate pack link for suggested name
+            bot_username = BOT_TOKEN.split(':')[0]
+            pack_link = f"{suggested_name.replace(' ', '_').lower()}_by_{bot_username}_bot"
+            user_data[user_id]['temp_data']['pack_link'] = pack_link
+            user_data[user_id]['state'] = 'simple_photo'
+            
+            await update.callback_query.edit_message_text(
+                f"✅ **نام پک تأیید شد: {suggested_name}**\n\n"
+                "📷 حالا لطفاً عکس مورد نظر خود را ارسال کنید:"
+            )
+    
     async def handle_background_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE, bg_data: str):
         """Handle background selection for advanced stickers"""
         user_id = update.effective_user.id
@@ -810,15 +1018,33 @@ class StickerBot:
             # Update quota
             user_quotas[user_id]['count'] += 1
             
+            # Show processing message
+            processing_msg = await update.message.reply_text("⏳ در حال ساخت استیکر...")
+            
             # Create sticker based on background type
+            sticker_image = None
+            
             if bg_type == 'transparent':
                 sticker_image = await self.create_transparent_sticker(text)
             elif bg_type == 'custom' and 'background_photo' in temp_data:
-                photo_file = await context.bot.get_file(temp_data['background_photo'])
-                photo_bytes = await photo_file.download_as_bytearray()
-                sticker_image = await self.create_sticker_with_text(bytes(photo_bytes), text)
+                try:
+                    photo_file = await context.bot.get_file(temp_data['background_photo'])
+                    photo_bytes = await photo_file.download_as_bytearray()
+                    sticker_image = await self.create_sticker_with_text(bytes(photo_bytes), text)
+                except Exception as photo_error:
+                    logger.error(f"Error processing custom background: {photo_error}")
+                    sticker_image = await self.create_gradient_sticker(text)
             else:
                 sticker_image = await self.create_gradient_sticker(text)
+            
+            # Delete processing message
+            await processing_msg.delete()
+            
+            if sticker_image is None:
+                raise Exception("Failed to create sticker image")
+            
+            # Get pack link from availability check
+            pack_link = temp_data.get('pack_link', f"https://t.me/addstickers/{temp_data['pack_name'].replace(' ', '_').lower()}_{user_id}")
             
             # Send the sticker
             await update.message.reply_photo(
@@ -827,9 +1053,6 @@ class StickerBot:
             )
             
             # Save to user packs
-            pack_name = temp_data['pack_name'].replace(' ', '_').lower()
-            pack_link = f"https://t.me/addstickers/{pack_name}_{user_id}"
-            
             if 'packs' not in user_data[user_id]:
                 user_data[user_id]['packs'] = []
             
@@ -860,9 +1083,29 @@ class StickerBot:
             
         except Exception as e:
             logger.error(f"Error creating advanced sticker: {e}")
-            await update.message.reply_text(
-                "❌ خطا در ساخت استیکر! لطفاً دوباره تلاش کنید."
-            )
+            
+            # More detailed error handling
+            error_msg = "❌ خطا در ساخت استیکر!\n\n"
+            
+            if "font" in str(e).lower():
+                error_msg += "🔤 مشکل در بارگذاری فونت فارسی"
+            elif "image" in str(e).lower():
+                error_msg += "🖼️ مشکل در پردازش تصویر"
+            elif "memory" in str(e).lower():
+                error_msg += "💾 کمبود حافظه - متن کوتاه‌تری امتحان کنید"
+            else:
+                error_msg += "⚠️ خطای غیرمنتظره رخ داد"
+            
+            error_msg += "\n\nلطفاً دوباره تلاش کنید یا با پشتیبانی تماس بگیرید."
+            
+            keyboard = [
+                [InlineKeyboardButton("🔄 تلاش مجدد", callback_data="advanced_sticker")],
+                [InlineKeyboardButton("💬 پشتیبانی", callback_data="support")],
+                [InlineKeyboardButton("🔙 منوی اصلی", callback_data="main_menu")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(error_msg, reply_markup=reply_markup)
         
         user_data[user_id]['state'] = 'main_menu'
     
