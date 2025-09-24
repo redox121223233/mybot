@@ -26,9 +26,9 @@ QUOTA_RESET_HOURS = 24
 
 # Font Configuration
 FONT_PATH = 'fonts/Vazirmatn-Regular.ttf'
-DEFAULT_FONT_SIZE = 24
-MIN_FONT_SIZE = 12
-MAX_FONT_SIZE = 72
+DEFAULT_FONT_SIZE = 60  # Increased default font size
+MIN_FONT_SIZE = 40
+MAX_FONT_SIZE = 120
 
 # Sticker Dimensions
 STICKER_WIDTH = 512
