@@ -47,14 +47,29 @@ class StickerHandler:
                 color = int(255 - (i / STICKER_HEIGHT) * 50)
                 draw.line([(0, i), (STICKER_WIDTH, i)], fill=(color, color, 255, 255))
         
-        # Load font
-        try:
-            if os.path.exists(FONT_PATH):
-                font = ImageFont.truetype(FONT_PATH, font_size)
-            else:
+        # Load font with better fallback system
+        font_paths = [
+            FONT_PATH,
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf"
+        ]
+        
+        font = None
+        for font_path in font_paths:
+            try:
+                if os.path.exists(font_path):
+                    font = ImageFont.truetype(font_path, font_size)
+                    break
+            except:
+                continue
+        
+        if font is None:
+            try:
                 font = ImageFont.load_default()
-        except:
-            font = ImageFont.load_default()
+            except:
+                font = None
         
         # Prepare text (Persian RTL support)
         lines = self.prepare_persian_text(text, font, STICKER_WIDTH - 40)
@@ -119,9 +134,31 @@ class StickerHandler:
         if current_line:
             lines.append(current_line)
         
-        # Reverse for RTL if contains Persian characters
+        # Better Persian text handling - don't reverse individual characters
+        # The reshaping should be done at text level, not line level
         if any('\u0600' <= char <= '\u06FF' for char in text):
-            lines = [line[::-1] for line in lines]
+            # Try to use proper Persian text processing
+            try:
+                from arabic_reshaper import reshape
+                from bidi.algorithm import get_display
+                
+                # Process each line properly
+                processed_lines = []
+                for line in lines:
+                    reshaped = reshape(line)
+                    bidi_line = get_display(reshaped)
+                    processed_lines.append(bidi_line)
+                lines = processed_lines
+            except ImportError:
+                # Simple fallback: reverse word order but keep characters intact
+                processed_lines = []
+                for line in lines:
+                    words = line.split()
+                    if len(words) > 1:
+                        processed_lines.append(' '.join(reversed(words)))
+                    else:
+                        processed_lines.append(line)
+                lines = processed_lines
         
         return lines
     
