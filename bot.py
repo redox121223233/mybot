@@ -263,6 +263,9 @@ class StickerBot:
         
         elif data.startswith("feedback_"):
             await self.handle_feedback(update, context, data)
+        
+        elif data.startswith("bg_"):
+            await self.handle_background_selection(update, context, data)
     
     async def start_simple_sticker(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Start simple sticker creation process"""
@@ -332,7 +335,7 @@ class StickerBot:
             await self.show_background_options(update, context)
         
         elif state == 'advanced_text':
-            await self.show_sticker_preview(update, context, text)
+            await self.create_advanced_sticker(update, context, text, user_data[user_id]['temp_data'].get('bg_type', 'default'))
         
         elif state == 'feedback_reason':
             await self.send_feedback_to_admin(update, context, text)
@@ -354,6 +357,17 @@ class StickerBot:
             
             await update.message.reply_text(
                 "✍️ عکس دریافت شد! حالا متن استیکر خود را وارد کنید:"
+            )
+        
+        elif state == 'advanced_background_photo':
+            # Save background photo for advanced sticker
+            photo = update.message.photo[-1]
+            user_data[user_id]['temp_data']['background_photo'] = photo.file_id
+            user_data[user_id]['state'] = 'advanced_text'
+            
+            await update.message.reply_text(
+                "✅ عکس پس‌زمینه دریافت شد!\n\n"
+                "حالا متن استیکر خود را وارد کنید:"
             )
     
     async def create_simple_sticker(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
@@ -711,6 +725,29 @@ class StickerBot:
                 parse_mode='Markdown'
             )
     
+    async def handle_background_selection(self, update: Update, context: ContextTypes.DEFAULT_TYPE, bg_data: str):
+        """Handle background selection for advanced stickers"""
+        user_id = update.effective_user.id
+        bg_type = bg_data.replace('bg_', '')
+        
+        user_data[user_id]['temp_data']['bg_type'] = bg_type
+        
+        if bg_type == 'custom':
+            user_data[user_id]['state'] = 'advanced_background_photo'
+            await update.callback_query.edit_message_text(
+                "📷 **عکس پس‌زمینه**\n\n"
+                "لطفاً عکس مورد نظر خود را برای پس‌زمینه ارسال کنید:",
+                parse_mode='Markdown'
+            )
+        else:
+            user_data[user_id]['state'] = 'advanced_text'
+            await update.callback_query.edit_message_text(
+                f"✍️ **متن استیکر**\n\n"
+                f"پس‌زمینه انتخاب شده: {bg_type}\n\n"
+                "حالا متن استیکر خود را وارد کنید:",
+                parse_mode='Markdown'
+            )
+    
     async def send_feedback_to_admin(self, update: Update, context: ContextTypes.DEFAULT_TYPE, reason: str):
         """Send feedback to admin"""
         user_id = update.effective_user.id
@@ -738,6 +775,206 @@ class StickerBot:
         user_data[user_id]['state'] = 'main_menu'
         await asyncio.sleep(2)
         await self.show_main_menu(update, context)
+    
+    async def show_background_options(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show background selection options"""
+        keyboard = [
+            [InlineKeyboardButton("🎨 پیش‌فرض", callback_data="bg_default")],
+            [InlineKeyboardButton("🔍 شفاف", callback_data="bg_transparent")],
+            [InlineKeyboardButton("📷 عکس دلخواه", callback_data="bg_custom")],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data="main_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.message.reply_text(
+            "🎨 **انتخاب پس‌زمینه**\n\n"
+            "لطفاً نوع پس‌زمینه مورد نظر خود را انتخاب کنید:",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    
+    async def create_advanced_sticker(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, bg_type: str = 'default'):
+        """Create advanced sticker with background options"""
+        user_id = update.effective_user.id
+        temp_data = user_data[user_id]['temp_data']
+        
+        try:
+            # Check quota
+            quota_info = self.get_quota_info(user_id)
+            if not quota_info['can_create']:
+                await update.message.reply_text(
+                    f"❌ سهمیه شما تمام شده! {quota_info['reset_time']} ساعت دیگر تلاش کنید."
+                )
+                return
+            
+            # Update quota
+            user_quotas[user_id]['count'] += 1
+            
+            # Create sticker based on background type
+            if bg_type == 'transparent':
+                sticker_image = await self.create_transparent_sticker(text)
+            elif bg_type == 'custom' and 'background_photo' in temp_data:
+                photo_file = await context.bot.get_file(temp_data['background_photo'])
+                photo_bytes = await photo_file.download_as_bytearray()
+                sticker_image = await self.create_sticker_with_text(bytes(photo_bytes), text)
+            else:
+                sticker_image = await self.create_gradient_sticker(text)
+            
+            # Send the sticker
+            await update.message.reply_photo(
+                photo=sticker_image,
+                caption=f"✅ استیکر پیشرفته شما آماده شد!\n📦 پک: {temp_data['pack_name']}"
+            )
+            
+            # Save to user packs
+            pack_name = temp_data['pack_name'].replace(' ', '_').lower()
+            pack_link = f"https://t.me/addstickers/{pack_name}_{user_id}"
+            
+            if 'packs' not in user_data[user_id]:
+                user_data[user_id]['packs'] = []
+            
+            user_data[user_id]['packs'].append({
+                'name': temp_data['pack_name'],
+                'link': pack_link,
+                'stickers': [{'text': text, 'type': 'advanced', 'background': bg_type, 'created_at': datetime.now().isoformat()}]
+            })
+            
+            await self.save_to_github(user_id)
+            
+            keyboard = [
+                [InlineKeyboardButton("😊 راضی هستم", callback_data="feedback_satisfied")],
+                [InlineKeyboardButton("😞 راضی نیستم", callback_data="feedback_unsatisfied")],
+                [InlineKeyboardButton("🔙 منوی اصلی", callback_data="main_menu")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.message.reply_text(
+                f"🎉 **استیکر پیشرفته با موفقیت ساخته شد!**\n\n"
+                f"📦 نام پک: {temp_data['pack_name']}\n"
+                f"🎨 نوع پس‌زمینه: {bg_type}\n"
+                f"🔗 لینک پک: {pack_link}\n\n"
+                "لطفاً نظر خود را اعلام کنید:",
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+            
+        except Exception as e:
+            logger.error(f"Error creating advanced sticker: {e}")
+            await update.message.reply_text(
+                "❌ خطا در ساخت استیکر! لطفاً دوباره تلاش کنید."
+            )
+        
+        user_data[user_id]['state'] = 'main_menu'
+    
+    async def create_transparent_sticker(self, text: str) -> BytesIO:
+        """Create sticker with transparent background"""
+        try:
+            # Create transparent image
+            img = Image.new('RGBA', (512, 512), (0, 0, 0, 0))
+            draw = ImageDraw.Draw(img)
+            
+            # Process Persian text
+            persian_text = self.process_persian_text(text)
+            
+            # Load font
+            try:
+                font = ImageFont.truetype("fonts/Vazir-Regular.ttf", 60)
+            except:
+                try:
+                    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 60)
+                except:
+                    font = ImageFont.load_default()
+            
+            # Calculate text position (center)
+            bbox = draw.textbbox((0, 0), persian_text, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+            
+            x = (512 - text_width) // 2
+            y = (512 - text_height) // 2
+            
+            # Draw text with strong outline
+            outline_width = 4
+            for adj_x in range(-outline_width, outline_width + 1):
+                for adj_y in range(-outline_width, outline_width + 1):
+                    if adj_x != 0 or adj_y != 0:
+                        draw.text((x + adj_x, y + adj_y), persian_text, font=font, fill=(0, 0, 0, 255))
+            
+            # Draw main text
+            draw.text((x, y), persian_text, font=font, fill=(255, 255, 255, 255))
+            
+            output = BytesIO()
+            img.save(output, format='PNG')
+            output.seek(0)
+            return output
+            
+        except Exception as e:
+            logger.error(f"Error creating transparent sticker: {e}")
+            return await self.create_gradient_sticker(text)
+    
+    async def create_gradient_sticker(self, text: str) -> BytesIO:
+        """Create sticker with gradient background"""
+        try:
+            # Create gradient background
+            img = Image.new('RGBA', (512, 512), (255, 255, 255, 255))
+            
+            # Create gradient
+            for y in range(512):
+                r = int(100 + (y / 512) * 155)  # 100 to 255
+                g = int(150 + (y / 512) * 105)  # 150 to 255
+                b = int(255 - (y / 512) * 100)  # 255 to 155
+                
+                for x in range(512):
+                    img.putpixel((x, y), (r, g, b, 255))
+            
+            draw = ImageDraw.Draw(img)
+            
+            # Process Persian text
+            persian_text = self.process_persian_text(text)
+            
+            # Load font
+            try:
+                font = ImageFont.truetype("fonts/Vazir-Regular.ttf", 50)
+            except:
+                try:
+                    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 50)
+                except:
+                    font = ImageFont.load_default()
+            
+            # Calculate text position (center)
+            bbox = draw.textbbox((0, 0), persian_text, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+            
+            x = (512 - text_width) // 2
+            y = (512 - text_height) // 2
+            
+            # Draw text outline
+            outline_width = 3
+            for adj_x in range(-outline_width, outline_width + 1):
+                for adj_y in range(-outline_width, outline_width + 1):
+                    if adj_x != 0 or adj_y != 0:
+                        draw.text((x + adj_x, y + adj_y), persian_text, font=font, fill=(0, 0, 0, 200))
+            
+            # Draw main text
+            draw.text((x, y), persian_text, font=font, fill=(255, 255, 255, 255))
+            
+            output = BytesIO()
+            img.save(output, format='PNG')
+            output.seek(0)
+            return output
+            
+        except Exception as e:
+            logger.error(f"Error creating gradient sticker: {e}")
+            # Fallback to simple colored background
+            img = Image.new('RGBA', (512, 512), (100, 150, 255, 255))
+            draw = ImageDraw.Draw(img)
+            draw.text((50, 250), text, fill=(255, 255, 255, 255))
+            
+            output = BytesIO()
+            img.save(output, format='PNG')
+            output.seek(0)
+            return output
     
     def run(self):
         """Start the bot"""
