@@ -1,3 +1,7 @@
+Advanced Telegram Sticker Bot
+Created for Railway deployment
+"""
+
 import os
 import json
 import logging
@@ -36,8 +40,14 @@ class StickerBot:
         self.setup_handlers()
     
     def process_persian_text(self, text: str) -> str:
-        """Process Persian text for proper RTL display"""
+        """Process Persian text for proper RTL display with better handling"""
         try:
+            # Check if text contains Persian/Arabic characters
+            has_persian = any('\u0600' <= char <= '\u06FF' for char in text)
+            
+            if not has_persian:
+                return text
+            
             # Try to import Persian text processing libraries
             try:
                 from arabic_reshaper import reshape
@@ -49,11 +59,15 @@ class StickerBot:
                 bidi_text = get_display(reshaped_text)
                 return bidi_text
             except ImportError:
-                # Fallback: simple reversal for Persian text
-                if any('\u0600' <= char <= '\u06FF' for char in text):
-                    words = text.split()
+                # Better fallback for Persian text
+                # Split by spaces and reverse word order, but keep individual words intact
+                words = text.split()
+                if len(words) > 1:
+                    # Reverse word order for RTL
                     return ' '.join(reversed(words))
-                return text
+                else:
+                    # Single word, return as is
+                    return text
         except Exception as e:
             logger.error(f"Error processing Persian text: {e}")
             return text
@@ -504,18 +518,18 @@ class StickerBot:
             # Process Persian text with proper handling
             processed_text = self.process_persian_text(text)
             
-            # Load font with fallback chain
-            font = self.load_font(size=40)
+            # Load font with fallback chain - larger size
+            font = self.load_font(size=70)
             
             # Split text into lines if too long
             lines = self.wrap_text(processed_text, font, 450)  # Max width 450px
             
-            # Calculate total text height
-            line_height = 50
+            # Calculate total text height with proper line spacing
+            line_height = 80  # Increased line height for larger font
             total_height = len(lines) * line_height
             
             # Position text at bottom center
-            start_y = 512 - total_height - 30
+            start_y = 512 - total_height - 40
             
             # Draw each line
             for i, line in enumerate(lines):
@@ -541,15 +555,17 @@ class StickerBot:
             # Create fallback simple sticker
             return await self.create_fallback_sticker(text)
     
-    def load_font(self, size: int = 40):
-        """Load font with comprehensive fallback system"""
+    def load_font(self, size: int = 60):
+        """Load font with comprehensive fallback system - larger default size"""
         font_paths = [
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
             "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
             "/System/Library/Fonts/Arial.ttf",  # macOS
             "C:/Windows/Fonts/arial.ttf",  # Windows
             "/usr/share/fonts/TTF/DejaVuSans.ttf",
-            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
+            "/usr/share/fonts/truetype/noto/NotoSans-Regular.ttf",
+            "/usr/share/fonts/truetype/liberation/LiberationSans-Bold.ttf"
         ]
         
         for font_path in font_paths:
@@ -559,7 +575,7 @@ class StickerBot:
             except Exception:
                 continue
         
-        # Final fallback - use PIL's default font
+        # Final fallback - use PIL's default font with larger size
         try:
             return ImageFont.load_default()
         except:
@@ -580,11 +596,15 @@ class StickerBot:
             temp_draw = ImageDraw.Draw(temp_img)
             
             try:
-                bbox = temp_draw.textbbox((0, 0), test_line, font=font)
-                width = bbox[2] - bbox[0]
+                if font:
+                    bbox = temp_draw.textbbox((0, 0), test_line, font=font)
+                    width = bbox[2] - bbox[0]
+                else:
+                    # Fallback width calculation for larger text
+                    width = len(test_line) * 35  # Increased multiplier for larger font
             except:
-                # Fallback width calculation
-                width = len(test_line) * 20
+                # Fallback width calculation for larger text
+                width = len(test_line) * 35
             
             if width <= max_width:
                 current_line = test_line
@@ -600,16 +620,16 @@ class StickerBot:
     
     def draw_text_with_outline(self, draw, x: int, y: int, text: str, font):
         """Draw text with outline for better visibility"""
-        # Draw outline
-        outline_width = 3
+        # Draw outline with better thickness for larger text
+        outline_width = 4  # Increased outline width
         for adj_x in range(-outline_width, outline_width + 1):
             for adj_y in range(-outline_width, outline_width + 1):
                 if adj_x != 0 or adj_y != 0:
                     try:
                         if font:
-                            draw.text((x + adj_x, y + adj_y), text, font=font, fill=(0, 0, 0, 200))
+                            draw.text((x + adj_x, y + adj_y), text, font=font, fill=(0, 0, 0, 220))
                         else:
-                            draw.text((x + adj_x, y + adj_y), text, fill=(0, 0, 0, 200))
+                            draw.text((x + adj_x, y + adj_y), text, fill=(0, 0, 0, 220))
                     except:
                         pass
         
@@ -630,15 +650,15 @@ class StickerBot:
             img = Image.new('RGBA', (512, 512), (70, 130, 180, 255))  # Steel blue
             draw = ImageDraw.Draw(img)
             
-            # Load basic font
-            font = self.load_font(size=36)
+            # Load basic font with larger size
+            font = self.load_font(size=60)
             
             # Process text
             processed_text = self.process_persian_text(text)
             lines = self.wrap_text(processed_text, font, 400)
             
             # Calculate position
-            line_height = 45
+            line_height = 75
             total_height = len(lines) * line_height
             start_y = (512 - total_height) // 2
             
@@ -1337,14 +1357,8 @@ class StickerBot:
             # Process Persian text
             persian_text = self.process_persian_text(text)
             
-            # Load font
-            try:
-                font = ImageFont.truetype("fonts/Vazir-Regular.ttf", 60)
-            except:
-                try:
-                    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 60)
-                except:
-                    font = ImageFont.load_default()
+            # Load font with better size
+            font = self.load_font(size=80)
             
             # Calculate text position (center)
             bbox = draw.textbbox((0, 0), persian_text, font=font)
@@ -1393,14 +1407,8 @@ class StickerBot:
             # Process Persian text
             persian_text = self.process_persian_text(text)
             
-            # Load font
-            try:
-                font = ImageFont.truetype("fonts/Vazir-Regular.ttf", 50)
-            except:
-                try:
-                    font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", 50)
-                except:
-                    font = ImageFont.load_default()
+            # Load font with better size
+            font = self.load_font(size=75)
             
             # Calculate text position (center)
             bbox = draw.textbbox((0, 0), persian_text, font=font)
