@@ -1,3 +1,10 @@
+import asyncio
+import os
+import re
+from io import BytesIO
+from typing import Dict, Any, Optional, Tuple, List
+from datetime import datetime, timezone
+
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.types import Message, CallbackQuery, BotCommand, BufferedInputFile, InputSticker
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -1050,41 +1057,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-# ========== تغییرات اعمال شده ==========
-
-# 1. حذف دکمه‌های inline keyboard
-# کد دکمه‌ها حذف شده است
-
-# 2. تصحیح فونت فارسی
-def fix_persian_text(text):
-    """تصحیح ترتیب کلمات فارسی"""
-    # حذف وابستگی به arabic_reshaper
-    return text  # متن به صورت صحیح نمایش داده می‌شود
-
-# 3. موقعیت‌یابی هوشمند متن
-def smart_text_positioning(text, image_size):
-    """تشخیص خودکار بهترین موقعیت برای متن"""
-    text_length = len(text)
-    if text_length > 20:
-        return "center"
-    return "auto"
-
-# 4. تبدیل ویدیو به استیکر
-@bot.message_handler(content_types=['video'])
-def handle_video(message):
-    """پردازش ویدیو و تبدیل به استیکر"""
-    bot.reply_to(message, "در حال تبدیل ویدیو به استیکر...")
-    # کد پردازش ویدیو
-
-# 5. هوش مصنوعی
-def generate_ai_text(prompt):
-    """تولید متن با هوش مصنوعی"""
-    ai_responses = [
-        "زندگی مثل یک کتاب است",
-        "موفقیت نتیجه تلاش است",
-        "هر روز فرصتی جدید است"
-    ]
-    return random.choice(ai_responses)
-
-print("✅ تمام تغییرات با موفقیت اعمال شد!")
