@@ -1,19 +1,12 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Advanced Telegram Sticker Bot
-Created for Railway deployment
-"""
-
 import os
 import json
 import logging
-import time
+import asyncio
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional
 
-import telebot
-from telebot import types
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, ContextTypes, filters
 from PIL import Image, ImageDraw, ImageFont
 import requests
 from io import BytesIO
@@ -37,44 +30,23 @@ GITHUB_TOKEN = os.getenv('GITHUB_TOKEN', 'your_github_token')
 user_data: Dict = {}
 user_quotas: Dict = {}
 
-# Initialize bot
-bot = telebot.TeleBot(BOT_TOKEN)
-
 class StickerBot:
     def __init__(self):
-        self.bot = bot
+        self.application = Application.builder().token(BOT_TOKEN).build()
         self.setup_handlers()
     
     def setup_handlers(self):
         """Setup all command and callback handlers"""
-        
-        @bot.message_handler(commands=['start'])
-        def start_command(message):
-            self.handle_start(message)
-        
-        @bot.message_handler(commands=['help'])
-        def help_command(message):
-            self.handle_help(message)
-        
-        @bot.message_handler(commands=['admin'])
-        def admin_command(message):
-            self.handle_admin(message)
-        
-        @bot.callback_query_handler(func=lambda call: True)
-        def callback_handler(call):
-            self.handle_callback(call)
-        
-        @bot.message_handler(content_types=['text'])
-        def text_handler(message):
-            self.handle_text(message)
-        
-        @bot.message_handler(content_types=['photo'])
-        def photo_handler(message):
-            self.handle_photo(message)
+        self.application.add_handler(CommandHandler("start", self.start_command))
+        self.application.add_handler(CommandHandler("help", self.help_command))
+        self.application.add_handler(CommandHandler("admin", self.admin_command))
+        self.application.add_handler(CallbackQueryHandler(self.button_callback))
+        self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_text))
+        self.application.add_handler(MessageHandler(filters.PHOTO, self.handle_photo))
     
-    def handle_start(self, message):
+    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle /start command"""
-        user_id = message.from_user.id
+        user_id = update.effective_user.id
         
         # Initialize user data
         if user_id not in user_data:
@@ -86,35 +58,37 @@ class StickerBot:
             }
         
         # Check membership
-        is_member = self.check_membership(user_id)
+        is_member = await self.check_membership(user_id, context)
         
         if not is_member:
-            keyboard = types.InlineKeyboardMarkup()
-            keyboard.add(types.InlineKeyboardButton("✅ عضویت در کانال", url=f"https://t.me/{REQUIRED_CHANNEL[1:]}"))
-            keyboard.add(types.InlineKeyboardButton("🔄 بررسی عضویت", callback_data="check_membership"))
+            keyboard = [
+                [InlineKeyboardButton("✅ عضویت در کانال", url=f"https://t.me/{REQUIRED_CHANNEL[1:]}")],
+                [InlineKeyboardButton("🔄 بررسی عضویت", callback_data="check_membership")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
             
-            bot.send_message(
-                message.chat.id,
+            await update.message.reply_text(
                 "🔒 برای استفاده از ربات، ابتدا در کانال زیر عضو شوید:\n\n"
                 f"📢 {REQUIRED_CHANNEL}\n\n"
                 "پس از عضویت، دکمه بررسی عضویت را فشار دهید.",
-                reply_markup=keyboard
+                reply_markup=reply_markup
             )
             return
         
-        self.show_main_menu(message.chat.id)
+        await self.show_main_menu(update, context)
     
-    def check_membership(self, user_id: int) -> bool:
+    async def check_membership(self, user_id: int, context: ContextTypes.DEFAULT_TYPE) -> bool:
         """Check if user is member of required channel"""
         try:
-            member = bot.get_chat_member(REQUIRED_CHANNEL, user_id)
+            member = await context.bot.get_chat_member(REQUIRED_CHANNEL, user_id)
             return member.status in ['member', 'administrator', 'creator']
         except:
             return False
     
-    def show_main_menu(self, chat_id: int, message_id: int = None):
+    async def show_main_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Show main menu with all options"""
-        quota_info = self.get_quota_info(chat_id)
+        user_id = update.effective_user.id
+        quota_info = self.get_quota_info(user_id)
         
         menu_text = (
             "🎨 *ربات ساخت استیکر پیشرفته*\n\n"
@@ -123,19 +97,21 @@ class StickerBot:
             "لطفاً یکی از گزینه‌های زیر را انتخاب کنید:"
         )
         
-        keyboard = types.InlineKeyboardMarkup()
-        keyboard.add(types.InlineKeyboardButton("🎯 ساخت استیکر ساده", callback_data="simple_sticker"))
-        keyboard.add(types.InlineKeyboardButton("🤖 ساخت استیکر پیشرفته", callback_data="advanced_sticker"))
-        keyboard.add(types.InlineKeyboardButton("📦 مدیریت پک‌ها", callback_data="pack_manager"))
-        keyboard.row(
-            types.InlineKeyboardButton("❓ راهنما", callback_data="help"),
-            types.InlineKeyboardButton("💬 پشتیبانی", callback_data="support")
-        )
+        keyboard = [
+            [InlineKeyboardButton("🎯 ساخت استیکر ساده", callback_data="simple_sticker")],
+            [InlineKeyboardButton("🤖 ساخت استیکر پیشرفته", callback_data="advanced_sticker")],
+            [InlineKeyboardButton("📦 مدیریت پک‌ها", callback_data="pack_manager")],
+            [
+                InlineKeyboardButton("❓ راهنما", callback_data="help"),
+                InlineKeyboardButton("💬 پشتیبانی", callback_data="support")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
         
-        if message_id:
-            bot.edit_message_text(menu_text, chat_id, message_id, reply_markup=keyboard, parse_mode='Markdown')
+        if update.callback_query:
+            await update.callback_query.edit_message_text(menu_text, reply_markup=reply_markup, parse_mode='Markdown')
         else:
-            bot.send_message(chat_id, menu_text, reply_markup=keyboard, parse_mode='Markdown')
+            await update.message.reply_text(menu_text, reply_markup=reply_markup, parse_mode='Markdown')
     
     def get_quota_info(self, user_id: int) -> Dict:
         """Get user quota information"""
@@ -166,57 +142,18 @@ class StickerBot:
             'can_create': remaining > 0
         }
     
-    def handle_callback(self, call):
-        """Handle all button callbacks"""
-        user_id = call.from_user.id
-        data = call.data
-        
-        bot.answer_callback_query(call.id)
-        
-        if data == "check_membership":
-            is_member = self.check_membership(user_id)
-            if is_member:
-                bot.edit_message_text("✅ عضویت شما تأیید شد!", call.message.chat.id, call.message.message_id)
-                time.sleep(1)
-                self.show_main_menu(call.message.chat.id, call.message.message_id)
-            else:
-                bot.answer_callback_query(call.id, "❌ هنوز عضو کانال نشده‌اید!", show_alert=True)
-        
-        elif data == "main_menu":
-            self.show_main_menu(call.message.chat.id, call.message.message_id)
-        
-        elif data == "simple_sticker":
-            self.start_simple_sticker(call)
-        
-        elif data == "advanced_sticker":
-            self.start_advanced_sticker(call)
-        
-        elif data == "pack_manager":
-            self.show_pack_manager(call)
-        
-        elif data == "help":
-            self.show_help(call)
-        
-        elif data == "support":
-            self.show_support(call)
-        
-        elif data.startswith("feedback_"):
-            self.handle_feedback(call, data)
-    
-    def start_simple_sticker(self, call):
+    async def start_simple_sticker(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Start simple sticker creation process"""
-        user_id = call.from_user.id
+        user_id = update.effective_user.id
         user_data[user_id]['state'] = 'simple_pack_name'
         
-        keyboard = types.InlineKeyboardMarkup()
-        keyboard.add(types.InlineKeyboardButton("🔙 بازگشت", callback_data="main_menu"))
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="main_menu")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
         
-        bot.edit_message_text(
+        await update.callback_query.edit_message_text(
             "🎯 *ساخت استیکر ساده*\n\n"
             "لطفاً نام پک استیکر خود را وارد کنید:",
-            call.message.chat.id,
-            call.message.message_id,
-            reply_markup=keyboard,
+            reply_markup=reply_markup,
             parse_mode='Markdown'
         )
     
@@ -249,62 +186,9 @@ class StickerBot:
             parse_mode='Markdown'
         )
     
-    def handle_text(self, message):
-        """Handle text messages based on user state"""
-        user_id = message.from_user.id
-        text = message.text
-        
-        if user_id not in user_data:
-            self.handle_start(message)
-            return
-        
-        state = user_data[user_id]['state']
-        
-        if state == 'simple_pack_name':
-            user_data[user_id]['temp_data']['pack_name'] = text
-            user_data[user_id]['state'] = 'simple_photo'
-            
-            bot.send_message(
-                message.chat.id,
-                "📷 عالی! حالا لطفاً عکس مورد نظر خود را ارسال کنید:"
-            )
-        
-        elif state == 'simple_text':
-            self.create_simple_sticker(message, text)
-        
-        elif state == 'advanced_pack_name':
-            user_data[user_id]['temp_data']['pack_name'] = text
-            self.show_background_options(message)
-        
-        elif state == 'advanced_text':
-            self.show_sticker_preview(message, text)
-        
-        elif state == 'feedback_reason':
-            self.send_feedback_to_admin(message, text)
-    
-    def handle_photo(self, message):
-        """Handle photo messages"""
-        user_id = message.from_user.id
-        
-        if user_id not in user_data:
-            return
-        
-        state = user_data[user_id]['state']
-        
-        if state == 'simple_photo':
-            # Save photo
-            photo = message.photo[-1]
-            user_data[user_id]['temp_data']['photo'] = photo.file_id
-            user_data[user_id]['state'] = 'simple_text'
-            
-            bot.send_message(
-                message.chat.id,
-                "✍️ عکس دریافت شد! حالا متن استیکر خود را وارد کنید:"
-            )
-    
-    def create_simple_sticker(self, message, text: str):
+    async def create_simple_sticker(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str):
         """Create simple sticker"""
-        user_id = message.from_user.id
+        user_id = update.effective_user.id
         temp_data = user_data[user_id]['temp_data']
         
         # Simulate sticker creation
@@ -322,22 +206,21 @@ class StickerBot:
         })
         
         # Save to GitHub (simulate)
-        self.save_to_github(user_id)
+        await self.save_to_github(user_id)
         
-        keyboard = types.InlineKeyboardMarkup()
-        keyboard.row(
-            types.InlineKeyboardButton("😊 راضی هستم", callback_data="feedback_satisfied"),
-            types.InlineKeyboardButton("😞 راضی نیستم", callback_data="feedback_unsatisfied")
-        )
-        keyboard.add(types.InlineKeyboardButton("🔙 منوی اصلی", callback_data="main_menu"))
+        keyboard = [
+            [InlineKeyboardButton("😊 راضی هستم", callback_data="feedback_satisfied")],
+            [InlineKeyboardButton("😞 راضی نیستم", callback_data="feedback_unsatisfied")],
+            [InlineKeyboardButton("🔙 منوی اصلی", callback_data="main_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
         
-        bot.send_message(
-            message.chat.id,
+        await update.message.reply_text(
             f"✅ *استیکر شما با موفقیت ساخته شد!*\n\n"
             f"📦 نام پک: {pack_name}\n"
             f"🔗 لینک پک: {pack_link}\n\n"
             "لطفاً نظر خود را درباره کیفیت استیکر اعلام کنید:",
-            reply_markup=keyboard,
+            reply_markup=reply_markup,
             parse_mode='Markdown'
         )
         
@@ -676,7 +559,7 @@ class StickerBot:
         time.sleep(2)
         self.show_main_menu(message.chat.id)
     
-    def save_to_github(self, user_id: int):
+    async def save_to_github(self, user_id: int):
         """Save user data to GitHub (simulate)"""
         try:
             # This would normally save to GitHub using the API
@@ -684,7 +567,7 @@ class StickerBot:
         except Exception as e:
             logger.error(f"Failed to save to GitHub: {e}")
     
-    def handle_help(self, message):
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Handle help command"""
         help_text = (
             "❓ *راهنمای استفاده از ربات*\n\n"
@@ -701,14 +584,14 @@ class StickerBot:
             "• عضویت در کانال الزامی است"
         )
         
-        bot.send_message(message.chat.id, help_text, parse_mode='Markdown')
+        await update.message.reply_text(help_text, parse_mode='Markdown')
     
-    def handle_admin(self, message):
+    async def admin_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         """Admin panel (only for admin user)"""
-        user_id = message.from_user.id
+        user_id = update.effective_user.id
         
         if user_id != ADMIN_ID:
-            bot.send_message(message.chat.id, "❌ شما دسترسی ادمین ندارید!")
+            await update.message.reply_text("❌ شما دسترسی ادمین ندارید!")
             return
         
         stats_text = (
@@ -718,12 +601,148 @@ class StickerBot:
             f"🎯 استیکرهای امروز: {sum(1 for quota in user_quotas.values() if quota['count'] > 0)}"
         )
         
-        bot.send_message(message.chat.id, stats_text, parse_mode='Markdown')
+        await update.message.reply_text(stats_text, parse_mode='Markdown')
+    
+    async def show_help(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show help information"""
+        help_text = (
+            "❓ *راهنمای استفاده از ربات*\n\n"
+            "🎯 *ساخت استیکر ساده:*\n"
+            "• نام پک را وارد کنید\n"
+            "• عکس مورد نظر را ارسال کنید\n"
+            "• متن دلخواه را تایپ کنید\n\n"
+            "🤖 *ساخت استیکر پیشرفته:*\n"
+            "• نام پک را تعیین کنید\n"
+            "• نوع پس‌زمینه را انتخاب کنید\n"
+            "• موقعیت و اندازه متن را تنظیم کنید\n"
+            "• پیش‌نمایش را بررسی و تأیید کنید\n\n"
+            "📦 *مدیریت پک‌ها:*\n"
+            "• نام پک‌های موجود را تغییر دهید\n"
+            "• استیکر جدید به پک‌های موجود اضافه کنید\n\n"
+            "⚠️ *محدودیت‌ها:*\n"
+            "• حداکثر 5 استیکر در 24 ساعت\n"
+            "• عضویت در کانال الزامی است"
+        )
+        
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="main_menu")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.callback_query.edit_message_text(
+            help_text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    
+    async def show_support(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show support information"""
+        support_text = (
+            "💬 *پشتیبانی*\n\n"
+            "برای دریافت پشتیبانی و حل مشکلات با ما در تماس باشید:\n\n"
+            f"👤 {SUPPORT_USERNAME}\n\n"
+            "پاسخگویی در کمترین زمان ممکن ⚡"
+        )
+        
+        keyboard = [
+            [InlineKeyboardButton("📱 ارتباط با پشتیبانی", url=f"https://t.me/{SUPPORT_USERNAME[1:]}")],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data="main_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.callback_query.edit_message_text(
+            support_text,
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    
+    async def show_pack_manager(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        """Show pack manager"""
+        user_id = update.effective_user.id
+        packs = user_data.get(user_id, {}).get('packs', [])
+        
+        if not packs:
+            keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="main_menu")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.callback_query.edit_message_text(
+                "📦 *مدیریت پک‌ها*\n\n"
+                "شما هنوز هیچ پکی نساخته‌اید!\n"
+                "ابتدا یک استیکر بسازید.",
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+            return
+        
+        pack_list = "\n".join([f"• {pack['name']}" for pack in packs])
+        
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="main_menu")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await update.callback_query.edit_message_text(
+            f"📦 *مدیریت پک‌ها*\n\n"
+            f"پک‌های شما:\n{pack_list}\n\n"
+            "برای مدیریت پک‌ها با پشتیبانی تماس بگیرید.",
+            reply_markup=reply_markup,
+            parse_mode='Markdown'
+        )
+    
+    async def handle_feedback(self, update: Update, context: ContextTypes.DEFAULT_TYPE, feedback_data: str):
+        """Handle user feedback"""
+        user_id = update.effective_user.id
+        
+        if feedback_data == "feedback_satisfied":
+            await update.callback_query.edit_message_text(
+                "🙏 *از نظر مثبت شما متشکریم!*\n\n"
+                "امیدواریم همیشه از خدمات ما راضی باشید. ✨",
+                parse_mode='Markdown'
+            )
+            await asyncio.sleep(2)
+            await self.show_main_menu(update, context)
+        
+        elif feedback_data == "feedback_unsatisfied":
+            user_data[user_id]['state'] = 'feedback_reason'
+            
+            keyboard = [[InlineKeyboardButton("🔙 انصراف", callback_data="main_menu")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            
+            await update.callback_query.edit_message_text(
+                "😔 *متأسفیم که راضی نبودید*\n\n"
+                "لطفاً دلیل عدم رضایت خود را بنویسید تا بتوانیم بهتر خدمت‌رسانی کنیم:",
+                reply_markup=reply_markup,
+                parse_mode='Markdown'
+            )
+    
+    async def send_feedback_to_admin(self, update: Update, context: ContextTypes.DEFAULT_TYPE, reason: str):
+        """Send feedback to admin"""
+        user_id = update.effective_user.id
+        user = update.effective_user
+        
+        admin_message = (
+            f"📝 *بازخورد جدید از کاربر*\n\n"
+            f"👤 کاربر: {user.full_name}\n"
+            f"🆔 ID: {user_id}\n"
+            f"📱 Username: @{user.username or 'ندارد'}\n\n"
+            f"💬 دلیل عدم رضایت:\n{reason}"
+        )
+        
+        try:
+            await context.bot.send_message(ADMIN_ID, admin_message, parse_mode='Markdown')
+        except Exception as e:
+            logger.error(f"Failed to send feedback to admin: {e}")
+        
+        await update.message.reply_text(
+            "📝 *نظر شما ثبت شد*\n\n"
+            "بازخورد شما به ادمین ارسال گردید. تشکر از همکاری شما! 🙏",
+            parse_mode='Markdown'
+        )
+        
+        user_data[user_id]['state'] = 'main_menu'
+        await asyncio.sleep(2)
+        await self.show_main_menu(update, context)
     
     def run(self):
         """Start the bot"""
         logger.info("Starting Advanced Sticker Bot...")
-        bot.infinity_polling()
+        self.application.run_polling()
 
 if __name__ == '__main__':
     sticker_bot = StickerBot()
