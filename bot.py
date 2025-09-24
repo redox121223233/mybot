@@ -1,10 +1,3 @@
-#!/usr/bin/env python3
-# -*- coding: utf-8 -*-
-"""
-Advanced Telegram Sticker Bot
-Created for Railway deployment
-"""
-
 import os
 import json
 import logging
@@ -341,17 +334,15 @@ class StickerBot:
         elif data == "retry_pack_name":
             user_data[user_id]['state'] = 'simple_pack_name'
             await query.edit_message_text(
-                "🎯 **ساخت استیکر ساده**\n\n"
-                "لطفاً نام جدید برای پک استیکر خود وارد کنید:",
-                parse_mode='Markdown'
+                "🎯 ساخت استیکر ساده\n\n"
+                "لطفاً نام جدید برای پک استیکر خود وارد کنید:"
             )
         
         elif data == "retry_advanced_pack_name":
             user_data[user_id]['state'] = 'advanced_pack_name'
             await query.edit_message_text(
-                "🤖 **ساخت استیکر پیشرفته**\n\n"
-                "لطفاً نام جدید برای پک استیکر خود وارد کنید:",
-                parse_mode='Markdown'
+                "🤖 ساخت استیکر پیشرفته\n\n"
+                "لطفاً نام جدید برای پک استیکر خود وارد کنید:"
             )
     
     async def start_simple_sticker(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -363,10 +354,9 @@ class StickerBot:
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await update.callback_query.edit_message_text(
-            "🎯 **ساخت استیکر ساده**\n\n"
+            "🎯 ساخت استیکر ساده\n\n"
             "لطفاً نام پک استیکر خود را وارد کنید:",
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
+            reply_markup=reply_markup
         )
     
     async def start_advanced_sticker(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -388,11 +378,10 @@ class StickerBot:
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await update.callback_query.edit_message_text(
-            "🤖 **ساخت استیکر پیشرفته**\n\n"
+            "🤖 ساخت استیکر پیشرفته\n\n"
             f"📊 استیکر باقی‌مانده: {quota_info['remaining']}\n\n"
             "لطفاً نام پک استیکر خود را وارد کنید:",
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
+            reply_markup=reply_markup
         )
     
     async def handle_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -555,12 +544,12 @@ class StickerBot:
     def load_font(self, size: int = 40):
         """Load font with comprehensive fallback system"""
         font_paths = [
-            "fonts/Vazir-Regular.ttf",
-            "fonts/Vazirmatn-Regular.ttf", 
             "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
             "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
             "/System/Library/Fonts/Arial.ttf",  # macOS
-            "C:/Windows/Fonts/arial.ttf"  # Windows
+            "C:/Windows/Fonts/arial.ttf",  # Windows
+            "/usr/share/fonts/TTF/DejaVuSans.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
         ]
         
         for font_path in font_paths:
@@ -570,12 +559,12 @@ class StickerBot:
             except Exception:
                 continue
         
-        # Final fallback
+        # Final fallback - use PIL's default font
         try:
             return ImageFont.load_default()
         except:
-            # Create minimal font if all else fails
-            return ImageFont.load_default()
+            # If even default fails, return None and handle in drawing
+            return None
     
     def wrap_text(self, text: str, font, max_width: int) -> list:
         """Wrap text to fit within max width"""
@@ -617,15 +606,21 @@ class StickerBot:
             for adj_y in range(-outline_width, outline_width + 1):
                 if adj_x != 0 or adj_y != 0:
                     try:
-                        draw.text((x + adj_x, y + adj_y), text, font=font, fill=(0, 0, 0, 200))
+                        if font:
+                            draw.text((x + adj_x, y + adj_y), text, font=font, fill=(0, 0, 0, 200))
+                        else:
+                            draw.text((x + adj_x, y + adj_y), text, fill=(0, 0, 0, 200))
                     except:
                         pass
         
         # Draw main text
         try:
-            draw.text((x, y), text, font=font, fill=(255, 255, 255, 255))
+            if font:
+                draw.text((x, y), text, font=font, fill=(255, 255, 255, 255))
+            else:
+                draw.text((x, y), text, fill=(255, 255, 255, 255))
         except Exception as e:
-            # Fallback: draw without font
+            # Absolute fallback: simple text
             draw.text((x, y), text, fill=(255, 255, 255, 255))
     
     async def create_fallback_sticker(self, text: str) -> BytesIO:
@@ -737,12 +732,11 @@ class StickerBot:
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             await update.message.reply_text(
-                f"🎉 **استیکر ساده با موفقیت ساخته شد!**\n\n"
+                f"🎉 استیکر ساده با موفقیت ساخته شد!\n\n"
                 f"📦 نام پک: {pack_name}\n"
                 f"🔗 لینک پک: https://t.me/addstickers/{pack_link}\n\n"
                 "لطفاً نظر خود را درباره کیفیت استیکر اعلام کنید:",
-                reply_markup=reply_markup,
-                parse_mode='Markdown'
+                reply_markup=reply_markup
             )
             
         except Exception as e:
@@ -1109,7 +1103,7 @@ class StickerBot:
             user_data[user_id]['temp_data']['pack_link'] = pack_link
             
             await update.callback_query.edit_message_text(
-                f"✅ **نام پک تأیید شد: {suggested_name}**\n\n"
+                f"✅ نام پک تأیید شد: {suggested_name}\n\n"
                 "حالا نوع پس‌زمینه را انتخاب کنید:"
             )
             await self.show_background_options(update, context)
@@ -1126,7 +1120,7 @@ class StickerBot:
             user_data[user_id]['state'] = 'simple_photo'
             
             await update.callback_query.edit_message_text(
-                f"✅ **نام پک تأیید شد: {suggested_name}**\n\n"
+                f"✅ نام پک تأیید شد: {suggested_name}\n\n"
                 "📷 حالا لطفاً عکس مورد نظر خود را ارسال کنید:"
             )
     
@@ -1140,17 +1134,15 @@ class StickerBot:
         if bg_type == 'custom':
             user_data[user_id]['state'] = 'advanced_background_photo'
             await update.callback_query.edit_message_text(
-                "📷 **عکس پس‌زمینه**\n\n"
-                "لطفاً عکس مورد نظر خود را برای پس‌زمینه ارسال کنید:",
-                parse_mode='Markdown'
+                "📷 عکس پس‌زمینه\n\n"
+                "لطفاً عکس مورد نظر خود را برای پس‌زمینه ارسال کنید:"
             )
         else:
             user_data[user_id]['state'] = 'advanced_text'
             await update.callback_query.edit_message_text(
-                f"✍️ **متن استیکر**\n\n"
+                f"✍️ متن استیکر\n\n"
                 f"پس‌زمینه انتخاب شده: {bg_type}\n\n"
-                "حالا متن استیکر خود را وارد کنید:",
-                parse_mode='Markdown'
+                "حالا متن استیکر خود را وارد کنید:"
             )
     
     async def send_feedback_to_admin(self, update: Update, context: ContextTypes.DEFAULT_TYPE, reason: str):
@@ -1192,10 +1184,9 @@ class StickerBot:
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await update.message.reply_text(
-            "🎨 **انتخاب پس‌زمینه**\n\n"
+            "🎨 انتخاب پس‌زمینه\n\n"
             "لطفاً نوع پس‌زمینه مورد نظر خود را انتخاب کنید:",
-            reply_markup=reply_markup,
-            parse_mode='Markdown'
+            reply_markup=reply_markup
         )
     
     async def create_advanced_sticker(self, update: Update, context: ContextTypes.DEFAULT_TYPE, text: str, bg_type: str = 'default'):
@@ -1278,13 +1269,12 @@ class StickerBot:
             reply_markup = InlineKeyboardMarkup(keyboard)
             
             await update.message.reply_text(
-                f"🎉 **استیکر پیشرفته با موفقیت ساخته شد!**\n\n"
+                f"🎉 استیکر پیشرفته با موفقیت ساخته شد!\n\n"
                 f"📦 نام پک: {temp_data['pack_name']}\n"
                 f"🎨 نوع پس‌زمینه: {bg_type}\n"
                 f"🔗 لینک پک: {pack_link}\n\n"
                 "لطفاً نظر خود را اعلام کنید:",
-                reply_markup=reply_markup,
-                parse_mode='Markdown'
+                reply_markup=reply_markup
             )
             
         except Exception as e:
