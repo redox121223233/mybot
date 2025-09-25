@@ -155,17 +155,8 @@ def resolve_font_path(font_key: Optional[str]) -> str:
 CANVAS = (512, 512)
 
 def _prepare_text(text: str) -> str:
-    """
-    Reshape and apply bidi for each original logical line and join them preserving the top-to-bottom order.
-    This avoids reversing the vertical order of lines (so they render from top -> bottom as expected).
-    """
-    raw = text or ""
-    lines = raw.splitlines() if raw != "" else [""]
-    out_lines: List[str] = []
-    for line in lines:
-        reshaped = arabic_reshaper.reshape(line or "")
-        out_lines.append(get_display(reshaped))
-    return "\n".join(out_lines)
+    reshaped = arabic_reshaper.reshape(text or "")
+    return get_display(reshaped)
 
 def _parse_hex(hx: str) -> Tuple[int, int, int, int]:
     hx = (hx or "#ffffff").strip().lstrip("#")
@@ -180,7 +171,6 @@ def _parse_hex(hx: str) -> Tuple[int, int, int, int]:
 def wrap_text_to_width(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, max_width: int) -> List[str]:
     words = text.split()
     if not words:
-        # preserve empty line if present
         return [text]
     lines: List[str] = []
     cur = ""
@@ -248,14 +238,6 @@ def _compose_bg_photo(photo_bytes: bytes, size=(512, 512)) -> Image.Image:
     return base
 
 def render_image(text: str, position: str, font_key: str, color_hex: str, size_key: str, bg_mode: str = "transparent", bg_photo: Optional[bytes] = None, as_webp: bool = False) -> bytes:
-    """
-    Renders text onto a square canvas and returns image bytes (PNG or WEBP).
-    Important changes for Persian:
-    - _prepare_text now preserves the original top-to-bottom line order.
-    - Use anchor='lt' and explicit (x,y) left-top placement to control vertical placement
-      so lines are rendered from top -> bottom as expected.
-    - Horizontal centering is done by computing x = (W - tw) / 2 while y depends on position.
-    """
     W, H = CANVAS
     if bg_mode == "default":
         img = _make_default_bg((W, H))
@@ -273,15 +255,11 @@ def render_image(text: str, position: str, font_key: str, color_hex: str, size_k
     base_size = size_map.get(size_key, 96)
 
     font_path = resolve_font_path(font_key)
-    # If requested font not found, prefer Vazirmatn if available for Persian rendering
-    if not font_path and "Vazirmatn" in _LOCAL_FONTS:
-        font_path = _LOCAL_FONTS["Vazirmatn"]
     try:
         font = ImageFont.truetype(font_path, size=base_size) if font_path else ImageFont.load_default()
     except Exception:
         font = ImageFont.load_default()
 
-    # Prepare text (reshape + bidi) per-line preserving order
     txt = _prepare_text(text)
     if not font_path:
         font_path = resolve_font_path("Default")
@@ -291,30 +269,24 @@ def render_image(text: str, position: str, font_key: str, color_hex: str, size_k
     except Exception:
         font = ImageFont.load_default()
 
-    # Wrap text to fit width (wrap_text_to_width expects a single string; it will split on spaces)
     lines = wrap_text_to_width(draw, txt, font, box_w)
     wrapped = "\n".join(lines)
-
-    # Compute bounding box of the wrapped text
     bbox = draw.multiline_textbbox((0, 0), wrapped, font=font, spacing=6, align="center", stroke_width=2)
     tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
 
-    # Compute (x, y) for left-top anchor so vertical order is top->bottom as usual
-    x = max(padding, (W - tw) / 2)
     if position == "top":
-        y = padding
+        y = padding + th / 2
     elif position == "bottom":
-        y = H - padding - th
+        y = H - padding - th / 2
     else:
-        y = (H - th) / 2
+        y = H / 2
 
-    # Draw using left-top anchor; align="center" centers each line horizontally within the provided x offset.
     draw.multiline_text(
-        (x, y),
+        (W / 2, y),
         wrapped,
         font=font,
         fill=color,
-        anchor="lt",
+        anchor="mm",
         align="center",
         spacing=6,
         stroke_width=2,
