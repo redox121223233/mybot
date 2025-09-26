@@ -598,10 +598,24 @@ def setup_webhook():
     if WEBHOOK_URL:
         webhook_url = f"{WEBHOOK_URL}/webhook"
         try:
+            # Ensure webhook is completely removed first
+            print("Removing any existing webhook...")
             bot.remove_webhook()
-            time.sleep(1)
-            bot.set_webhook(url=webhook_url)
-            print(f"Webhook set to: {webhook_url}")
+            time.sleep(3)
+            
+            # Set new webhook
+            print(f"Setting webhook to: {webhook_url}")
+            result = bot.set_webhook(url=webhook_url)
+            if result:
+                print("✅ Webhook set successfully!")
+            else:
+                print("❌ Failed to set webhook")
+                
+            # Verify webhook is set
+            webhook_info = bot.get_webhook_info()
+            print(f"Current webhook URL: {webhook_info.url}")
+            print(f"Pending updates: {webhook_info.pending_update_count}")
+            
         except Exception as e:
             print(f"Failed to set webhook: {e}")
     else:
@@ -610,16 +624,31 @@ def setup_webhook():
 if __name__ == "__main__":
     print("Starting Telegram Bot for Railway...")
     
+    # Always clear any existing webhooks first
+    try:
+        print("Clearing existing webhooks...")
+        bot.remove_webhook()
+        time.sleep(3)  # Wait longer for webhook to be fully removed
+        print("Webhook cleared successfully")
+    except Exception as e:
+        print(f"Warning: Could not clear webhook: {e}")
+    
     if WEBHOOK_URL:
         # Production mode with webhook
+        print("Setting up webhook for production...")
         setup_webhook()
+        print(f"Starting Flask server on port {PORT}")
         app.run(host="0.0.0.0", port=PORT)
     else:
         # Development mode with polling
         print("Running in polling mode (development)")
         try:
+            # Double-check webhook is removed before polling
             bot.remove_webhook()
             time.sleep(2)
+            print("Starting polling...")
             bot.infinity_polling(skip_pending=True, allowed_updates=["message","callback_query"])
         except Exception as e:
             print(f"Polling failed: {e}")
+            print("This usually means another bot instance is running or webhook is still active.")
+            print("Try restarting the Railway deployment or check for multiple instances.")
