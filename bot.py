@@ -30,6 +30,17 @@ app = Flask(__name__)
 USER_STATES = {}  # user_id -> dict(mode, step, data)
 QUOTAS = {}       # user_id -> dict(used, reset_at)
 
+# ========== Compatibility Helper ==========
+def get_text_size(draw, text, font):
+    """Compatible text size function for both old and new Pillow versions"""
+    try:
+        # Try new method first (Pillow 8.0.0+)
+        bbox = draw.textbbox((0, 0), text, font=font)
+        return bbox[2] - bbox[0], bbox[3] - bbox[1]
+    except AttributeError:
+        # Fallback to old method (Pillow < 8.0.0)
+        return draw.textsize(text, font=font)
+
 # ========== Helpers ==========
 def slugify(s: str) -> str:
     s = (s or "").strip().lower()
@@ -88,6 +99,7 @@ def best_font(size: int) -> ImageFont.FreeTypeFont:
     try_paths = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
         "/System/Library/Fonts/Supplemental/Arial Unicode.ttf",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
     ]
     for p in try_paths:
         try:
@@ -109,7 +121,7 @@ def wrap_and_fit(draw: ImageDraw.ImageDraw, text: str, max_w: int, max_h: int, b
         line = ""
         for w in words:
             test = (line + " " + w).strip() if line else w
-            w_px, _ = draw.textsize(test, font=font)
+            w_px, _ = get_text_size(draw, test, font)
             if w_px > max_w and line:
                 lines.append(line)
                 line = w
@@ -157,7 +169,7 @@ def render_png_512(text: str, anchor: str, color: str, font_size: int, auto_fit:
         line = ""
         for w in words:
             test = (line + " " + w).strip() if line else w
-            w_px, _ = draw.textsize(test, font=font)
+            w_px, _ = get_text_size(draw, test, font)
             if w_px > drawable_w and line:
                 lines.append(line)
                 line = w
@@ -178,8 +190,15 @@ def render_png_512(text: str, anchor: str, color: str, font_size: int, auto_fit:
     x = W - padding
     for i, ln in enumerate(lines):
         yy = y + int(i * size * 1.25)
-        draw.text((x+2, yy+2), ln, font=font, fill=(0,0,0,90), anchor="ra")
-        draw.text((x, yy), ln, font=font, fill=ImageColor_get(color, (255,255,255,255)), anchor="ra")
+        # Shadow
+        try:
+            draw.text((x+2, yy+2), ln, font=font, fill=(0,0,0,90), anchor="ra")
+            draw.text((x, yy), ln, font=font, fill=ImageColor_get(color, (255,255,255,255)), anchor="ra")
+        except TypeError:
+            # Fallback for older Pillow versions without anchor support
+            text_w, text_h = get_text_size(draw, ln, font)
+            draw.text((x-text_w+2, yy+2), ln, font=font, fill=(0,0,0,90))
+            draw.text((x-text_w, yy), ln, font=font, fill=ImageColor_get(color, (255,255,255,255)))
 
     out = io.BytesIO()
     img.save(out, format="PNG")
@@ -308,8 +327,13 @@ def on_message_router(message):
                 x = W - padding
                 for i, ln in enumerate(lines):
                     yy = y + int(i * size * 1.25)
-                    draw.text((x+2, yy+2), ln, font=font, fill=(0,0,0,90), anchor="ra")
-                    draw.text((x, yy), ln, font=font, fill=(255,255,255,255), anchor="ra")
+                    try:
+                        draw.text((x+2, yy+2), ln, font=font, fill=(0,0,0,90), anchor="ra")
+                        draw.text((x, yy), ln, font=font, fill=(255,255,255,255), anchor="ra")
+                    except TypeError:
+                        text_w, text_h = get_text_size(draw, ln, font)
+                        draw.text((x-text_w+2, yy+2), ln, font=font, fill=(0,0,0,90))
+                        draw.text((x-text_w, yy), ln, font=font, fill=(255,255,255,255))
 
                 bio = io.BytesIO()
                 canvas.save(bio, format="PNG")
@@ -324,7 +348,7 @@ def on_message_router(message):
                 clear_state(uid)
             return
 
-    # ADVANCED FLOW (similar structure, abbreviated for space)
+    # ADVANCED FLOW
     if mode == "advanced":
         if step == "ask_pack" and message.content_type == "text":
             data["pack_name"] = message.text.strip()
@@ -335,7 +359,71 @@ def on_message_router(message):
                    InlineKeyboardButton("Image", callback_data="a_bg_image"))
             bot.reply_to(message, "Choose background:", reply_markup=kb)
             return
-        # ... (rest of advanced flow handlers)
+
+        if step == "ask_text" and message.content_type == "text":
+            data["text"] = message.text.strip()
+            set_state(uid, mode, "ask_anchor", data)
+            kb = InlineKeyboardMarkup()
+            kb.row(InlineKeyboardButton("Top-Right", callback_data="a_pos_tr"),
+                   InlineKeyboardButton("Center-Right", callback_data="a_pos_cr"),
+                   InlineKeyboardButton("Bottom-Right", callback_data="a_pos_br"))
+            bot.reply_to(message, "Choose text position:", reply_markup=kb)
+            return
+
+        if step == "ask_color" and message.content_type == "text":
+            color = message.text.strip()
+            if not re.match(r"^#([0-9a-fA-F]{6})$", color):
+                bot.reply_to(message, "Send a HEX color like #ffffff")
+                return
+            data["color"] = color
+            set_state(uid, mode, "ask_font", data)
+            bot.reply_to(message, "Send font size (18–72). Example: 40")
+            return
+
+        if step == "ask_font" and message.content_type == "text":
+            try:
+                sz = int(message.text.strip())
+                if not (18 <= sz <= 72):
+                    raise ValueError()
+                data["font_size"] = sz
+            except Exception:
+                bot.reply_to(message, "Number between 18 and 72, please.")
+                return
+            set_state(uid, mode, "confirm", data)
+            kb = InlineKeyboardMarkup()
+            kb.row(InlineKeyboardButton("Yes, create ✅", callback_data="a_confirm_yes"),
+                   InlineKeyboardButton("No, edit", callback_data="a_confirm_no"))
+            bot.reply_to(message, "Are you happy with the result?", reply_markup=kb)
+            return
+
+        if step == "bg_image" and message.content_type == "photo":
+            data["bg_image_bytes"] = download_telegram_file(message.photo[-1].file_id)
+            set_state(uid, mode, "ask_text", data)
+            bot.reply_to(message, "Send text for sticker")
+            return
+
+        if step == "bg_color" and message.content_type == "text":
+            color = message.text.strip()
+            if not re.match(r"^#([0-9a-fA-F]{6})$", color):
+                bot.reply_to(message, "Send a HEX color like #000000")
+                return
+            data["bg_color"] = color
+            set_state(uid, mode, "ask_text", data)
+            bot.reply_to(message, "Send text for sticker")
+            return
+
+    # RENAME FLOW (placeholder)
+    if mode == "rename":
+        if step == "ask_old" and message.content_type == "text":
+            data["old_name"] = message.text.strip()
+            set_state(uid, mode, "ask_new", data)
+            bot.reply_to(message, "Send new pack name")
+            return
+        if step == "ask_new" and message.content_type == "text":
+            data["new_name"] = message.text.strip()
+            bot.reply_to(message, f"Pack renamed from {data['old_name']} to {data['new_name']} (demo).")
+            clear_state(uid)
+            return
 
 @bot.callback_query_handler(func=lambda c: c.data == "advanced")
 def on_advanced(call):
@@ -356,6 +444,100 @@ def on_advanced(call):
     bot.answer_callback_query(call.id)
     bot.edit_message_text(f"Advanced Maker — send pack name (left today: {left})",
                           chat_id=call.message.chat.id, message_id=call.message.message_id)
+
+@bot.callback_query_handler(func=lambda c: c.data == "rename")
+def on_rename(call):
+    uid = call.from_user.id
+    if not is_member(uid):
+        bot.answer_callback_query(call.id, "Join the channel first.")
+        bot.send_message(call.message.chat.id, f"Please join {FORCE_SUB_CHANNEL} to continue.")
+        return
+    set_state(uid, "rename", "ask_old", {})
+    bot.answer_callback_query(call.id)
+    bot.edit_message_text("Send current pack name:", chat_id=call.message.chat.id, message_id=call.message.message_id)
+
+# Advanced background choices
+@bot.callback_query_handler(func=lambda c: c.data in ("a_bg_trans","a_bg_color","a_bg_image","a_pos_tr","a_pos_cr","a_pos_br","a_confirm_yes","a_confirm_no"))
+def on_advanced_steps(call):
+    uid = call.from_user.id
+    st = get_state(uid)
+    if not st or st["mode"] != "advanced":
+        bot.answer_callback_query(call.id)
+        return
+    data = st["data"]
+
+    if call.data == "a_bg_trans":
+        data["bg_type"] = "transparent"
+        set_state(uid, "advanced", "ask_text", data)
+        bot.answer_callback_query(call.id, "Transparent selected")
+        bot.edit_message_text("Send text for sticker", chat_id=call.message.chat.id, message_id=call.message.message_id)
+        return
+
+    if call.data == "a_bg_color":
+        data["bg_type"] = "color"
+        set_state(uid, "advanced", "bg_color", data)
+        bot.answer_callback_query(call.id, "Color selected")
+        bot.edit_message_text("Send HEX color like #000000", chat_id=call.message.chat.id, message_id=call.message.message_id)
+        return
+
+    if call.data == "a_bg_image":
+        data["bg_type"] = "image"
+        set_state(uid, "advanced", "bg_image", data)
+        bot.answer_callback_query(call.id, "Image selected")
+        bot.edit_message_text("Send background image", chat_id=call.message.chat.id, message_id=call.message.message_id)
+        return
+
+    if call.data in ("a_pos_tr","a_pos_cr","a_pos_br"):
+        anchor = {"a_pos_tr":"top-right", "a_pos_cr":"center-right", "a_pos_br":"bottom-right"}[call.data]
+        data["anchor"] = anchor
+        set_state(uid, "advanced", "ask_color", data)
+        bot.answer_callback_query(call.id, f"Position: {anchor}")
+        bot.edit_message_text("Send text color (HEX like #ffffff)", chat_id=call.message.chat.id, message_id=call.message.message_id)
+        return
+
+    if call.data == "a_confirm_no":
+        bot.answer_callback_query(call.id, "Edit your choices.")
+        bot.edit_message_text("Okay, adjust options and try again.", chat_id=call.message.chat.id, message_id=call.message.message_id)
+        return
+
+    if call.data == "a_confirm_yes":
+        if not use_quota(uid):
+            q = get_quota(uid)
+            seconds_left = max(1, int(q["reset_at"] - time.time()))
+            bot.answer_callback_query(call.id, "Limit reached.")
+            bot.edit_message_text(f"Your free daily limit is over. Try again in {ms_timer(seconds_left)}.",
+                                  chat_id=call.message.chat.id, message_id=call.message.message_id, reply_markup=main_menu())
+            clear_state(uid)
+            return
+
+        pack_name = data.get("pack_name") or f"pack_{uid}"
+        text = data.get("text","")
+        anchor = data.get("anchor","top-right")
+        color = data.get("color","#ffffff")
+        font_size = int(data.get("font_size", 40))
+        bg_type = data.get("bg_type","transparent")
+        bg_color = data.get("bg_color","#000000")
+        bg_bytes = data.get("bg_image_bytes")
+
+        try:
+            png = render_png_512(text=text, anchor=anchor, color=color, font_size=font_size, auto_fit=True,
+                                 bg_type=bg_type, bg_color=bg_color, bg_image_bytes=bg_bytes)
+            bio = io.BytesIO(png)
+            pack_slug = slugify(pack_name)
+            bot.answer_callback_query(call.id, "Created!")
+            bot.send_document(call.message.chat.id, bio, visible_file_name="sticker.png",
+                              caption=f"Pack link: https://t.me/addstickers/{pack_slug}")
+        except Exception as e:
+            bot.answer_callback_query(call.id, "Failed.")
+            bot.send_message(call.message.chat.id, f"Error: {e}")
+        finally:
+            clear_state(uid)
+        return
+
+# Safety: unknown callbacks
+@bot.callback_query_handler(func=lambda c: True)
+def unknown_cb(call):
+    bot.answer_callback_query(call.id, "Select from the menu.")
 
 # ========== Flask Webhook ==========
 @app.route('/')
