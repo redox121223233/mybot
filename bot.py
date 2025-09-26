@@ -15,7 +15,7 @@ from aiogram.exceptions import TelegramBadRequest
 
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import arabic_reshaper
-from text.strip()
+text = text.strip()
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN را در محیط تنظیم کنید.")
 
