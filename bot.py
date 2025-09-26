@@ -91,9 +91,25 @@ def ms_timer(seconds_left: int) -> str:
     return f"{h}h {m}m {s}s"
 
 def shape_rtl(text: str) -> str:
-    reshaped = arabic_reshaper.reshape(text)
-    bidi = get_display(reshaped)
-    return bidi
+    try:
+        # Ensure text is properly encoded as UTF-8
+        if isinstance(text, bytes):
+            text = text.decode('utf-8')
+        elif not isinstance(text, str):
+            text = str(text)
+        
+        # Handle empty or None text
+        if not text or text.strip() == "":
+            return ""
+            
+        # Process Persian/Arabic text
+        reshaped = arabic_reshaper.reshape(text)
+        bidi = get_display(reshaped)
+        return bidi
+    except Exception as e:
+        # Fallback to original text if reshaping fails
+        print(f"Text shaping error: {e}")
+        return str(text) if text else ""
 
 def best_font(size: int) -> ImageFont.FreeTypeFont:
     try_paths = [
@@ -157,7 +173,12 @@ def render_png_512(text: str, anchor: str, color: str, font_size: int, auto_fit:
         except Exception:
             pass
 
-    safe_text = shape_rtl(text or "")
+    # Ensure text is safe for processing
+    input_text = text or ""
+    if isinstance(input_text, bytes):
+        input_text = input_text.decode('utf-8', errors='ignore')
+    safe_text = shape_rtl(input_text)
+    
     drawable_w = W - padding*2
     drawable_h = H - padding*2
     if auto_fit:
@@ -307,7 +328,15 @@ def on_message_router(message):
             if message.text.strip() == "/skip":
                 data["text"] = ""
             else:
-                data["text"] = message.text.strip()
+                # Ensure text is properly encoded
+                user_text = message.text.strip()
+                try:
+                    # Test if text can be encoded/decoded properly
+                    user_text.encode('utf-8').decode('utf-8')
+                    data["text"] = user_text
+                except UnicodeError:
+                    # Fallback for problematic characters
+                    data["text"] = user_text.encode('utf-8', errors='ignore').decode('utf-8')
 
             try:
                 bg = Image.open(io.BytesIO(data["photo_bytes"])).convert("RGBA")
@@ -318,7 +347,11 @@ def on_message_router(message):
                 ox, oy = (W-bg.width)//2, (H-bg.height)//2
                 canvas.alpha_composite(bg, (ox, oy))
 
-                shaped = shape_rtl(data["text"])
+                # Safely process text with encoding protection
+                text_content = data.get("text", "")
+                if isinstance(text_content, bytes):
+                    text_content = text_content.decode('utf-8', errors='ignore')
+                shaped = shape_rtl(text_content)
                 draw = ImageDraw.Draw(canvas)
                 padding = 24
                 lines, font, size = wrap_and_fit(draw, shaped, W - 2*padding, H - 2*padding, base_size=40)
@@ -361,7 +394,13 @@ def on_message_router(message):
             return
 
         if step == "ask_text" and message.content_type == "text":
-            data["text"] = message.text.strip()
+            # Ensure text is properly encoded for advanced flow
+            user_text = message.text.strip()
+            try:
+                user_text.encode('utf-8').decode('utf-8')
+                data["text"] = user_text
+            except UnicodeError:
+                data["text"] = user_text.encode('utf-8', errors='ignore').decode('utf-8')
             set_state(uid, mode, "ask_anchor", data)
             kb = InlineKeyboardMarkup()
             kb.row(InlineKeyboardButton("Top-Right", callback_data="a_pos_tr"),
