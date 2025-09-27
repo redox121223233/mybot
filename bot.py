@@ -173,11 +173,25 @@ def render_png_512(text: str, anchor: str, color: str, font_size: int, auto_fit:
         except Exception:
             pass
 
-    # Ensure text is safe for processing
+    # Ensure text is safe for processing with proper UTF-8 handling
     input_text = text or ""
     if isinstance(input_text, bytes):
-        input_text = input_text.decode('utf-8', errors='ignore')
-    safe_text = shape_rtl(input_text)
+        try:
+            input_text = input_text.decode('utf-8')
+        except UnicodeDecodeError:
+            input_text = input_text.decode('utf-8', errors='ignore')
+    elif not isinstance(input_text, str):
+        input_text = str(input_text)
+    
+    # Process text with encoding safety
+    try:
+        safe_text = shape_rtl(input_text)
+        # Ensure the shaped text is properly encoded
+        if isinstance(safe_text, bytes):
+            safe_text = safe_text.decode('utf-8', errors='ignore')
+    except Exception as e:
+        print(f"Text processing error: {e}")
+        safe_text = input_text  # Fallback to original text
     
     drawable_w = W - padding*2
     drawable_h = H - padding*2
@@ -211,15 +225,32 @@ def render_png_512(text: str, anchor: str, color: str, font_size: int, auto_fit:
     x = W - padding
     for i, ln in enumerate(lines):
         yy = y + int(i * size * 1.25)
-        # Shadow
+        
+        # Ensure each line is properly encoded before drawing
+        try:
+            if isinstance(ln, bytes):
+                ln = ln.decode('utf-8', errors='ignore')
+            elif not isinstance(ln, str):
+                ln = str(ln)
+        except Exception:
+            ln = ""  # Skip problematic lines
+            
+        if not ln:  # Skip empty lines
+            continue
+            
+        # Shadow with encoding protection
         try:
             draw.text((x+2, yy+2), ln, font=font, fill=(0,0,0,90), anchor="ra")
             draw.text((x, yy), ln, font=font, fill=ImageColor_get(color, (255,255,255,255)), anchor="ra")
-        except TypeError:
-            # Fallback for older Pillow versions without anchor support
-            text_w, text_h = get_text_size(draw, ln, font)
-            draw.text((x-text_w+2, yy+2), ln, font=font, fill=(0,0,0,90))
-            draw.text((x-text_w, yy), ln, font=font, fill=ImageColor_get(color, (255,255,255,255)))
+        except (TypeError, UnicodeEncodeError):
+            # Fallback for older Pillow versions or encoding issues
+            try:
+                text_w, text_h = get_text_size(draw, ln, font)
+                draw.text((x-text_w+2, yy+2), ln, font=font, fill=(0,0,0,90))
+                draw.text((x-text_w, yy), ln, font=font, fill=ImageColor_get(color, (255,255,255,255)))
+            except Exception as e:
+                print(f"Text drawing error for line '{ln}': {e}")
+                continue  # Skip this line if it can't be drawn
 
     out = io.BytesIO()
     img.save(out, format="PNG")
@@ -351,7 +382,17 @@ def on_message_router(message):
                 text_content = data.get("text", "")
                 if isinstance(text_content, bytes):
                     text_content = text_content.decode('utf-8', errors='ignore')
-                shaped = shape_rtl(text_content)
+                elif not isinstance(text_content, str):
+                    text_content = str(text_content)
+                
+                try:
+                    shaped = shape_rtl(text_content)
+                    if isinstance(shaped, bytes):
+                        shaped = shaped.decode('utf-8', errors='ignore')
+                except Exception as e:
+                    print(f"Text shaping error: {e}")
+                    shaped = text_content  # Fallback to original
+                
                 draw = ImageDraw.Draw(canvas)
                 padding = 24
                 lines, font, size = wrap_and_fit(draw, shaped, W - 2*padding, H - 2*padding, base_size=40)
@@ -360,13 +401,30 @@ def on_message_router(message):
                 x = W - padding
                 for i, ln in enumerate(lines):
                     yy = y + int(i * size * 1.25)
+                    
+                    # Ensure line is properly encoded
+                    try:
+                        if isinstance(ln, bytes):
+                            ln = ln.decode('utf-8', errors='ignore')
+                        elif not isinstance(ln, str):
+                            ln = str(ln)
+                    except Exception:
+                        ln = ""
+                        
+                    if not ln:  # Skip empty lines
+                        continue
+                        
                     try:
                         draw.text((x+2, yy+2), ln, font=font, fill=(0,0,0,90), anchor="ra")
                         draw.text((x, yy), ln, font=font, fill=(255,255,255,255), anchor="ra")
-                    except TypeError:
-                        text_w, text_h = get_text_size(draw, ln, font)
-                        draw.text((x-text_w+2, yy+2), ln, font=font, fill=(0,0,0,90))
-                        draw.text((x-text_w, yy), ln, font=font, fill=(255,255,255,255))
+                    except (TypeError, UnicodeEncodeError):
+                        try:
+                            text_w, text_h = get_text_size(draw, ln, font)
+                            draw.text((x-text_w+2, yy+2), ln, font=font, fill=(0,0,0,90))
+                            draw.text((x-text_w, yy), ln, font=font, fill=(255,255,255,255))
+                        except Exception as e:
+                            print(f"Text drawing error: {e}")
+                            continue
 
                 bio = io.BytesIO()
                 canvas.save(bio, format="PNG")
