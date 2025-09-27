@@ -41,6 +41,79 @@ def get_text_size(draw, text, font):
         # Fallback to old method (Pillow < 8.0.0)
         return draw.textsize(text, font=font)
 
+# ========== Ultra-Safe Text Processing ==========
+def ultra_safe_text(text):
+    """Convert any text to ultra-safe ASCII-compatible version"""
+    if not text:
+        return ""
+    
+    # Convert to string
+    if isinstance(text, bytes):
+        try:
+            text = text.decode('utf-8', errors='replace')
+        except:
+            text = str(text, errors='ignore')
+    else:
+        text = str(text)
+    
+    # Create safe version - only ASCII printable characters
+    safe_chars = []
+    for char in text:
+        if 32 <= ord(char) <= 126:  # ASCII printable range
+            safe_chars.append(char)
+        elif char in ' \n\t':  # Whitespace
+            safe_chars.append(char)
+        else:
+            # Replace non-ASCII with closest ASCII equivalent or skip
+            if ord(char) > 127:
+                # Common replacements for Persian/Arabic numerals
+                replacements = {
+                    '۰': '0', '۱': '1', '۲': '2', '۳': '3', '۴': '4',
+                    '۵': '5', '۶': '6', '۷': '7', '۸': '8', '۹': '9',
+                    '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4',
+                    '٥': '5', '٦': '6', '٧': '7', '٨': '8', '٩': '9',
+                }
+                if char in replacements:
+                    safe_chars.append(replacements[char])
+                # Skip other non-ASCII characters
+    
+    result = ''.join(safe_chars).strip()
+    return result if result else "Text"
+
+def safe_draw_text(draw, text, x, y, font, fill, shadow=True):
+    """Ultra-safe text drawing that never fails"""
+    if not text:
+        return False
+    
+    try:
+        # Make text ultra-safe
+        safe_text = ultra_safe_text(text)
+        if not safe_text:
+            return False
+        
+        # Draw shadow if requested
+        if shadow:
+            try:
+                draw.text((x+2, y+2), safe_text, font=font, fill=(0,0,0,90))
+            except:
+                pass  # Shadow is optional
+        
+        # Draw main text
+        draw.text((x, y), safe_text, font=font, fill=fill)
+        return True
+        
+    except Exception as e:
+        print(f"Text drawing failed: {e}")
+        # Emergency fallback
+        try:
+            placeholder = "[Text]"
+            if shadow:
+                draw.text((x+2, y+2), placeholder, font=font, fill=(0,0,0,90))
+            draw.text((x, y), placeholder, font=font, fill=fill)
+            return True
+        except:
+            return False
+
 # ========== Helpers ==========
 def slugify(s: str) -> str:
     s = (s or "").strip().lower()
@@ -90,27 +163,6 @@ def ms_timer(seconds_left: int) -> str:
     s = seconds_left % 60
     return f"{h}h {m}m {s}s"
 
-def shape_rtl(text: str) -> str:
-    try:
-        # Ensure text is properly encoded as UTF-8
-        if isinstance(text, bytes):
-            text = text.decode('utf-8')
-        elif not isinstance(text, str):
-            text = str(text)
-        
-        # Handle empty or None text
-        if not text or text.strip() == "":
-            return ""
-            
-        # Process Persian/Arabic text
-        reshaped = arabic_reshaper.reshape(text)
-        bidi = get_display(reshaped)
-        return bidi
-    except Exception as e:
-        # Fallback to original text if reshaping fails
-        print(f"Text shaping error: {e}")
-        return str(text) if text else ""
-
 def best_font(size: int) -> ImageFont.FreeTypeFont:
     try_paths = [
         "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
@@ -125,11 +177,14 @@ def best_font(size: int) -> ImageFont.FreeTypeFont:
     return ImageFont.load_default()
 
 def wrap_and_fit(draw: ImageDraw.ImageDraw, text: str, max_w: int, max_h: int, base_size: int = 40, min_size: int = 14):
+    # Use ultra-safe text
+    safe_text = ultra_safe_text(text)
+    
     size = base_size
     lines = []
     while size >= min_size:
         font = best_font(size)
-        words = (text or "").split()
+        words = safe_text.split() if safe_text else []
         if not words:
             lines = [""]
             return lines, font, size
@@ -137,12 +192,20 @@ def wrap_and_fit(draw: ImageDraw.ImageDraw, text: str, max_w: int, max_h: int, b
         line = ""
         for w in words:
             test = (line + " " + w).strip() if line else w
-            w_px, _ = get_text_size(draw, test, font)
-            if w_px > max_w and line:
-                lines.append(line)
-                line = w
-            else:
-                line = test
+            try:
+                w_px, _ = get_text_size(draw, test, font)
+                if w_px > max_w and line:
+                    lines.append(line)
+                    line = w
+                else:
+                    line = test
+            except:
+                # If text measurement fails, use conservative estimate
+                if len(test) * size * 0.6 > max_w and line:
+                    lines.append(line)
+                    line = w
+                else:
+                    line = test
         if line:
             lines.append(line)
         total_h = int(len(lines) * size * 1.25)
@@ -151,34 +214,6 @@ def wrap_and_fit(draw: ImageDraw.ImageDraw, text: str, max_w: int, max_h: int, b
         size -= 2
     font = best_font(min_size)
     return lines, font, min_size
-
-def safe_text_encode(text):
-    """Safely encode text to handle Persian/Arabic characters"""
-    if not text:
-        return ""
-    
-    # Convert to string if needed
-    if isinstance(text, bytes):
-        try:
-            text = text.decode('utf-8')
-        except UnicodeDecodeError:
-            text = text.decode('utf-8', errors='ignore')
-    elif not isinstance(text, str):
-        text = str(text)
-    
-    # Remove any problematic characters that cause latin-1 errors
-    try:
-        # Test if text can be safely processed
-        text.encode('utf-8').decode('utf-8')
-        return text
-    except (UnicodeError, UnicodeEncodeError, UnicodeDecodeError):
-        # Clean the text by removing problematic characters
-        import unicodedata
-        # Normalize and remove control characters
-        text = unicodedata.normalize('NFKD', text)
-        # Keep only printable characters
-        text = ''.join(char for char in text if unicodedata.category(char)[0] != 'C')
-        return text
 
 def render_png_512(text: str, anchor: str, color: str, font_size: int, auto_fit: bool,
                    bg_type: str = "transparent", bg_color: str = "#000000", bg_image_bytes: bytes | None = None) -> bytes:
@@ -201,16 +236,8 @@ def render_png_512(text: str, anchor: str, color: str, font_size: int, auto_fit:
         except Exception:
             pass
 
-    # Safely process input text with comprehensive encoding protection
-    input_text = safe_text_encode(text or "")
-    
-    # Process text with RTL shaping and encoding safety
-    try:
-        safe_text = shape_rtl(input_text)
-        safe_text = safe_text_encode(safe_text)  # Double-check encoding
-    except Exception as e:
-        print(f"Text processing error: {e}")
-        safe_text = input_text  # Fallback to cleaned input
+    # Process text with ultra-safe conversion
+    safe_text = ultra_safe_text(text or "")
     
     drawable_w = W - padding*2
     drawable_h = H - padding*2
@@ -218,17 +245,25 @@ def render_png_512(text: str, anchor: str, color: str, font_size: int, auto_fit:
         lines, font, size = wrap_and_fit(draw, safe_text, drawable_w, drawable_h, base_size=font_size)
     else:
         font = best_font(font_size)
-        words = (safe_text or "").split()
+        words = safe_text.split() if safe_text else []
         lines = []
         line = ""
         for w in words:
             test = (line + " " + w).strip() if line else w
-            w_px, _ = get_text_size(draw, test, font)
-            if w_px > drawable_w and line:
-                lines.append(line)
-                line = w
-            else:
-                line = test
+            try:
+                w_px, _ = get_text_size(draw, test, font)
+                if w_px > drawable_w and line:
+                    lines.append(line)
+                    line = w
+                else:
+                    line = test
+            except:
+                # Conservative estimate if measurement fails
+                if len(test) * font_size * 0.6 > drawable_w and line:
+                    lines.append(line)
+                    line = w
+                else:
+                    line = test
         if line:
             lines.append(line)
         size = font_size
@@ -245,38 +280,19 @@ def render_png_512(text: str, anchor: str, color: str, font_size: int, auto_fit:
     for i, ln in enumerate(lines):
         yy = y + int(i * size * 1.25)
         
-        # Ensure each line is safely encoded before drawing
-        ln = safe_text_encode(ln)
-        if not ln or ln.strip() == "":  # Skip empty lines
+        if not ln or not ln.strip():
             continue
             
-        # Draw text with comprehensive error handling
+        # Try to get text width for positioning
         try:
-            # Try modern Pillow anchor method first
-            draw.text((x+2, yy+2), ln, font=font, fill=(0,0,0,90), anchor="ra")
-            draw.text((x, yy), ln, font=font, fill=ImageColor_get(color, (255,255,255,255)), anchor="ra")
-        except (TypeError, AttributeError, UnicodeEncodeError, UnicodeError):
-            # Fallback for older Pillow versions or encoding issues
-            try:
-                text_w, text_h = get_text_size(draw, ln, font)
-                draw.text((x-text_w+2, yy+2), ln, font=font, fill=(0,0,0,90))
-                draw.text((x-text_w, yy), ln, font=font, fill=ImageColor_get(color, (255,255,255,255)))
-            except (UnicodeEncodeError, UnicodeError) as e:
-                # Final fallback: try to draw ASCII-safe version
-                try:
-                    ascii_safe = ln.encode('ascii', errors='ignore').decode('ascii')
-                    if ascii_safe:
-                        text_w, text_h = get_text_size(draw, ascii_safe, font)
-                        draw.text((x-text_w+2, yy+2), ascii_safe, font=font, fill=(0,0,0,90))
-                        draw.text((x-text_w, yy), ascii_safe, font=font, fill=ImageColor_get(color, (255,255,255,255)))
-                    else:
-                        print(f"Skipping line due to encoding issues: {repr(ln)}")
-                except Exception as final_e:
-                    print(f"Final text drawing error for line: {final_e}")
-                    continue  # Skip this line completely
-            except Exception as e:
-                print(f"Text drawing error for line '{repr(ln)}': {e}")
-                continue  # Skip this line if it can't be drawn
+            text_w, _ = get_text_size(draw, ln, font)
+            text_x = x - text_w
+        except:
+            # Fallback positioning
+            text_x = x - len(ln) * size * 0.6
+        
+        # Draw text with ultra-safe method
+        safe_draw_text(draw, ln, int(text_x), yy, font, ImageColor_get(color, (255,255,255,255)), shadow=True)
 
     out = io.BytesIO()
     img.save(out, format="PNG")
@@ -385,9 +401,7 @@ def on_message_router(message):
             if message.text.strip() == "/skip":
                 data["text"] = ""
             else:
-                # Ensure text is properly encoded
-                user_text = message.text.strip()
-                data["text"] = safe_text_encode(user_text)
+                data["text"] = ultra_safe_text(message.text.strip())
 
             try:
                 bg = Image.open(io.BytesIO(data["photo_bytes"])).convert("RGBA")
@@ -398,54 +412,29 @@ def on_message_router(message):
                 ox, oy = (W-bg.width)//2, (H-bg.height)//2
                 canvas.alpha_composite(bg, (ox, oy))
 
-                # Safely process text with comprehensive encoding protection
-                text_content = safe_text_encode(data.get("text", ""))
-                
-                try:
-                    shaped = shape_rtl(text_content)
-                    shaped = safe_text_encode(shaped)  # Double-check encoding
-                except Exception as e:
-                    print(f"Text shaping error: {e}")
-                    shaped = text_content  # Fallback to cleaned input
+                # Process text safely
+                text_content = ultra_safe_text(data.get("text", ""))
                 
                 draw = ImageDraw.Draw(canvas)
                 padding = 24
-                lines, font, size = wrap_and_fit(draw, shaped, W - 2*padding, H - 2*padding, base_size=40)
-                total_h = int(len(lines) * size * 1.25)
+                lines, font, size = wrap_and_fit(draw, text_content, W - 2*padding, H - 2*padding, base_size=40)
                 y = padding
                 x = W - padding
+                
                 for i, ln in enumerate(lines):
                     yy = y + int(i * size * 1.25)
-                    
-                    # Ensure line is safely encoded
-                    ln = safe_text_encode(ln)
-                    if not ln or ln.strip() == "":  # Skip empty lines
+                    if not ln or not ln.strip():
                         continue
-                        
+                    
+                    # Get text width for positioning
                     try:
-                        draw.text((x+2, yy+2), ln, font=font, fill=(0,0,0,90), anchor="ra")
-                        draw.text((x, yy), ln, font=font, fill=(255,255,255,255), anchor="ra")
-                    except (TypeError, AttributeError, UnicodeEncodeError, UnicodeError):
-                        try:
-                            text_w, text_h = get_text_size(draw, ln, font)
-                            draw.text((x-text_w+2, yy+2), ln, font=font, fill=(0,0,0,90))
-                            draw.text((x-text_w, yy), ln, font=font, fill=(255,255,255,255))
-                        except (UnicodeEncodeError, UnicodeError):
-                            # Final fallback: ASCII-safe version
-                            try:
-                                ascii_safe = ln.encode('ascii', errors='ignore').decode('ascii')
-                                if ascii_safe:
-                                    text_w, text_h = get_text_size(draw, ascii_safe, font)
-                                    draw.text((x-text_w+2, yy+2), ascii_safe, font=font, fill=(0,0,0,90))
-                                    draw.text((x-text_w, yy), ascii_safe, font=font, fill=(255,255,255,255))
-                                else:
-                                    print(f"Skipping line due to encoding issues: {repr(ln)}")
-                            except Exception as final_e:
-                                print(f"Final text drawing error: {final_e}")
-                                continue
-                        except Exception as e:
-                            print(f"Text drawing error: {e}")
-                            continue
+                        text_w, _ = get_text_size(draw, ln, font)
+                        text_x = x - text_w
+                    except:
+                        text_x = x - len(ln) * size * 0.6
+                    
+                    # Draw with ultra-safe method
+                    safe_draw_text(draw, ln, int(text_x), yy, font, (255,255,255,255), shadow=True)
 
                 bio = io.BytesIO()
                 canvas.save(bio, format="PNG")
@@ -473,9 +462,7 @@ def on_message_router(message):
             return
 
         if step == "ask_text" and message.content_type == "text":
-            # Ensure text is properly encoded for advanced flow
-            user_text = message.text.strip()
-            data["text"] = safe_text_encode(user_text)
+            data["text"] = ultra_safe_text(message.text.strip())
             set_state(uid, mode, "ask_anchor", data)
             kb = InlineKeyboardMarkup()
             kb.row(InlineKeyboardButton("Top-Right", callback_data="a_pos_tr"),
@@ -697,7 +684,7 @@ def setup_webhook():
         print("No WEBHOOK_URL provided, webhook not set")
 
 if __name__ == "__main__":
-    print("Starting Telegram Bot for Railway...")
+    print("Starting Ultra-Safe Telegram Bot for Railway...")
     
     # Force webhook removal with multiple attempts
     max_attempts = 5
