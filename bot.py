@@ -43,7 +43,7 @@ def get_text_size(draw, text, font):
 
 # ========== Ultra-Safe Text Processing ==========
 def ultra_safe_text(text):
-    """Convert any text to ultra-safe ASCII-compatible version"""
+    """Convert any text to ultra-safe version while preserving Persian/Arabic"""
     if not text:
         return ""
     
@@ -56,29 +56,23 @@ def ultra_safe_text(text):
     else:
         text = str(text)
     
-    # Create safe version - only ASCII printable characters
-    safe_chars = []
-    for char in text:
-        if 32 <= ord(char) <= 126:  # ASCII printable range
-            safe_chars.append(char)
-        elif char in ' \n\t':  # Whitespace
-            safe_chars.append(char)
-        else:
-            # Replace non-ASCII with closest ASCII equivalent or skip
-            if ord(char) > 127:
-                # Common replacements for Persian/Arabic numerals
-                replacements = {
-                    '۰': '0', '۱': '1', '۲': '2', '۳': '3', '۴': '4',
-                    '۵': '5', '۶': '6', '۷': '7', '۸': '8', '۹': '9',
-                    '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4',
-                    '٥': '5', '٦': '6', '٧': '7', '٨': '8', '٩': '9',
-                }
-                if char in replacements:
-                    safe_chars.append(replacements[char])
-                # Skip other non-ASCII characters
+    # Keep the original text but clean it
+    cleaned = text.strip()
+    if not cleaned:
+        return ""
     
-    result = ''.join(safe_chars).strip()
-    return result if result else "Text"
+    # Only convert Persian/Arabic numerals to English
+    replacements = {
+        '۰': '0', '۱': '1', '۲': '2', '۳': '3', '۴': '4',
+        '۵': '5', '۶': '6', '۷': '7', '۸': '8', '۹': '9',
+        '٠': '0', '١': '1', '٢': '2', '٣': '3', '٤': '4',
+        '٥': '5', '٦': '6', '٧': '7', '٨': '8', '٩': '9',
+    }
+    
+    for persian, english in replacements.items():
+        cleaned = cleaned.replace(persian, english)
+    
+    return cleaned
 
 def safe_draw_text(draw, text, x, y, font, fill, shadow=True):
     """Ultra-safe text drawing that never fails"""
@@ -86,33 +80,58 @@ def safe_draw_text(draw, text, x, y, font, fill, shadow=True):
         return False
     
     try:
-        # Make text ultra-safe
+        # Clean and shape text for Persian/Arabic
         safe_text = ultra_safe_text(text)
         if not safe_text:
             return False
         
+        # Try to shape Persian/Arabic text
+        try:
+            shaped_text = shape_rtl(safe_text)
+        except:
+            shaped_text = safe_text
+        
         # Draw shadow if requested
         if shadow:
             try:
-                draw.text((x+2, y+2), safe_text, font=font, fill=(0,0,0,90))
+                draw.text((x+2, y+2), shaped_text, font=font, fill=(0,0,0,90))
             except:
                 pass  # Shadow is optional
         
         # Draw main text
-        draw.text((x, y), safe_text, font=font, fill=fill)
+        draw.text((x, y), shaped_text, font=font, fill=fill)
         return True
         
     except Exception as e:
         print(f"Text drawing failed: {e}")
         # Emergency fallback
         try:
-            placeholder = "[Text]"
+            placeholder = safe_text if safe_text else "[Text]"
             if shadow:
                 draw.text((x+2, y+2), placeholder, font=font, fill=(0,0,0,90))
             draw.text((x, y), placeholder, font=font, fill=fill)
             return True
         except:
             return False
+
+def shape_rtl(text: str) -> str:
+    """Shape Persian/Arabic text for proper display"""
+    try:
+        if not text or text.strip() == "":
+            return ""
+        
+        # Check if text contains Persian/Arabic characters
+        has_rtl = any(ord(char) > 127 for char in text)
+        if not has_rtl:
+            return text  # Return as-is for English text
+            
+        # Process Persian/Arabic text
+        reshaped = arabic_reshaper.reshape(text)
+        bidi = get_display(reshaped)
+        return bidi
+    except Exception as e:
+        print(f"Text shaping error: {e}")
+        return text  # Return original text if shaping fails
 
 # ========== Helpers ==========
 def slugify(s: str) -> str:
@@ -413,36 +432,49 @@ def on_message_router(message):
                 canvas.alpha_composite(bg, (ox, oy))
 
                 # Process text safely
-                text_content = ultra_safe_text(data.get("text", ""))
+                text_content = data.get("text", "")
+                if text_content:
+                    text_content = ultra_safe_text(text_content)
                 
-                draw = ImageDraw.Draw(canvas)
-                padding = 24
-                lines, font, size = wrap_and_fit(draw, text_content, W - 2*padding, H - 2*padding, base_size=40)
-                y = padding
-                x = W - padding
-                
-                for i, ln in enumerate(lines):
-                    yy = y + int(i * size * 1.25)
-                    if not ln or not ln.strip():
-                        continue
+                if text_content:  # Only draw text if we have some
+                    draw = ImageDraw.Draw(canvas)
+                    padding = 24
+                    lines, font, size = wrap_and_fit(draw, text_content, W - 2*padding, H - 2*padding, base_size=40)
+                    y = padding
+                    x = W - padding
                     
-                    # Get text width for positioning
-                    try:
-                        text_w, _ = get_text_size(draw, ln, font)
-                        text_x = x - text_w
-                    except:
-                        text_x = x - len(ln) * size * 0.6
-                    
-                    # Draw with ultra-safe method
-                    safe_draw_text(draw, ln, int(text_x), yy, font, (255,255,255,255), shadow=True)
+                    for i, ln in enumerate(lines):
+                        yy = y + int(i * size * 1.25)
+                        if not ln or not ln.strip():
+                            continue
+                        
+                        # Get text width for positioning
+                        try:
+                            # Try to shape text first for width calculation
+                            shaped_ln = shape_rtl(ln)
+                            text_w, _ = get_text_size(draw, shaped_ln, font)
+                            text_x = x - text_w
+                        except:
+                            text_x = x - len(ln) * size * 0.6
+                        
+                        # Draw with ultra-safe method
+                        safe_draw_text(draw, ln, int(text_x), yy, font, (255,255,255,255), shadow=True)
 
                 bio = io.BytesIO()
                 canvas.save(bio, format="PNG")
                 bio.seek(0)
 
                 pack_slug = slugify(data["pack_name"])
-                bot.send_document(message.chat.id, bio, visible_file_name="sticker.png",
-                                  caption=f"Pack link: https://t.me/addstickers/{pack_slug}")
+                
+                # Try to create sticker first, fallback to document
+                try:
+                    bot.send_sticker(message.chat.id, bio)
+                    bot.send_message(message.chat.id, f"✅ استیکر ساخته شد!\n🔗 لینک پک: https://t.me/addstickers/{pack_slug}")
+                except:
+                    # Fallback to document if sticker fails
+                    bio.seek(0)
+                    bot.send_document(message.chat.id, bio, visible_file_name="sticker.png",
+                                      caption=f"Pack link: https://t.me/addstickers/{pack_slug}")
             except Exception as e:
                 bot.reply_to(message, f"Error while creating sticker: {e}")
             finally:
@@ -472,11 +504,28 @@ def on_message_router(message):
             return
 
         if step == "ask_color" and message.content_type == "text":
-            color = message.text.strip()
-            if not re.match(r"^#([0-9a-fA-F]{6})$", color):
-                bot.reply_to(message, "Send a HEX color like #ffffff")
+            color_name = message.text.strip().lower()
+            color_map = {
+                'سفید': '#ffffff', 'white': '#ffffff', 'سپید': '#ffffff',
+                'سیاه': '#000000', 'black': '#000000', 'مشکی': '#000000',
+                'قرمز': '#ff0000', 'red': '#ff0000', 'سرخ': '#ff0000',
+                'آبی': '#0000ff', 'blue': '#0000ff', 'آبی': '#0066ff',
+                'سبز': '#00ff00', 'green': '#00ff00', 'زرد': '#ffff00',
+                'yellow': '#ffff00', 'زرد': '#ffff00', 'طلایی': '#ffd700',
+                'نارنجی': '#ff8800', 'orange': '#ff8800', 'بنفش': '#8800ff',
+                'purple': '#8800ff', 'صورتی': '#ff69b4', 'pink': '#ff69b4',
+                'خاکستری': '#808080', 'gray': '#808080', 'grey': '#808080',
+                'قهوه‌ای': '#8b4513', 'brown': '#8b4513', 'طوسی': '#696969'
+            }
+            
+            if color_name in color_map:
+                data["color"] = color_map[color_name]
+            elif re.match(r"^#([0-9a-fA-F]{6})$", color_name):
+                data["color"] = color_name
+            else:
+                bot.reply_to(message, "رنگ را بنویسید مثل: قرمز، آبی، سفید، سیاه، زرد، سبز، نارنجی، بنفش، صورتی\nیا: red, blue, white, black, yellow, green, orange, purple, pink")
                 return
-            data["color"] = color
+            
             set_state(uid, mode, "ask_font", data)
             bot.reply_to(message, "Send font size (18–72). Example: 40")
             return
@@ -593,7 +642,7 @@ def on_advanced_steps(call):
         data["anchor"] = anchor
         set_state(uid, "advanced", "ask_color", data)
         bot.answer_callback_query(call.id, f"Position: {anchor}")
-        bot.edit_message_text("Send text color (HEX like #ffffff)", chat_id=call.message.chat.id, message_id=call.message.message_id)
+        bot.edit_message_text("رنگ متن را بنویسید مثل: قرمز، آبی، سفید، زرد\nSend text color like: red, blue, white, yellow", chat_id=call.message.chat.id, message_id=call.message.message_id)
         return
 
     if call.data == "a_confirm_no":
@@ -626,8 +675,16 @@ def on_advanced_steps(call):
             bio = io.BytesIO(png)
             pack_slug = slugify(pack_name)
             bot.answer_callback_query(call.id, "Created!")
-            bot.send_document(call.message.chat.id, bio, visible_file_name="sticker.png",
-                              caption=f"Pack link: https://t.me/addstickers/{pack_slug}")
+            
+            # Try to send as sticker first, fallback to document
+            try:
+                bot.send_sticker(call.message.chat.id, bio)
+                bot.send_message(call.message.chat.id, f"✅ استیکر پیشرفته ساخته شد!\n🔗 لینک پک: https://t.me/addstickers/{pack_slug}")
+            except:
+                # Fallback to document if sticker fails
+                bio.seek(0)
+                bot.send_document(call.message.chat.id, bio, visible_file_name="sticker.png",
+                                  caption=f"Pack link: https://t.me/addstickers/{pack_slug}")
         except Exception as e:
             bot.answer_callback_query(call.id, "Failed.")
             bot.send_message(call.message.chat.id, f"Error: {e}")
