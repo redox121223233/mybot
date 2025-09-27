@@ -152,6 +152,34 @@ def wrap_and_fit(draw: ImageDraw.ImageDraw, text: str, max_w: int, max_h: int, b
     font = best_font(min_size)
     return lines, font, min_size
 
+def safe_text_encode(text):
+    """Safely encode text to handle Persian/Arabic characters"""
+    if not text:
+        return ""
+    
+    # Convert to string if needed
+    if isinstance(text, bytes):
+        try:
+            text = text.decode('utf-8')
+        except UnicodeDecodeError:
+            text = text.decode('utf-8', errors='ignore')
+    elif not isinstance(text, str):
+        text = str(text)
+    
+    # Remove any problematic characters that cause latin-1 errors
+    try:
+        # Test if text can be safely processed
+        text.encode('utf-8').decode('utf-8')
+        return text
+    except (UnicodeError, UnicodeEncodeError, UnicodeDecodeError):
+        # Clean the text by removing problematic characters
+        import unicodedata
+        # Normalize and remove control characters
+        text = unicodedata.normalize('NFKD', text)
+        # Keep only printable characters
+        text = ''.join(char for char in text if unicodedata.category(char)[0] != 'C')
+        return text
+
 def render_png_512(text: str, anchor: str, color: str, font_size: int, auto_fit: bool,
                    bg_type: str = "transparent", bg_color: str = "#000000", bg_image_bytes: bytes | None = None) -> bytes:
     W = H = 512
@@ -173,25 +201,16 @@ def render_png_512(text: str, anchor: str, color: str, font_size: int, auto_fit:
         except Exception:
             pass
 
-    # Ensure text is safe for processing with proper UTF-8 handling
-    input_text = text or ""
-    if isinstance(input_text, bytes):
-        try:
-            input_text = input_text.decode('utf-8')
-        except UnicodeDecodeError:
-            input_text = input_text.decode('utf-8', errors='ignore')
-    elif not isinstance(input_text, str):
-        input_text = str(input_text)
+    # Safely process input text with comprehensive encoding protection
+    input_text = safe_text_encode(text or "")
     
-    # Process text with encoding safety
+    # Process text with RTL shaping and encoding safety
     try:
         safe_text = shape_rtl(input_text)
-        # Ensure the shaped text is properly encoded
-        if isinstance(safe_text, bytes):
-            safe_text = safe_text.decode('utf-8', errors='ignore')
+        safe_text = safe_text_encode(safe_text)  # Double-check encoding
     except Exception as e:
         print(f"Text processing error: {e}")
-        safe_text = input_text  # Fallback to original text
+        safe_text = input_text  # Fallback to cleaned input
     
     drawable_w = W - padding*2
     drawable_h = H - padding*2
@@ -226,30 +245,37 @@ def render_png_512(text: str, anchor: str, color: str, font_size: int, auto_fit:
     for i, ln in enumerate(lines):
         yy = y + int(i * size * 1.25)
         
-        # Ensure each line is properly encoded before drawing
-        try:
-            if isinstance(ln, bytes):
-                ln = ln.decode('utf-8', errors='ignore')
-            elif not isinstance(ln, str):
-                ln = str(ln)
-        except Exception:
-            ln = ""  # Skip problematic lines
-            
-        if not ln:  # Skip empty lines
+        # Ensure each line is safely encoded before drawing
+        ln = safe_text_encode(ln)
+        if not ln or ln.strip() == "":  # Skip empty lines
             continue
             
-        # Shadow with encoding protection
+        # Draw text with comprehensive error handling
         try:
+            # Try modern Pillow anchor method first
             draw.text((x+2, yy+2), ln, font=font, fill=(0,0,0,90), anchor="ra")
             draw.text((x, yy), ln, font=font, fill=ImageColor_get(color, (255,255,255,255)), anchor="ra")
-        except (TypeError, UnicodeEncodeError):
+        except (TypeError, AttributeError, UnicodeEncodeError, UnicodeError):
             # Fallback for older Pillow versions or encoding issues
             try:
                 text_w, text_h = get_text_size(draw, ln, font)
                 draw.text((x-text_w+2, yy+2), ln, font=font, fill=(0,0,0,90))
                 draw.text((x-text_w, yy), ln, font=font, fill=ImageColor_get(color, (255,255,255,255)))
+            except (UnicodeEncodeError, UnicodeError) as e:
+                # Final fallback: try to draw ASCII-safe version
+                try:
+                    ascii_safe = ln.encode('ascii', errors='ignore').decode('ascii')
+                    if ascii_safe:
+                        text_w, text_h = get_text_size(draw, ascii_safe, font)
+                        draw.text((x-text_w+2, yy+2), ascii_safe, font=font, fill=(0,0,0,90))
+                        draw.text((x-text_w, yy), ascii_safe, font=font, fill=ImageColor_get(color, (255,255,255,255)))
+                    else:
+                        print(f"Skipping line due to encoding issues: {repr(ln)}")
+                except Exception as final_e:
+                    print(f"Final text drawing error for line: {final_e}")
+                    continue  # Skip this line completely
             except Exception as e:
-                print(f"Text drawing error for line '{ln}': {e}")
+                print(f"Text drawing error for line '{repr(ln)}': {e}")
                 continue  # Skip this line if it can't be drawn
 
     out = io.BytesIO()
@@ -361,13 +387,7 @@ def on_message_router(message):
             else:
                 # Ensure text is properly encoded
                 user_text = message.text.strip()
-                try:
-                    # Test if text can be encoded/decoded properly
-                    user_text.encode('utf-8').decode('utf-8')
-                    data["text"] = user_text
-                except UnicodeError:
-                    # Fallback for problematic characters
-                    data["text"] = user_text.encode('utf-8', errors='ignore').decode('utf-8')
+                data["text"] = safe_text_encode(user_text)
 
             try:
                 bg = Image.open(io.BytesIO(data["photo_bytes"])).convert("RGBA")
@@ -378,20 +398,15 @@ def on_message_router(message):
                 ox, oy = (W-bg.width)//2, (H-bg.height)//2
                 canvas.alpha_composite(bg, (ox, oy))
 
-                # Safely process text with encoding protection
-                text_content = data.get("text", "")
-                if isinstance(text_content, bytes):
-                    text_content = text_content.decode('utf-8', errors='ignore')
-                elif not isinstance(text_content, str):
-                    text_content = str(text_content)
+                # Safely process text with comprehensive encoding protection
+                text_content = safe_text_encode(data.get("text", ""))
                 
                 try:
                     shaped = shape_rtl(text_content)
-                    if isinstance(shaped, bytes):
-                        shaped = shaped.decode('utf-8', errors='ignore')
+                    shaped = safe_text_encode(shaped)  # Double-check encoding
                 except Exception as e:
                     print(f"Text shaping error: {e}")
-                    shaped = text_content  # Fallback to original
+                    shaped = text_content  # Fallback to cleaned input
                 
                 draw = ImageDraw.Draw(canvas)
                 padding = 24
@@ -402,26 +417,32 @@ def on_message_router(message):
                 for i, ln in enumerate(lines):
                     yy = y + int(i * size * 1.25)
                     
-                    # Ensure line is properly encoded
-                    try:
-                        if isinstance(ln, bytes):
-                            ln = ln.decode('utf-8', errors='ignore')
-                        elif not isinstance(ln, str):
-                            ln = str(ln)
-                    except Exception:
-                        ln = ""
-                        
-                    if not ln:  # Skip empty lines
+                    # Ensure line is safely encoded
+                    ln = safe_text_encode(ln)
+                    if not ln or ln.strip() == "":  # Skip empty lines
                         continue
                         
                     try:
                         draw.text((x+2, yy+2), ln, font=font, fill=(0,0,0,90), anchor="ra")
                         draw.text((x, yy), ln, font=font, fill=(255,255,255,255), anchor="ra")
-                    except (TypeError, UnicodeEncodeError):
+                    except (TypeError, AttributeError, UnicodeEncodeError, UnicodeError):
                         try:
                             text_w, text_h = get_text_size(draw, ln, font)
                             draw.text((x-text_w+2, yy+2), ln, font=font, fill=(0,0,0,90))
                             draw.text((x-text_w, yy), ln, font=font, fill=(255,255,255,255))
+                        except (UnicodeEncodeError, UnicodeError):
+                            # Final fallback: ASCII-safe version
+                            try:
+                                ascii_safe = ln.encode('ascii', errors='ignore').decode('ascii')
+                                if ascii_safe:
+                                    text_w, text_h = get_text_size(draw, ascii_safe, font)
+                                    draw.text((x-text_w+2, yy+2), ascii_safe, font=font, fill=(0,0,0,90))
+                                    draw.text((x-text_w, yy), ascii_safe, font=font, fill=(255,255,255,255))
+                                else:
+                                    print(f"Skipping line due to encoding issues: {repr(ln)}")
+                            except Exception as final_e:
+                                print(f"Final text drawing error: {final_e}")
+                                continue
                         except Exception as e:
                             print(f"Text drawing error: {e}")
                             continue
@@ -454,11 +475,7 @@ def on_message_router(message):
         if step == "ask_text" and message.content_type == "text":
             # Ensure text is properly encoded for advanced flow
             user_text = message.text.strip()
-            try:
-                user_text.encode('utf-8').decode('utf-8')
-                data["text"] = user_text
-            except UnicodeError:
-                data["text"] = user_text.encode('utf-8', errors='ignore').decode('utf-8')
+            data["text"] = safe_text_encode(user_text)
             set_state(uid, mode, "ask_anchor", data)
             kb = InlineKeyboardMarkup()
             kb.row(InlineKeyboardButton("Top-Right", callback_data="a_pos_tr"),
@@ -682,14 +699,32 @@ def setup_webhook():
 if __name__ == "__main__":
     print("Starting Telegram Bot for Railway...")
     
-    # Always clear any existing webhooks first
-    try:
-        print("Clearing existing webhooks...")
-        bot.remove_webhook()
-        time.sleep(3)  # Wait longer for webhook to be fully removed
-        print("Webhook cleared successfully")
-    except Exception as e:
-        print(f"Warning: Could not clear webhook: {e}")
+    # Force webhook removal with multiple attempts
+    max_attempts = 5
+    for attempt in range(max_attempts):
+        try:
+            print(f"Attempt {attempt + 1}/{max_attempts}: Clearing webhooks...")
+            bot.remove_webhook()
+            time.sleep(2)
+            
+            # Verify webhook is actually removed
+            webhook_info = bot.get_webhook_info()
+            if not webhook_info.url:
+                print("✅ Webhook successfully removed")
+                break
+            else:
+                print(f"⚠️ Webhook still active: {webhook_info.url}")
+                if attempt < max_attempts - 1:
+                    print("Retrying...")
+                    time.sleep(3)
+        except Exception as e:
+            print(f"Warning: Could not clear webhook (attempt {attempt + 1}): {e}")
+            if attempt < max_attempts - 1:
+                time.sleep(2)
+    
+    # Additional wait to ensure cleanup
+    print("Waiting for complete cleanup...")
+    time.sleep(5)
     
     if WEBHOOK_URL:
         # Production mode with webhook
@@ -698,15 +733,31 @@ if __name__ == "__main__":
         print(f"Starting Flask server on port {PORT}")
         app.run(host="0.0.0.0", port=PORT)
     else:
-        # Development mode with polling
-        print("Running in polling mode (development)")
+        # Development mode with polling - should not happen on Railway
+        print("⚠️ WARNING: No WEBHOOK_URL found!")
+        print("Railway deployments should use webhooks, not polling.")
+        print("Please set WEBHOOK_URL environment variable to your Railway app URL.")
+        print("Example: https://your-app-name.up.railway.app")
+        
+        # Try polling anyway with extra safety
         try:
-            # Double-check webhook is removed before polling
-            bot.remove_webhook()
-            time.sleep(2)
-            print("Starting polling...")
+            # Final webhook check
+            webhook_info = bot.get_webhook_info()
+            if webhook_info.url:
+                print(f"❌ Webhook still active: {webhook_info.url}")
+                print("Forcing webhook removal...")
+                bot.remove_webhook()
+                time.sleep(5)
+            
+            print("Starting polling (not recommended for Railway)...")
             bot.infinity_polling(skip_pending=True, allowed_updates=["message","callback_query"])
         except Exception as e:
-            print(f"Polling failed: {e}")
-            print("This usually means another bot instance is running or webhook is still active.")
-            print("Try restarting the Railway deployment or check for multiple instances.")
+            print(f"❌ Polling failed: {e}")
+            if "409" in str(e) or "Conflict" in str(e):
+                print("\n🔧 SOLUTION:")
+                print("1. Set WEBHOOK_URL environment variable in Railway")
+                print("2. Restart your Railway deployment")
+                print("3. Make sure no other instances are running")
+                print("4. Check Railway logs for multiple processes")
+            else:
+                print(f"Unexpected error: {e}")
