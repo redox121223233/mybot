@@ -161,21 +161,13 @@ def _prepare_text(text: str) -> str:
     if not text:
         return ""
     
-    # ابتدا کل متن را reshape کن
+    # کل متن را reshape کن تا حروف به هم متصل شوند
     reshaped_text = arabic_reshaper.reshape(text.strip())
     
-    # سپس bidi را اعمال کن تا جهت نوشتار درست شود
-    # اما کلمات را جداگانه پردازش کن تا ترتیب حفظ شود
-    words = reshaped_text.split()
-    final_words = []
+    # حالا کل متن را bidi کن (نه کلمه به کلمه)
+    bidi_text = get_display(reshaped_text)
     
-    for word in words:
-        # هر کلمه را جداگانه bidi کن
-        bidi_word = get_display(word)
-        final_words.append(bidi_word)
-    
-    # کلمات را در ترتیب اصلی (چپ به راست) نگه دار
-    return ' '.join(final_words)
+    return bidi_text
 
 def _parse_hex(hx: str) -> Tuple[int, int, int, int]:
     hx = (hx or "#ffffff").strip().lstrip("#")
@@ -883,6 +875,16 @@ async def on_ai_callbacks(cb: CallbackQuery):
 
     if action == "size":
         a["size"] = value
+        
+        # اگر حالت ویدیویی است، مستقیم پیش‌نمایش نشان بده
+        if a.get("video_mode"):
+            if all(a.get(k) for k in ["text", "position", "font", "color", "size", "video_data"]):
+                await cb.message.answer("پیش‌نمایش ویدیو آماده است!", reply_markup=after_preview_kb("ai"))
+                return await cb.answer("آماده برای تایید")
+            else:
+                return await cb.answer("اطلاعات ناقص است", show_alert=True)
+        
+        # برای حالت تصویری، گزینه‌های پس‌زمینه نشان بده
         kb = InlineKeyboardBuilder()
         kb.button(text="شفاف ♻️", callback_data="ai:bg:transparent")
         kb.button(text="پیش‌فرض 🎨", callback_data="ai:bg:default")
@@ -960,7 +962,9 @@ async def on_ai_callbacks(cb: CallbackQuery):
                     a.get("size") or "medium"
                 )
                 sess(cb.from_user.id)["last_video_sticker"] = video_with_text
-                await cb.message.answer_video(BufferedInputFile(video_with_text, filename="sticker.webm"))
+                
+                # ارسال به عنوان video sticker
+                await cb.message.answer_video_note(BufferedInputFile(video_with_text, filename="sticker.webm"))
             except Exception as e:
                 return await cb.answer(f"خطا در پردازش ویدیو: {str(e)}", show_alert=True)
         else:
@@ -1081,6 +1085,9 @@ async def on_message(message: Message):
                 file_obj = BufferedInputFile(img, filename="preview.png")
                 await message.answer_photo(file_obj, caption="پیش‌نمایش آماده است", reply_markup=after_preview_kb("simple"))
                 return
+            elif message.video:
+                # اگر ویدیو ارسال شد، راهنمایی کن که به بخش AI برود
+                return await message.answer("برای ساخت استیکر ویدیویی، از بخش «استیکر هوش مصنوعی 🤖» استفاده کنید.")
             # اگر خارج از جریان چیزی فرستاد
             return await message.answer("از دکمه‌ها استفاده کن یا متن/عکس مناسب بفرست.")
 
