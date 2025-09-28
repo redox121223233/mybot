@@ -624,9 +624,12 @@ async def need_pack_setup(uid: int) -> bool:
 async def start_pack_wizard(message_or_cb, uid: int):
     s = sess(uid)
     s["mode"] = "pack_wizard"
-    s["pack_wizard"] = {"stage": "ask_title"}
+    s["pack_wizard"] = {"stage": "ask_name"}
     await (message_or_cb.message if isinstance(message_or_cb, CallbackQuery) else message_or_cb).answer(
-        "اول عنوان پک را بنویس (مثلاً: استیکرهای من):"
+        "نام پک را بنویس (مثال: my_stickers):\n"
+        "• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
+        "• باید با حرف شروع شود\n"
+        "• حداکثر ۳۲ کاراکتر"
     )
 
 # ============ ربات و روتر ============
@@ -970,13 +973,8 @@ async def on_ai_callbacks(cb: CallbackQuery):
                 )
                 sess(cb.from_user.id)["last_video_sticker"] = video_with_text
                 
-                # ارسال به عنوان video sticker قابل ذخیره
-                await cb.message.answer_video(
-                    BufferedInputFile(video_with_text, filename="sticker.webm"),
-                    width=512,
-                    height=512,
-                    duration=3
-                )
+                # ارسال به عنوان استیکر ویدیویی
+                await cb.message.answer_sticker(BufferedInputFile(video_with_text, filename="sticker.webm"))
             except Exception as e:
                 return await cb.answer(f"خطا در پردازش ویدیو: {str(e)}", show_alert=True)
         else:
@@ -1010,22 +1008,42 @@ async def on_message(message: Message):
     s = sess(uid)
     if s.get("mode") == "pack_wizard":
         stage = s["pack_wizard"].get("stage")
-        if stage == "ask_title":
-            title = (message.text or "").strip()
-            if not title:
-                return await message.answer("عنوان نمی‌تواند خالی باشد. دوباره بنویس:")
-            s["pack_wizard"]["title"] = title
-            s["pack_wizard"]["stage"] = "ask_name"
-            return await message.answer("نام انگلیسی پک را بنویس (فقط حروف/عدد/زیرخط):")
-        elif stage == "ask_name":
-            base = (message.text or "").strip()
-            if not re.match(r"^[a-zA-Z0-9_]{1,32}$", base or ""):
-                return await message.answer("نام نامعتبر است. فقط حروف/عدد/زیرخط و حداکثر ۳۲ کاراکتر.")
+        if stage == "ask_name":
+            base = (message.text or "").strip().lower()
+            
+            # بررسی قوانین تلگرام برای نام پک
+            if not re.match(r"^[a-z][a-z0-9_]{0,31}$", base):
+                return await message.answer(
+                    "❌ نام نامعتبر است!\n"
+                    "قوانین:\n"
+                    "• باید با حرف انگلیسی شروع شود\n"
+                    "• فقط حروف کوچک انگلیسی، عدد و زیرخط\n"
+                    "• حداکثر ۳۲ کاراکتر\n"
+                    "مثال صحیح: my_stickers"
+                )
+            
+            # چک کردن طول نهایی با پسوند ربات
+            final_name = _normalize_shortname(base)
+            if len(final_name) > 64:  # حد تلگرام
+                return await message.answer(
+                    "❌ نام خیلی طولانی است!\n"
+                    f"نام نهایی: {final_name}\n"
+                    "نام کوتاه‌تری انتخاب کنید."
+                )
+            
             u = user(uid)
-            u["pack"] = {"title": s["pack_wizard"]["title"], "name": base, "created": False, "just_created_once": True}
+            # عنوان را همان نام انگلیسی قرار بده
+            title = base.replace('_', ' ').title()
+            u["pack"] = {"title": title, "name": base, "created": False, "just_created_once": True}
             s["pack_wizard"] = {}
             s["mode"] = "menu"
-            return await message.answer(f"پک تنظیم شد ✅\nنام نهایی: {_normalize_shortname(base)}\nحالا از منو یکی را انتخاب کن:", reply_markup=main_menu_kb(is_admin=(uid == ADMIN_ID)))
+            
+            return await message.answer(
+                f"✅ پک تنظیم شد!\n"
+                f"نام: {final_name}\n"
+                f"حالا از منو یکی را انتخاب کن:",
+                reply_markup=main_menu_kb(is_admin=(uid == ADMIN_ID))
+            )
 
     # ادامه منطق قبلی
     # پردازش درخواست‌های معلق ادمین
