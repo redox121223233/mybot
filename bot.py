@@ -316,7 +316,7 @@ def _check_ffmpeg() -> bool:
         return False
 
 def process_video_to_webm(video_bytes: bytes, max_duration: int = 3) -> bytes:
-    """تبدیل ویدیو به فرمت WebM برای استیکر ویدیویی"""
+    """تبدیل ویدیو به فرمت WebM برای استیکر ویدیویی تلگرام"""
     if not _check_ffmpeg():
         raise Exception("FFmpeg نصب نیست. لطفاً FFmpeg را نصب کنید:\n- Windows: https://ffmpeg.org/download.html\n- Ubuntu: sudo apt install ffmpeg\n- CentOS: sudo yum install ffmpeg")
     
@@ -328,16 +328,20 @@ def process_video_to_webm(video_bytes: bytes, max_duration: int = 3) -> bytes:
         output_path = output_file.name
     
     try:
-        # استفاده از ffmpeg برای تبدیل
+        # تنظیمات خاص برای استیکر ویدیویی تلگرام
         cmd = [
             'ffmpeg', '-i', input_path,
-            '-t', str(max_duration),  # محدود کردن مدت زمان
+            '-t', str(max_duration),
             '-vf', 'scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2',
             '-c:v', 'libvpx-vp9',
-            '-b:v', '500k',
-            '-c:a', 'libopus',
-            '-b:a', '64k',
+            '-crf', '30',
+            '-b:v', '400k',
+            '-maxrate', '400k',
+            '-bufsize', '800k',
+            '-an',  # حذف صدا برای استیکر
             '-f', 'webm',
+            '-deadline', 'good',
+            '-cpu-used', '0',
             '-y', output_path
         ]
         
@@ -361,7 +365,7 @@ def process_video_to_webm(video_bytes: bytes, max_duration: int = 3) -> bytes:
     raise Exception("تبدیل ویدیو ناموفق بود")
 
 def add_text_to_video(video_bytes: bytes, text: str, position: str, font_key: str, color_hex: str, size_key: str) -> bytes:
-    """اضافه کردن متن به ویدیو"""
+    """اضافه کردن متن به ویدیو با فرمت مناسب برای تلگرام"""
     if not _check_ffmpeg():
         raise Exception("FFmpeg نصب نیست. لطفاً FFmpeg را نصب کنید:\n- Windows: https://ffmpeg.org/download.html\n- Ubuntu: sudo apt install ffmpeg\n- CentOS: sudo yum install ffmpeg")
     
@@ -375,30 +379,32 @@ def add_text_to_video(video_bytes: bytes, text: str, position: str, font_key: st
     try:
         # تنظیم موقعیت متن
         if position == "top":
-            y_pos = "50"
+            y_pos = "80"
         elif position == "bottom":
-            y_pos = "h-50"
+            y_pos = "h-80"
         else:  # center
-            y_pos = "h/2"
+            y_pos = "(h-text_h)/2"
         
         # تنظیم اندازه فونت
-        size_map = {"small": 24, "medium": 36, "large": 48}
-        font_size = size_map.get(size_key, 36)
+        size_map = {"small": 32, "medium": 48, "large": 64}
+        font_size = size_map.get(size_key, 48)
         
-        # تبدیل رنگ hex به RGB
-        color_rgb = color_hex.lstrip('#')
-        r, g, b = tuple(int(color_rgb[i:i+2], 16) for i in (0, 2, 4))
-        
-        # آماده‌سازی متن فارسی
-        prepared_text = _prepare_text(text)
-        # escape کردن کاراکترهای خاص برای ffmpeg
-        prepared_text = prepared_text.replace("'", "\\'").replace(":", "\\:")
+        # آماده‌سازی متن فارسی - بدون escape اضافی
+        prepared_text = text.strip()
         
         # استفاده از ffmpeg برای اضافه کردن متن
         cmd = [
             'ffmpeg', '-i', input_path,
-            '-vf', f"drawtext=text='{prepared_text}':fontsize={font_size}:fontcolor=white:x=(w-text_w)/2:y={y_pos}:box=1:boxcolor=black@0.5:boxborderw=5",
-            '-c:a', 'copy',
+            '-vf', f"drawtext=text='{prepared_text}':fontsize={font_size}:fontcolor=white:x=(w-text_w)/2:y={y_pos}:box=1:boxcolor=black@0.7:boxborderw=8",
+            '-c:v', 'libvpx-vp9',
+            '-crf', '30',
+            '-b:v', '400k',
+            '-maxrate', '400k',
+            '-bufsize', '800k',
+            '-an',  # حذف صدا
+            '-f', 'webm',
+            '-deadline', 'good',
+            '-cpu-used', '0',
             '-y', output_path
         ]
         
