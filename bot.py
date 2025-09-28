@@ -4,6 +4,8 @@ import re
 from io import BytesIO
 from typing import Dict, Any, Optional, Tuple, List
 from datetime import datetime, timezone
+import tempfile
+import subprocess
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.types import Message, CallbackQuery, BotCommand, BufferedInputFile, InputSticker
@@ -32,7 +34,7 @@ BOT_USERNAME = ""    # بعداً در main پر می‌شود
 
 # ============ حافظه ساده (in-memory) ============
 USERS: Dict[int, Dict[str, Any]] = {}     # {user_id: {ai_used:int, vote:str|None, day_start:int, pack:{title,name,created:bool}}}
-SESSIONS: Dict[int, Dict[str, Any]] = {}  # {user_id: {"mode":..., "ai":{}, "simple":{}, "pack_wizard":{}, "await_feedback":bool, "last_sticker":bytes}}
+SESSIONS: Dict[int, Dict[str, Any]] = {}  # {user_id: {"mode":..., "ai":{}, "simple":{}, "pack_wizard":{}, "await_feedback":bool, "last_sticker":bytes, "last_video_sticker":bytes}}
 ADMIN_PENDING: Dict[int, Dict[str, Any]] = {}
 
 def _today_start_ts() -> int:
@@ -78,7 +80,7 @@ def user(uid: int) -> Dict[str, Any]:
 
 def sess(uid: int) -> Dict[str, Any]:
     if uid not in SESSIONS:
-        SESSIONS[uid] = {"mode": "menu", "ai": {}, "simple": {}, "pack_wizard": {}, "await_feedback": False, "last_sticker": None}
+        SESSIONS[uid] = {"mode": "menu", "ai": {}, "simple": {}, "pack_wizard": {}, "await_feedback": False, "last_sticker": None, "last_video_sticker": None}
     return SESSIONS[uid]
 
 def reset_mode(uid: int):
@@ -88,6 +90,7 @@ def reset_mode(uid: int):
     s["simple"] = {}
     s["await_feedback"] = False
     s["last_sticker"] = None
+    s["last_video_sticker"] = None
     s["pack_wizard"] = {}
 
 # ============ داده‌ها و NLU ساده ============
@@ -155,8 +158,25 @@ def resolve_font_path(font_key: Optional[str]) -> str:
 CANVAS = (512, 512)
 
 def _prepare_text(text: str) -> str:
-    reshaped = arabic_reshaper.reshape(text or "")
-    return get_display(reshaped)
+    if not text:
+        return ""
+    
+    # تقسیم متن به کلمات
+    words = text.strip().split()
+    processed_words = []
+    
+    for word in words:
+        # اگر کلمه شامل حروف فارسی/عربی است
+        if any('\u0600' <= char <= '\u06FF' or '\u0750' <= char <= '\u077F' for char in word):
+            # فقط شکل حروف را اصلاح کن، ترتیب کلمات را حفظ کن
+            reshaped = arabic_reshaper.reshape(word)
+            processed_words.append(get_display(reshaped))
+        else:
+            # کلمات انگلیسی یا عدد را بدون تغییر اضافه کن
+            processed_words.append(word)
+    
+    # کلمات را با فاصله به هم متصل کن (ترتیب اصلی حفظ می‌شود)
+    return ' '.join(processed_words)
 
 def _parse_hex(hx: str) -> Tuple[int, int, int, int]:
     hx = (hx or "#ffffff").strip().lstrip("#")
@@ -187,18 +207,18 @@ def wrap_text_to_width(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.Fre
 
 def fit_font_size(draw: ImageDraw.ImageDraw, text: str, font_path: str, base: int, max_w: int, max_h: int) -> int:
     size = base
-    while size > 18:
+    while size > 12:  # کاهش حداقل سایز برای اطمینان از جا شدن متن
         try:
             font = ImageFont.truetype(font_path, size=size) if font_path else ImageFont.load_default()
         except Exception:
             font = ImageFont.load_default()
         lines = wrap_text_to_width(draw, text, font, max_w)
-        bbox = draw.multiline_textbbox((0, 0), "\n".join(lines), font=font, spacing=6, align="center", stroke_width=2)
+        bbox = draw.multiline_textbbox((0, 0), "\n".join(lines), font=font, spacing=4, align="center", stroke_width=2)
         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
         if tw <= max_w and th <= max_h:
             return size
-        size -= 2
-    return max(size, 18)
+        size -= 1  # کاهش تدریجی‌تر سایز
+    return max(size, 12)
 
 def _make_default_bg(size=(512, 512)) -> Image.Image:
     tpl_dir = os.path.join(os.path.dirname(__file__), "templates")
@@ -297,6 +317,104 @@ def render_image(text: str, position: str, font_key: str, color_hex: str, size_k
     img.save(buf, format="WEBP" if as_webp else "PNG")
     return buf.getvalue()
 
+# ============ پردازش ویدیو ============
+def process_video_to_webm(video_bytes: bytes, max_duration: int = 3) -> bytes:
+    """تبدیل ویدیو به فرمت WebM برای استیکر ویدیویی"""
+    with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as input_file:
+        input_file.write(video_bytes)
+        input_path = input_file.name
+    
+    with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as output_file:
+        output_path = output_file.name
+    
+    try:
+        # استفاده از ffmpeg برای تبدیل
+        cmd = [
+            'ffmpeg', '-i', input_path,
+            '-t', str(max_duration),  # محدود کردن مدت زمان
+            '-vf', 'scale=512:512:force_original_aspect_ratio=decrease,pad=512:512:(ow-iw)/2:(oh-ih)/2',
+            '-c:v', 'libvpx-vp9',
+            '-b:v', '500k',
+            '-c:a', 'libopus',
+            '-b:a', '64k',
+            '-f', 'webm',
+            '-y', output_path
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            with open(output_path, 'rb') as f:
+                webm_data = f.read()
+            return webm_data
+        else:
+            raise Exception(f"FFmpeg error: {result.stderr}")
+    
+    finally:
+        # پاک کردن فایل‌های موقت
+        try:
+            os.unlink(input_path)
+            os.unlink(output_path)
+        except:
+            pass
+    
+    raise Exception("تبدیل ویدیو ناموفق بود")
+
+def add_text_to_video(video_bytes: bytes, text: str, position: str, font_key: str, color_hex: str, size_key: str) -> bytes:
+    """اضافه کردن متن به ویدیو"""
+    with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as input_file:
+        input_file.write(video_bytes)
+        input_path = input_file.name
+    
+    with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as output_file:
+        output_path = output_file.name
+    
+    try:
+        # تنظیم موقعیت متن
+        if position == "top":
+            y_pos = "50"
+        elif position == "bottom":
+            y_pos = "h-50"
+        else:  # center
+            y_pos = "h/2"
+        
+        # تنظیم اندازه فونت
+        size_map = {"small": 24, "medium": 36, "large": 48}
+        font_size = size_map.get(size_key, 36)
+        
+        # تبدیل رنگ hex به RGB
+        color_rgb = color_hex.lstrip('#')
+        r, g, b = tuple(int(color_rgb[i:i+2], 16) for i in (0, 2, 4))
+        
+        # آماده‌سازی متن فارسی
+        prepared_text = _prepare_text(text)
+        
+        # استفاده از ffmpeg برای اضافه کردن متن
+        cmd = [
+            'ffmpeg', '-i', input_path,
+            '-vf', f"drawtext=text='{prepared_text}':fontsize={font_size}:fontcolor={r}/{g}/{b}:x=(w-text_w)/2:y={y_pos}:box=1:boxcolor=black@0.5:boxborderw=5",
+            '-c:a', 'copy',
+            '-y', output_path
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True)
+        
+        if result.returncode == 0:
+            with open(output_path, 'rb') as f:
+                output_data = f.read()
+            return output_data
+        else:
+            raise Exception(f"FFmpeg error: {result.stderr}")
+    
+    finally:
+        try:
+            os.unlink(input_path)
+            os.unlink(output_path)
+        except:
+            pass
+    
+    raise Exception("اضافه کردن متن به ویدیو ناموفق بود")
+
 # ============ ابزار پک ============
 def _normalize_shortname(base: str) -> str:
     # فقط حروف/عدد/زیرخط، کوچک‌سازی
@@ -365,6 +483,37 @@ async def _add_to_pack(bot: Bot, uid: int, webp_bytes: bytes) -> str:
         return f"به پک اضافه شد ✅\nلینک پک: https://t.me/addstickers/{name}"
     except Exception as e:
         return f"افزودن به پک نشد: {e}"
+
+async def _add_video_to_pack(bot: Bot, uid: int, webm_bytes: bytes) -> str:
+    """افزودن استیکر ویدیویی به پک"""
+    u = user(uid)
+    pack = u.get("pack")
+    if not pack or not pack.get("name") or not pack.get("title"):
+        return "اطلاعات پک کامل نیست."
+    
+    name = _normalize_shortname(pack["name"])
+    
+    # اگر پک وجود ندارد، ابتدا با یک استیکر ساده ایجاد کن
+    if not pack.get("created"):
+        # ایجاد یک استیکر ساده موقت برای ساخت پک
+        temp_webp = render_image("🎬", "center", "Default", "#FFFFFF", "medium", as_webp=True)
+        ok, res = await _ensure_pack_created(bot, uid, temp_webp)
+        if not ok:
+            return res
+    
+    try:
+        input_sticker = InputSticker(
+            sticker=BufferedInputFile(webm_bytes, filename="video_sticker.webm"),
+            emoji_list=["🎬"]
+        )
+        await bot.add_sticker_to_set(
+            user_id=uid,
+            name=name,
+            sticker=input_sticker
+        )
+        return f"استیکر ویدیویی به پک اضافه شد ✅\nلینک پک: https://t.me/addstickers/{name}"
+    except Exception as e:
+        return f"افزودن استیکر ویدیویی به پک نشد: {e}"
 
 # ============ کیبوردها ============
 def main_menu_kb(is_admin: bool = False):
@@ -631,8 +780,16 @@ async def on_ai(cb: CallbackQuery):
         return
     s = sess(cb.from_user.id)
     s["mode"] = "ai"
-    s["ai"] = {"text": None, "position": None, "font": "Default", "color": "#FFFFFF", "size": "large", "bg": "transparent", "bg_photo": None}
-    await cb.message.answer(f"متن استیکر رو بفرست ✍️\n(سهمیه امروز: {'نامحدود' if is_admin else f'{left} از {DAILY_LIMIT}'} | تمدید: {eta})", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+    s["ai"] = {"text": None, "position": None, "font": "Default", "color": "#FFFFFF", "size": "large", "bg": "transparent", "bg_photo": None, "video_mode": False, "video_data": None}
+    
+    # اضافه کردن دکمه انتخاب نوع استیکر
+    kb = InlineKeyboardBuilder()
+    kb.button(text="استیکر تصویری 🖼", callback_data="ai:type:image")
+    kb.button(text="استیکر ویدیویی 🎬", callback_data="ai:type:video")
+    kb.button(text="بازگشت ⬅️", callback_data="menu:home")
+    kb.adjust(2, 1)
+    
+    await cb.message.answer(f"نوع استیکر را انتخاب کن:\n(سهمیه امروز: {'نامحدود' if is_admin else f'{left} از {DAILY_LIMIT}'} | تمدید: {eta})", reply_markup=kb.as_markup())
     await cb.answer()
 
 async def send_ai_preview(message_or_cb, uid: int):
@@ -669,9 +826,18 @@ async def on_ai_callbacks(cb: CallbackQuery):
     action = parts[1] if len(parts) > 1 else ""
     value = parts[2] if len(parts) > 2 else ""
 
-    if not is_admin and left <= 0 and action not in ("edit",):
+    if not is_admin and left <= 0 and action not in ("edit", "type"):
         eta = _fmt_eta(_seconds_to_reset(u))
         return await cb.answer(f"سهمیه امروز تمام شد. تمدید: {eta}", show_alert=True)
+
+    if action == "type":
+        if value == "image":
+            a["video_mode"] = False
+            await cb.message.answer(f"متن استیکر تصویری رو بفرست ✍️")
+        elif value == "video":
+            a["video_mode"] = True
+            await cb.message.answer("ویدیو رو ارسال کن (حداکثر ۳ ثانیه) 🎬")
+        return await cb.answer("انتخاب شد")
 
     if action == "pos":
         a["position"] = value
@@ -762,18 +928,41 @@ async def on_ai_callbacks(cb: CallbackQuery):
         if left <= 0 and not is_admin:
             eta = _fmt_eta(_seconds_to_reset(u))
             return await cb.answer(f"سهمیه امروز تمام شد. تمدید: {eta}", show_alert=True)
-        img = render_image(
-            text=a.get("text") or "",
-            position=a.get("position") or "center",
-            font_key=a.get("font") or "Default",
-            color_hex=a.get("color") or "#FFFFFF",
-            size_key=a.get("size") or "medium",
-            bg_mode=a.get("bg") or "transparent",
-            bg_photo=a.get("bg_photo"),
-            as_webp=True
-        )
-        sess(cb.from_user.id)["last_sticker"] = img
-        await cb.message.answer_sticker(BufferedInputFile(img, filename="sticker.webp"))
+        
+        if a.get("video_mode"):
+            # پردازش استیکر ویدیویی
+            if not a.get("video_data"):
+                return await cb.answer("ویدیو ارسال نشده", show_alert=True)
+            
+            try:
+                # اضافه کردن متن به ویدیو
+                video_with_text = add_text_to_video(
+                    a["video_data"],
+                    a.get("text") or "",
+                    a.get("position") or "center",
+                    a.get("font") or "Default",
+                    a.get("color") or "#FFFFFF",
+                    a.get("size") or "medium"
+                )
+                sess(cb.from_user.id)["last_video_sticker"] = video_with_text
+                await cb.message.answer_video(BufferedInputFile(video_with_text, filename="sticker.webm"))
+            except Exception as e:
+                return await cb.answer(f"خطا در پردازش ویدیو: {str(e)}", show_alert=True)
+        else:
+            # پردازش استیکر تصویری
+            img = render_image(
+                text=a.get("text") or "",
+                position=a.get("position") or "center",
+                font_key=a.get("font") or "Default",
+                color_hex=a.get("color") or "#FFFFFF",
+                size_key=a.get("size") or "medium",
+                bg_mode=a.get("bg") or "transparent",
+                bg_photo=a.get("bg_photo"),
+                as_webp=True
+            )
+            sess(cb.from_user.id)["last_sticker"] = img
+            await cb.message.answer_sticker(BufferedInputFile(img, filename="sticker.webp"))
+        
         if not is_admin:
             u["ai_used"] = int(u.get("ai_used", 0)) + 1
         await cb.message.answer("از این استیکر راضی بودی؟", reply_markup=rate_kb())
@@ -883,23 +1072,54 @@ async def on_message(message: Message):
     # استیکر هوش مصنوعی
     if mode == "ai":
         a = s["ai"]
-        if a["text"] is None and message.text:
-            u = user(uid)
-            is_admin = (uid == ADMIN_ID)
-            left = _quota_left(u, is_admin)
+        u = user(uid)
+        is_admin = (uid == ADMIN_ID)
+        left = _quota_left(u, is_admin)
+        
+        # دریافت ویدیو برای استیکر ویدیویی
+        if a.get("video_mode") and a.get("video_data") is None and message.video:
             if left <= 0 and not is_admin:
                 eta = _fmt_eta(_seconds_to_reset(u))
                 return await message.answer(f"سهمیه امروز تمام شد. تمدید در: {eta}")
+            
+            try:
+                # دانلود ویدیو
+                buf = BytesIO()
+                await message.bot.download(message.video, destination=buf)
+                video_bytes = buf.getvalue()
+                
+                # تبدیل به WebM
+                processed_video = process_video_to_webm(video_bytes)
+                a["video_data"] = processed_video
+                
+                await message.answer("ویدیو دریافت شد! حالا متن رو بفرست ✍️")
+                return
+            except Exception as e:
+                return await message.answer(f"خطا در پردازش ویدیو: {str(e)}")
+        
+        # دریافت متن
+        if a["text"] is None and message.text:
+            if left <= 0 and not is_admin:
+                eta = _fmt_eta(_seconds_to_reset(u))
+                return await message.answer(f"سهمیه امروز تمام شد. تمدید در: {eta}")
+            
             a["text"] = message.text.strip()
             inferred = infer_from_text(a["text"])
             a.update(inferred)
+            
+            # اگر حالت ویدیویی است و ویدیو ندارد
+            if a.get("video_mode") and not a.get("video_data"):
+                return await message.answer("اول ویدیو رو ارسال کن 🎬")
+            
             kb = InlineKeyboardBuilder()
             for label, val in [("بالا ⬆️", "top"), ("وسط ⚪️", "center"), ("پایین ⬇️", "bottom")]:
                 kb.button(text=label, callback_data=f"ai:pos:{val}")
             kb.adjust(3)
             await message.answer("متن کجا قرار بگیرد؟", reply_markup=kb.as_markup())
             return
-        if a.get("bg") == "photo" and a.get("bg_photo") is None and message.photo:
+        
+        # دریافت عکس پس‌زمینه (فقط برای حالت تصویری)
+        if not a.get("video_mode") and a.get("bg") == "photo" and a.get("bg_photo") is None and message.photo:
             largest = message.photo[-1]
             buf = BytesIO()
             await message.bot.download(largest, destination=buf)
@@ -944,15 +1164,26 @@ async def on_pack_skip(cb: CallbackQuery):
 @router.callback_query(F.data == "pack:add")
 async def on_pack_add(cb: CallbackQuery):
     uid = cb.from_user.id
-    webp = sess(uid).get("last_sticker")
-    if not webp:
+    s = sess(uid)
+    webp = s.get("last_sticker")
+    video_webm = s.get("last_video_sticker")
+    
+    if not webp and not video_webm:
         await cb.answer("استیکری برای افزودن ندارم.", show_alert=True)
         return
+    
     # اگر اطلاعات پک ناقص است، ویزارد را شروع کن
     if await need_pack_setup(uid):
         await start_pack_wizard(cb, uid)
         return await cb.answer("اول پک را تنظیم کن")
-    msg = await _add_to_pack(cb.bot, uid, webp)
+    
+    if video_webm:
+        # برای ویدیو استیکر، از تابع خاص استفاده کن
+        msg = await _add_video_to_pack(cb.bot, uid, video_webm)
+    else:
+        # برای استیکر معمولی
+        msg = await _add_to_pack(cb.bot, uid, webp)
+    
     await cb.message.answer(msg, reply_markup=back_to_menu_kb(uid == ADMIN_ID))
     await cb.answer()
 
