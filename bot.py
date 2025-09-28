@@ -161,11 +161,23 @@ def _prepare_text(text: str) -> str:
     if not text:
         return ""
     
-    # کل متن را reshape کن تا حروف به هم متصل شوند
-    reshaped_text = arabic_reshaper.reshape(text.strip())
+    # تقسیم متن به کلمات
+    words = text.strip().split()
     
-    # حالا کل متن را bidi کن (نه کلمه به کلمه)
-    bidi_text = get_display(reshaped_text)
+    # هر کلمه را جداگانه reshape کن تا حروف متصل شوند
+    reshaped_words = []
+    for word in words:
+        reshaped_word = arabic_reshaper.reshape(word)
+        reshaped_words.append(reshaped_word)
+    
+    # کلمات را برعکس کن (از راست به چپ)
+    reversed_words = reshaped_words[::-1]
+    
+    # کلمات را با فاصله به هم متصل کن
+    final_text = ' '.join(reversed_words)
+    
+    # حالا bidi اعمال کن
+    bidi_text = get_display(final_text)
     
     return bidi_text
 
@@ -499,26 +511,35 @@ async def _add_video_to_pack(bot: Bot, uid: int, webm_bytes: bytes) -> str:
         return "اطلاعات پک کامل نیست."
     
     name = _normalize_shortname(pack["name"])
+    title = pack["title"]
     
-    # اگر پک وجود ندارد، ابتدا با یک استیکر ساده ایجاد کن
-    if not pack.get("created"):
-        # ایجاد یک استیکر ساده موقت برای ساخت پک
-        temp_webp = render_image("🎬", "center", "Default", "#FFFFFF", "medium", as_webp=True)
-        ok, res = await _ensure_pack_created(bot, uid, temp_webp)
-        if not ok:
-            return res
-    
+    # برای استیکر ویدیویی، پک جدید ایجاد کن
     try:
         input_sticker = InputSticker(
             sticker=BufferedInputFile(webm_bytes, filename="video_sticker.webm"),
-            emoji_list=["🎬"]
+            emoji_list=["🎬"],
+            format="video"
         )
-        await bot.add_sticker_to_set(
-            user_id=uid,
-            name=name,
-            sticker=input_sticker
-        )
-        return f"استیکر ویدیویی به پک اضافه شد ✅\nلینک پک: https://t.me/addstickers/{name}"
+        
+        if not pack.get("created"):
+            # ایجاد پک جدید با استیکر ویدیویی
+            await bot.create_new_sticker_set(
+                user_id=uid,
+                name=name,
+                title=title,
+                stickers=[input_sticker],
+                sticker_format="video"
+            )
+            u["pack"]["created"] = True
+            return f"پک استیکر ویدیویی ایجاد شد ✅\nلینک پک: https://t.me/addstickers/{name}"
+        else:
+            # اضافه کردن به پک موجود
+            await bot.add_sticker_to_set(
+                user_id=uid,
+                name=name,
+                sticker=input_sticker
+            )
+            return f"استیکر ویدیویی به پک اضافه شد ✅\nلینک پک: https://t.me/addstickers/{name}"
     except Exception as e:
         return f"افزودن استیکر ویدیویی به پک نشد: {e}"
 
@@ -963,8 +984,13 @@ async def on_ai_callbacks(cb: CallbackQuery):
                 )
                 sess(cb.from_user.id)["last_video_sticker"] = video_with_text
                 
-                # ارسال به عنوان video sticker
-                await cb.message.answer_video_note(BufferedInputFile(video_with_text, filename="sticker.webm"))
+                # ارسال به عنوان video sticker قابل ذخیره
+                await cb.message.answer_video(
+                    BufferedInputFile(video_with_text, filename="sticker.webm"),
+                    width=512,
+                    height=512,
+                    duration=3
+                )
             except Exception as e:
                 return await cb.answer(f"خطا در پردازش ویدیو: {str(e)}", show_alert=True)
         else:
