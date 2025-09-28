@@ -161,25 +161,16 @@ def _prepare_text(text: str) -> str:
     if not text:
         return ""
     
-    # تقسیم متن به کلمات
-    words = text.strip().split()
+    # فقط از arabic_reshaper استفاده کن تا حروف متصل شوند
+    # bidi استفاده نکن چون مشکل ایجاد می‌کند
+    reshaped_text = arabic_reshaper.reshape(text.strip(), configuration={
+        'delete_harakat': False,
+        'support_zwj': True,
+        'support_zwnj': True,
+        'use_unshaped_instead_of_isolated': False
+    })
     
-    # هر کلمه را جداگانه reshape کن تا حروف متصل شوند
-    reshaped_words = []
-    for word in words:
-        reshaped_word = arabic_reshaper.reshape(word)
-        reshaped_words.append(reshaped_word)
-    
-    # کلمات را برعکس کن (از راست به چپ)
-    reversed_words = reshaped_words[::-1]
-    
-    # کلمات را با فاصله به هم متصل کن
-    final_text = ' '.join(reversed_words)
-    
-    # حالا bidi اعمال کن
-    bidi_text = get_display(final_text)
-    
-    return bidi_text
+    return reshaped_text
 
 def _parse_hex(hx: str) -> Tuple[int, int, int, int]:
     hx = (hx or "#ffffff").strip().lstrip("#")
