@@ -162,13 +162,8 @@ def _prepare_text(text: str) -> str:
         return ""
     
     # فقط از arabic_reshaper استفاده کن تا حروف متصل شوند
-    # bidi استفاده نکن چون مشکل ایجاد می‌کند
-    reshaped_text = arabic_reshaper.reshape(text.strip(), configuration={
-        'delete_harakat': False,
-        'support_zwj': True,
-        'support_zwnj': True,
-        'use_unshaped_instead_of_isolated': False
-    })
+    # بدون bidi تا مشکل ایجاد نشود
+    reshaped_text = arabic_reshaper.reshape(text.strip())
     
     return reshaped_text
 
