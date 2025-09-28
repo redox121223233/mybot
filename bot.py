@@ -161,22 +161,21 @@ def _prepare_text(text: str) -> str:
     if not text:
         return ""
     
-    # تقسیم متن به کلمات
-    words = text.strip().split()
-    processed_words = []
+    # ابتدا کل متن را reshape کن
+    reshaped_text = arabic_reshaper.reshape(text.strip())
+    
+    # سپس bidi را اعمال کن تا جهت نوشتار درست شود
+    # اما کلمات را جداگانه پردازش کن تا ترتیب حفظ شود
+    words = reshaped_text.split()
+    final_words = []
     
     for word in words:
-        # اگر کلمه شامل حروف فارسی/عربی است
-        if any('\u0600' <= char <= '\u06FF' or '\u0750' <= char <= '\u077F' for char in word):
-            # فقط شکل حروف را اصلاح کن، ترتیب کلمات را حفظ کن
-            reshaped = arabic_reshaper.reshape(word)
-            processed_words.append(get_display(reshaped))
-        else:
-            # کلمات انگلیسی یا عدد را بدون تغییر اضافه کن
-            processed_words.append(word)
+        # هر کلمه را جداگانه bidi کن
+        bidi_word = get_display(word)
+        final_words.append(bidi_word)
     
-    # کلمات را با فاصله به هم متصل کن (ترتیب اصلی حفظ می‌شود)
-    return ' '.join(processed_words)
+    # کلمات را در ترتیب اصلی (چپ به راست) نگه دار
+    return ' '.join(final_words)
 
 def _parse_hex(hx: str) -> Tuple[int, int, int, int]:
     hx = (hx or "#ffffff").strip().lstrip("#")
@@ -318,8 +317,19 @@ def render_image(text: str, position: str, font_key: str, color_hex: str, size_k
     return buf.getvalue()
 
 # ============ پردازش ویدیو ============
+def _check_ffmpeg() -> bool:
+    """بررسی وجود ffmpeg در سیستم"""
+    try:
+        result = subprocess.run(['ffmpeg', '-version'], capture_output=True, text=True)
+        return result.returncode == 0
+    except FileNotFoundError:
+        return False
+
 def process_video_to_webm(video_bytes: bytes, max_duration: int = 3) -> bytes:
     """تبدیل ویدیو به فرمت WebM برای استیکر ویدیویی"""
+    if not _check_ffmpeg():
+        raise Exception("FFmpeg نصب نیست. لطفاً FFmpeg را نصب کنید:\n- Windows: https://ffmpeg.org/download.html\n- Ubuntu: sudo apt install ffmpeg\n- CentOS: sudo yum install ffmpeg")
+    
     with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as input_file:
         input_file.write(video_bytes)
         input_path = input_file.name
@@ -348,7 +358,7 @@ def process_video_to_webm(video_bytes: bytes, max_duration: int = 3) -> bytes:
                 webm_data = f.read()
             return webm_data
         else:
-            raise Exception(f"FFmpeg error: {result.stderr}")
+            raise Exception(f"خطا در تبدیل ویدیو: {result.stderr}")
     
     finally:
         # پاک کردن فایل‌های موقت
@@ -362,6 +372,9 @@ def process_video_to_webm(video_bytes: bytes, max_duration: int = 3) -> bytes:
 
 def add_text_to_video(video_bytes: bytes, text: str, position: str, font_key: str, color_hex: str, size_key: str) -> bytes:
     """اضافه کردن متن به ویدیو"""
+    if not _check_ffmpeg():
+        raise Exception("FFmpeg نصب نیست. لطفاً FFmpeg را نصب کنید:\n- Windows: https://ffmpeg.org/download.html\n- Ubuntu: sudo apt install ffmpeg\n- CentOS: sudo yum install ffmpeg")
+    
     with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as input_file:
         input_file.write(video_bytes)
         input_path = input_file.name
@@ -388,11 +401,13 @@ def add_text_to_video(video_bytes: bytes, text: str, position: str, font_key: st
         
         # آماده‌سازی متن فارسی
         prepared_text = _prepare_text(text)
+        # escape کردن کاراکترهای خاص برای ffmpeg
+        prepared_text = prepared_text.replace("'", "\\'").replace(":", "\\:")
         
         # استفاده از ffmpeg برای اضافه کردن متن
         cmd = [
             'ffmpeg', '-i', input_path,
-            '-vf', f"drawtext=text='{prepared_text}':fontsize={font_size}:fontcolor={r}/{g}/{b}:x=(w-text_w)/2:y={y_pos}:box=1:boxcolor=black@0.5:boxborderw=5",
+            '-vf', f"drawtext=text='{prepared_text}':fontsize={font_size}:fontcolor=white:x=(w-text_w)/2:y={y_pos}:box=1:boxcolor=black@0.5:boxborderw=5",
             '-c:a', 'copy',
             '-y', output_path
         ]
@@ -404,7 +419,7 @@ def add_text_to_video(video_bytes: bytes, text: str, position: str, font_key: st
                 output_data = f.read()
             return output_data
         else:
-            raise Exception(f"FFmpeg error: {result.stderr}")
+            raise Exception(f"خطا در اضافه کردن متن: {result.stderr}")
     
     finally:
         try:
