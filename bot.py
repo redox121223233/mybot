@@ -315,7 +315,7 @@ def _check_ffmpeg() -> bool:
     except FileNotFoundError:
         return False
 
-def process_video_to_webm(video_bytes: bytes, max_duration: int = 3) -> bytes:
+def process_video_to_webm(video_bytes: bytes, max_duration: int = 10) -> bytes:
     """تبدیل ویدیو به فرمت WebM برای استیکر ویدیویی تلگرام"""
     if not _check_ffmpeg():
         raise Exception("FFmpeg نصب نیست. لطفاً FFmpeg را نصب کنید:\n- Windows: https://ffmpeg.org/download.html\n- Ubuntu: sudo apt install ffmpeg\n- CentOS: sudo yum install ffmpeg")
@@ -365,7 +365,7 @@ def process_video_to_webm(video_bytes: bytes, max_duration: int = 3) -> bytes:
     raise Exception("تبدیل ویدیو ناموفق بود")
 
 def add_text_to_video(video_bytes: bytes, text: str, position: str, font_key: str, color_hex: str, size_key: str) -> bytes:
-    """اضافه کردن متن به ویدیو با فرمت مناسب برای تلگرام"""
+    """اضافه کردن متن به ویدیو با پشتیبانی کامل از فونت فارسی"""
     if not _check_ffmpeg():
         raise Exception("FFmpeg نصب نیست. لطفاً FFmpeg را نصب کنید:\n- Windows: https://ffmpeg.org/download.html\n- Ubuntu: sudo apt install ffmpeg\n- CentOS: sudo yum install ffmpeg")
     
@@ -375,6 +375,12 @@ def add_text_to_video(video_bytes: bytes, text: str, position: str, font_key: st
     
     with tempfile.NamedTemporaryFile(suffix='.webm', delete=False) as output_file:
         output_path = output_file.name
+    
+    # ایجاد فایل فونت موقت برای فارسی
+    font_path = resolve_font_path(font_key)
+    if not font_path or not os.path.exists(font_path):
+        # استفاده از فونت پیش‌فرض سیستم
+        font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"
     
     try:
         # تنظیم موقعیت متن
@@ -386,16 +392,16 @@ def add_text_to_video(video_bytes: bytes, text: str, position: str, font_key: st
             y_pos = "(h-text_h)/2"
         
         # تنظیم اندازه فونت
-        size_map = {"small": 32, "medium": 48, "large": 64}
-        font_size = size_map.get(size_key, 48)
+        size_map = {"small": 36, "medium": 52, "large": 68}
+        font_size = size_map.get(size_key, 52)
         
-        # آماده‌سازی متن فارسی - بدون escape اضافی
-        prepared_text = text.strip()
+        # آماده‌سازی متن فارسی
+        prepared_text = _prepare_text(text)
         
-        # استفاده از ffmpeg برای اضافه کردن متن
+        # استفاده از ffmpeg برای اضافه کردن متن با فونت فارسی
         cmd = [
             'ffmpeg', '-i', input_path,
-            '-vf', f"drawtext=text='{prepared_text}':fontsize={font_size}:fontcolor=white:x=(w-text_w)/2:y={y_pos}:box=1:boxcolor=black@0.7:boxborderw=8",
+            '-vf', f"drawtext=text='{prepared_text}':fontfile='{font_path}':fontsize={font_size}:fontcolor=white:x=(w-text_w)/2:y={y_pos}:box=1:boxcolor=black@0.7:boxborderw=10",
             '-c:v', 'libvpx-vp9',
             '-crf', '30',
             '-b:v', '400k',
@@ -859,7 +865,7 @@ async def on_ai_callbacks(cb: CallbackQuery):
             await cb.message.answer(f"متن استیکر تصویری رو بفرست ✍️")
         elif value == "video":
             a["video_mode"] = True
-            await cb.message.answer("ویدیو رو ارسال کن (حداکثر ۳ ثانیه) 🎬")
+            await cb.message.answer("ویدیو رو ارسال کن (حداکثر ۱۰ ثانیه) 🎬")
         return await cb.answer("انتخاب شد")
 
     if action == "pos":
