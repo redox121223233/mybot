@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Bot Configuration
-BOT_TOKEN = os.getenv('BOT_TOKEN', 'YOUR_BOT_TOKEN_HERE')
+BOT_TOKEN = os.getenv('BOT_TOKEN', '8324626018:AAEiEd_zcpuw10s1nIWr5bryj1yyZDX0yl0')
 ADMIN_ID = 6053579919
 REQUIRED_CHANNEL = '@redoxbot_sticker'
 SUPPORT_USERNAME = '@onedaytoalive'
@@ -55,3 +55,4 @@ FONTS_DIR = 'fonts'
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(TEMP_DIR, exist_ok=True)
 os.makedirs(FONTS_DIR, exist_ok=True)
+
