@@ -29,7 +29,7 @@ jobs:
         run: "requirements.txt"
 
       - name: Build
-        run: "python.py"
+        run: "bot.py"
 
       - name: Publish the script to Bunny
         uses: "BunnyWay/actions/deploy-script@main"
