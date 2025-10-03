@@ -55,4 +55,9 @@ FONTS_DIR = 'fonts'
 os.makedirs(DATA_DIR, exist_ok=True)
 os.makedirs(TEMP_DIR, exist_ok=True)
 os.makedirs(FONTS_DIR, exist_ok=True)
+name: Deploy Script to Bunny Edge Scripting
+  uses: BunnyWay/actions/deploy-script@main
+  with:
+    script_id: 46360
+    file: "config.py"
 
