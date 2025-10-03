@@ -29,7 +29,8 @@ SUPPORT_USERNAME = "@onedaytoalive"
 ADMIN_ID = 6053579919
 
 MAINTENANCE = False  # حالت نگهداری بخش AI
-DAILY_LIMIT = 5      # سهمیه روزانه AI (ادمین نامحدود)
+DAILY_LIMIT = 3      # سهمیه روزانه AI (ادمین نامحدود)
+SIMPLE_DAILY_LIMIT = 3  # سهمیه روزانه استیکر ساده (ادمین نامحدود)
 BOT_USERNAME = ""    # بعداً در main پر می‌شود
 
 # ============ حافظه ساده (in-memory) ============
@@ -48,12 +49,19 @@ def _reset_daily_if_needed(u: Dict[str, Any]):
     if day_start is None or day_start < today:
         u["day_start"] = today
         u["ai_used"] = 0
+        u["simple_used"] = 0
 
 def _quota_left(u: Dict[str, Any], is_admin: bool) -> int:
     if is_admin:
         return 999999
     _reset_daily_if_needed(u)
     return max(0, DAILY_LIMIT - int(u.get("ai_used", 0)))
+
+def _simple_quota_left(u: Dict[str, Any], is_admin: bool) -> int:
+    if is_admin:
+        return 999999
+    _reset_daily_if_needed(u)
+    return max(0, SIMPLE_DAILY_LIMIT - int(u.get("simple_used", 0)))
 
 def _seconds_to_reset(u: Dict[str, Any]) -> int:
     _reset_daily_if_needed(u)
@@ -74,7 +82,7 @@ def _fmt_eta(secs: int) -> str:
 
 def user(uid: int) -> Dict[str, Any]:
     if uid not in USERS:
-        USERS[uid] = {"ai_used": 0, "vote": None, "day_start": _today_start_ts(), "pack": None}
+        USERS[uid] = {"ai_used": 0, "simple_used": 0, "vote": None, "day_start": _today_start_ts(), "pack": None}
     _reset_daily_if_needed(USERS[uid])
     return USERS[uid]
 
@@ -160,12 +168,12 @@ CANVAS = (512, 512)
 def _prepare_text(text: str) -> str:
     if not text:
         return ""
-    
-    # فقط از arabic_reshaper استفاده کن تا حروف متصل شوند
-    # بدون bidi تا مشکل ایجاد نشود
+
+    # استفاده از arabic_reshaper برای اتصال حروف و bidi برای راست‌چین کردن
     reshaped_text = arabic_reshaper.reshape(text.strip())
-    
-    return reshaped_text
+    bidi_text = get_display(reshaped_text)
+
+    return bidi_text
 
 def _parse_hex(hx: str) -> Tuple[int, int, int, int]:
     hx = (hx or "#ffffff").strip().lstrip("#")
@@ -548,7 +556,7 @@ def main_menu_kb(is_admin: bool = False):
     kb.button(text="استیکر هوش مصنوعی 🤖", callback_data="menu:ai")
     kb.button(text="سهمیه امروز ⏳", callback_data="menu:quota")
     kb.button(text="راهنما ℹ️", callback_data="menu:help")
-    kb.button(text="اشتراک / نظرسنجی 📊", callback_data="menu:sub")
+    kb.button(text="اشتراک ویژه 💎", callback_data="menu:sub")
     kb.button(text="پشتیبانی 🛟", callback_data="menu:support")
     if is_admin:
         kb.button(text="پنل ادمین 🛠", callback_data="menu:admin")
@@ -685,8 +693,8 @@ async def on_help(cb: CallbackQuery):
         "راهنما ℹ️\n"
         "• استیکر ساده 🪄: متن بده؛ پس‌زمینه را انتخاب کن (شفاف/پیش‌فرض/عکس)، پیش‌نمایش بگیر و تایید کن. بعد از تایید می‌تونی به پک خودت اضافه کنی.\n"
         "• استیکر هوش مصنوعی 🤖: متن بده؛ موقعیت، فونت، رنگ، اندازه و پس‌زمینه را انتخاب کن؛ پیش‌نمایش و تایید. بعد از تایید می‌تونی به پک اضافه کنی.\n"
-        "• سهمیه امروز ⏳: تعداد باقی‌مانده امروز و زمان تمدید سهمیه AI را می‌بینی.\n"
-        "• اشتراک / نظرسنجی 📊: رأی بده که اشتراک اضافه شود یا نه.\n"
+        "• سهمیه امروز ⏳: تعداد باقی‌مانده امروز و زمان تمدید سهمیه را می‌بینی.\n"
+        "• اشتراک ویژه 💎: مشاهده بسته‌های اشتراک و امکانات ویژه.\n"
         "• پشتیبانی 🛟: ارتباط با پشتیبانی.\n"
         "• نکته پک: قبل از ساخت اولین استیکر، عنوان و نام پک را وارد کن. نام باید انگلیسی باشد؛ آخرش خودکار به شکل _by_نام‌بات تنظیم می‌شود."
     )
@@ -709,32 +717,37 @@ async def on_quota(cb: CallbackQuery):
 async def on_sub(cb: CallbackQuery):
     if not await ensure_membership(cb):
         return
-    u = user(cb.from_user.id)
-    yes = sum(1 for v in USERS.values() if v.get("vote") == "yes")
-    no = sum(1 for v in USERS.values() if v.get("vote") == "no")
+
+    subscription_text = (
+        "بسته‌های اشتراک بربات \n\n"
+        "📍 اشتراک یک ماهه: ۲۰٬۰۰۰ تومان\n"
+        "📍 اشتراک دو ماهه: ۴۰٬۰۰۰ تومان\n"
+        "📍 اشتراک سه ماهه: ۴۵٬۰۰۰ تومان\n\n"
+        "✨ امکانات:\n"
+        "■ تبدیل استیکر ویدیویی به گیف 🏞\n"
+        "■ تبدیل گیف به استیکر ویدیویی (غیر قابل ذخیره) 🎥\n"
+        "■ تبدیل عکس به استیکر معمولی (غیر قابل ذخیره) 🖼\n"
+        "■ تبدیل استیکر به عکس و فایل PNG 📂\n"
+        "■ تبدیل فایل PNG به عکس و استیکر 🌃\n"
+        "■ تبدیل فایل ویدیویی 🗂 به ویدیو ⏯ (مناسب پخش آنلاین)\n"
+        "■ تبدیل ویدیو مسیج تلگرام به ویدیوی معمولی 🎥\n\n"
+        "برای خرید اشتراک به پشتیبانی پیام بدهید: " + SUPPORT_USERNAME
+    )
+
     kb = InlineKeyboardBuilder()
-    kb.button(text="بله ✅", callback_data="vote:yes")
-    kb.button(text="خیر ❌", callback_data="vote:no")
+    kb.button(text="خرید اشتراک 💳", callback_data="sub:buy")
     kb.button(text="بازگشت ⬅️", callback_data="menu:home")
-    kb.adjust(2, 1)
-    yours = "بله" if u.get("vote") == "yes" else ("خیر" if u.get("vote") == "no" else "ثبت نشده")
-    await cb.message.answer(f"اشتراک بیاریم؟\nرأی شما: {yours}\nآمار فعلی: بله {yes} | خیر {no}", reply_markup=kb.as_markup())
+    kb.adjust(1, 1)
+
+    await cb.message.answer(subscription_text, reply_markup=kb.as_markup())
     await cb.answer()
 
-@router.callback_query(F.data.func(lambda d: d and d.startswith("vote:")))
-async def on_vote(cb: CallbackQuery):
+@router.callback_query(F.data == "sub:buy")
+async def on_sub_buy(cb: CallbackQuery):
     if not await ensure_membership(cb):
         return
-    choice = cb.data.split(":", 1)[1]
-    if choice in ("yes", "no"):
-        user(cb.from_user.id)["vote"] = choice
-        await cb.answer("رأی ثبت شد ✅")
-    else:
-        await cb.answer("نامعتبر")
-    yes = sum(1 for v in USERS.values() if v.get("vote") == "yes")
-    no = sum(1 for v in USERS.values() if v.get("vote") == "no")
-    txt = f"اشتراک بیاریم؟\nرأی شما: {'بله' if choice == 'yes' else 'خیر'}\nآمار فعلی: بله {yes} | خیر {no}"
-    await cb.message.edit_text(txt, reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+    await cb.message.answer(f"برای خرید اشتراک، به پشتیبانی پیام بدهید: {SUPPORT_USERNAME}\n\nپس از پرداخت و تایید، اشتراک شما فعال می‌شود.")
+    await cb.answer()
 
 # ----- استیکر ساده -----
 @router.callback_query(F.data == "menu:simple")
@@ -743,10 +756,21 @@ async def on_simple(cb: CallbackQuery):
         return
     if await need_pack_setup(cb.from_user.id):
         return await start_pack_wizard(cb, cb.from_user.id)
+
+    u = user(cb.from_user.id)
+    is_admin = (cb.from_user.id == ADMIN_ID)
+    left = _simple_quota_left(u, is_admin)
+    eta = _fmt_eta(_seconds_to_reset(u))
+
+    if left <= 0 and not is_admin:
+        await cb.message.answer(f"سهمیه امروز تمام شد. تمدید در: {eta}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+        await cb.answer()
+        return
+
     s = sess(cb.from_user.id)
     s["mode"] = "simple"
     s["simple"] = {"state": "ASK_TEXT", "text": None, "bg_mode": None, "bg_photo": None}
-    await cb.message.answer("متن استیکر ساده رو بفرست ✍️", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+    await cb.message.answer(f"متن استیکر ساده رو بفرست ✍️\n(سهمیه امروز: {'نامحدود' if is_admin else f'{left} از {SIMPLE_DAILY_LIMIT}'} | تمدید: {eta})", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
     await cb.answer()
 
 @router.callback_query(F.data.func(lambda d: d and d.startswith("simple:bg:")))
@@ -775,6 +799,12 @@ async def on_simple_bg(cb: CallbackQuery):
 
 @router.callback_query(F.data == "simple:confirm")
 async def on_simple_confirm(cb: CallbackQuery):
+    u = user(cb.from_user.id)
+    is_admin = (cb.from_user.id == ADMIN_ID)
+
+    if not is_admin:
+        u["simple_used"] = int(u.get("simple_used", 0)) + 1
+
     st = sess(cb.from_user.id)["simple"]
     webp = render_image(text=st["text"], position="center", font_key="Default", color_hex="#FFFFFF",
                         size_key="medium", bg_mode=st.get("bg_mode") or "transparent", bg_photo=st.get("bg_photo"), as_webp=True)
