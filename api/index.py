@@ -4,14 +4,14 @@ import json
 import asyncio
 from typing import Dict, Any
 
-# Add parent directory to path to import bot module
-sys.path.append('..')
-
-from bot import process_update, set_webhook_url
-
 # Environment variables
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8324626018:AAEiEd_zcpuw10s1nIWr5bryj1yyZDX0yl0")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL", "https://mybot-zx31.vercel.app")
+
+# Add parent directory to path to import bot module
+sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
+
+from bot import process_update, set_webhook_url
 
 async def setup_webhook():
     """Setup webhook on startup"""
@@ -26,6 +26,8 @@ def handler(event: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
     Vercel serverless function handler for webhook
     """
     try:
+        print(f"📡 Received event: {event.get('httpMethod', 'UNKNOWN')} {event.get('path', '/')}")
+        
         # Handle different event types
         if event.get('httpMethod') == 'POST':
             # Webhook endpoint
@@ -62,7 +64,8 @@ def handler(event: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
                 'body': json.dumps({
                     'status': 'healthy',
                     'bot': 'running',
-                    'webhook': WEBHOOK_URL
+                    'webhook': WEBHOOK_URL,
+                    'timestamp': str(asyncio.get_event_loop().time())
                 })
             }
         
@@ -77,12 +80,14 @@ def handler(event: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
     
     except Exception as e:
         print(f"❌ Handler error: {e}")
+        import traceback
+        print(f"Full traceback: {traceback.format_exc()}")
         return {
             'statusCode': 500,
             'headers': {
                 'Content-Type': 'application/json'
             },
-            'body': json.dumps({'error': str(e)})
+            'body': json.dumps({'error': str(e), 'traceback': traceback.format_exc()})
         }
 
 # Setup webhook on cold start

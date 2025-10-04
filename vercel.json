@@ -2,13 +2,23 @@
   "version": 2,
   "functions": {
     "api/index.py": {
-      "runtime": "python3.9"
+      "runtime": "python3.9",
+      "maxDuration": 30
     }
   },
   "env": {
-    "BOT_TOKEN": "8324626018:AAEiEd_zcpuw10s1nIWr5bryj1yyZDX0yl0"
+    "BOT_TOKEN": "8324626018:AAEiEd_zcpuw10s1nIWr5bryj1yyZDX0yl0",
+    "WEBHOOK_URL": "https://mybot-zx31.vercel.app"
   },
   "routes": [
+    {
+      "src": "/webhook",
+      "dest": "api/index.py"
+    },
+    {
+      "src": "/health",
+      "dest": "api/index.py"
+    },
     {
       "src": "/(.*)",
       "dest": "api/index.py"
