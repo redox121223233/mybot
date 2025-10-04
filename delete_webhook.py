@@ -1,30 +1,27 @@
 #!/usr/bin/env python3
+"""
+اسکریپت حذف webhook برای ربات تلگرام
+"""
+
 import asyncio
 from aiogram import Bot
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
 import os
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+BOT_TOKEN = "8324626018:AAEiEd_zcpuw10s1nIWr5bryj1yyZDX0yl0"
 
 async def delete_webhook():
-    if not BOT_TOKEN:
-        print("BOT_TOKEN not found!")
-        return
-
-    bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-
+    """حذف webhook"""
     try:
-        result = await bot.delete_webhook(drop_pending_updates=True)
-        print(f"Webhook deleted successfully: {result}")
-
-        # Check webhook info
-        info = await bot.get_webhook_info()
-        print(f"Current webhook info: {info}")
+        bot = Bot(token=BOT_TOKEN)
+        
+        print("🗑️ حذف webhook...")
+        await bot.delete_webhook(drop_pending_updates=True)
+        
+        print("✅ Webhook با موفقیت حذف شد!")
+        print("🔄 ربات به حالت polling برگشته است!")
+        
     except Exception as e:
-        print(f"Error: {e}")
-    finally:
-        await bot.session.close()
+        print(f"❌ خطا در حذف webhook: {e}")
 
 if __name__ == "__main__":
     asyncio.run(delete_webhook())
