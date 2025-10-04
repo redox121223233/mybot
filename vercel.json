@@ -2,30 +2,19 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/*.py",
+      "src": "bot.py",
       "use": "@vercel/python"
     }
   ],
   "routes": [
     {
-      "src": "/webhook/(.*)",
-      "dest": "/api/webhook"
-    },
-    {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
-    },
-    {
       "src": "/(.*)",
-      "dest": "/api/index"
+      "dest": "bot.py"
     }
   ],
   "env": {
-    "PYTHONPATH": "/var/task"
-  },
-  "functions": {
-    "api/*.py": {
-      "maxDuration": 30
-    }
+    "BOT_TOKEN": "@bot_token",
+    "REQUIRED_CHANNEL": "@required_channel",
+    "GITHUB_REPO": "@github_repo"
   }
 }
