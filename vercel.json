@@ -13,8 +13,9 @@
     }
   ],
   "env": {
-    "BOT_TOKEN": "@bot_token",
-    "REQUIRED_CHANNEL": "@required_channel",
-    "GITHUB_REPO": "@github_repo"
+    "BOT_TOKEN": "8324626018:AAEiEd_zcpuw10s1nIWr5bryj1yyZDX0yl0",
+    "CHANNEL_USERNAME": "@redoxbot_sticker",
+    "GITHUB_REPO": "https://github.com/redox121223233/mybot.git"
   }
 }
+
