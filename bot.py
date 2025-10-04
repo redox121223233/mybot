@@ -1363,22 +1363,35 @@ async def set_commands(bot: Bot):
         BotCommand(command="start", description="شروع"),
     ])
 
+bot_instance = None
+dp_instance = None
+
+async def setup_bot():
+    global BOT_USERNAME, bot_instance, dp_instance
+    if bot_instance is None:
+        bot_instance = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+        me = await bot_instance.get_me()
+        BOT_USERNAME = me.username or "mybot"
+        dp_instance = Dispatcher()
+        dp_instance.include_router(router)
+        await set_commands(bot_instance)
+    return bot_instance, dp_instance
+
+async def process_update(update_data: dict):
+    bot, dp = await setup_bot()
+    from aiogram.types import Update
+    update = Update(**update_data)
+    await dp.feed_update(bot, update)
+
+async def set_webhook_url(webhook_url: str):
+    bot, _ = await setup_bot()
+    await bot.delete_webhook(drop_pending_updates=True)
+    await bot.set_webhook(url=webhook_url)
+    print(f"Webhook set to: {webhook_url}")
+
 async def main():
-    global BOT_USERNAME
-    bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-    me = await bot.get_me()
-    BOT_USERNAME = me.username or "mybot"
-    dp = Dispatcher()
-    dp.include_router(router)
-    await set_commands(bot)
-
-    try:
-        await bot.delete_webhook(drop_pending_updates=True)
-    except Exception as e:
-        print("deleteWebhook failed (ignored):", e)
-
-    print("Bot is running. Press Ctrl+C to stop.")
-    await dp.start_polling(bot)
+    await setup_bot()
+    print("Bot setup complete. Waiting for webhook...")
 
 if __name__ == "__main__":
     asyncio.run(main())
