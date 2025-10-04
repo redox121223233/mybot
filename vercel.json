@@ -11,11 +11,5 @@
       "src": "/(.*)",
       "dest": "bot.py"
     }
-  ],
-  "env": {
-    "BOT_TOKEN": "8324626018:AAEiEd_zcpuw10s1nIWr5bryj1yyZDX0yl0",
-    "CHANNEL_USERNAME": "@redoxbot_sticker",
-    "GITHUB_REPO": "https://github.com/redox121223233/mybot.git"
-  }
-}
+  ]
 
