@@ -1,7 +1,8 @@
 import os
 import sys
 import json
-import asyncio
+
+from async_loop import run_sync
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
@@ -46,7 +47,7 @@ def handler(request):
 
         if method == 'POST':
             # Handle webhook
-            result = asyncio.run(handle_request(flask_request if hasattr(flask_request, 'method') else request))
+            result = run_sync(handle_request(flask_request if hasattr(flask_request, 'method') else request))
             return jsonify(result)
         else:
             # Health check
