@@ -2,25 +2,36 @@
 import os
 import sys
 import json
+import threading
+import traceback
 from http.server import BaseHTTPRequestHandler
-from concurrent.futures import ThreadPoolExecutor
 import asyncio
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-# Thread pool for background processing
-executor = ThreadPoolExecutor(max_workers=2)
+# Persistent event loop running in dedicated thread
+_event_loop = asyncio.new_event_loop()
 
-def process_update_sync(update_data):
-    """Process update in background thread"""
+def _loop_runner(loop: asyncio.AbstractEventLoop):
+    asyncio.set_event_loop(loop)
+    loop.run_forever()
+
+_thread = threading.Thread(target=_loop_runner, args=(_event_loop,), daemon=True)
+_thread.start()
+
+def _handle_future_result(future: asyncio.Future):
     try:
-        from bot import process_update
-        asyncio.run(process_update(update_data))
-    except Exception as e:
-        print(f"Background processing error: {e}")
-        import traceback
+        future.result()
+    except Exception as exc:
+        print(f"Background processing error: {exc}")
         traceback.print_exc()
+
+def submit_update(update_data):
+    """Schedule update processing on persistent event loop"""
+    from bot import process_update
+    future = asyncio.run_coroutine_threadsafe(process_update(update_data), _event_loop)
+    future.add_done_callback(_handle_future_result)
 
 class handler(BaseHTTPRequestHandler):
     """Vercel serverless handler - Fast response"""
@@ -49,8 +60,8 @@ class handler(BaseHTTPRequestHandler):
                 'update_id': update_data.get('update_id')
             }).encode())
 
-            # Process in background (don't wait)
-            executor.submit(process_update_sync, update_data)
+            # Process asynchronously without blocking response
+            submit_update(update_data)
 
         except Exception as e:
             print(f"Webhook error: {e}")
