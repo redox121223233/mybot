@@ -16,16 +16,6 @@
       "schedule": "*/5 * * * *"
     }
   ],
-  "builds": [
-    {
-      "src": "api/webhook.py",
-      "use": "@vercel/python"
-    },
-    {
-      "src": "api/cron.py",
-      "use": "@vercel/python"
-    }
-  ],
   "routes": [
     {
       "src": "/api/cron",
