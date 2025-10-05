@@ -20,7 +20,7 @@ def _loop_runner(loop: asyncio.AbstractEventLoop):
 _thread = threading.Thread(target=_loop_runner, args=(_event_loop,), daemon=True)
 _thread.start()
 
-def _handle_future_result(future: asyncio.Future):
+def _handle_future_result(future):
     try:
         future.result()
     except Exception as exc:
