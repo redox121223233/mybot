@@ -2,26 +2,26 @@
   "version": 2,
   "env": {
     "BOT_TOKEN": "8324626018:AAEiEd_zcpuw10s1nIWr5bryj1yyZDX0yl0",
-    "WEBHOOK_URL": "https://mybot-zx31.vercel.app"
+    "WEBHOOK_URL": "https://mybot-zx31.vercel.app/webhook"
   },
   "builds": [
     {
-      "src": "api/websgi.py",
+      "src": "api/index.py",
       "use": "@vercel/python"
     }
   ],
   "routes": [
     {
       "src": "/webhook",
-      "dest": "api/websgi.py"
+      "dest": "api/index.py"
     },
     {
       "src": "/health",
-      "dest": "api/websgi.py"
+      "dest": "api/index.py"
     },
     {
-      "src": "/(.*)",
-      "dest": "api/websgi.py"
+      "src": "/",
+      "dest": "api/index.py"
     }
   ]
 }
