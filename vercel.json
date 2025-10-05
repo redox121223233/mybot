@@ -4,13 +4,33 @@
     "BOT_TOKEN": "8324626018:AAEiEd_zcpuw10s1nIWr5bryj1yyZDX0yl0",
     "WEBHOOK_URL": "https://mybot-zx31.vercel.app/webhook"
   },
+  "functions": {
+    "api/webhook.py": {
+      "maxDuration": 60,
+      "memory": 1024
+    }
+  },
+  "crons": [
+    {
+      "path": "/api/cron",
+      "schedule": "*/5 * * * *"
+    }
+  ],
   "builds": [
     {
       "src": "api/webhook.py",
       "use": "@vercel/python"
+    },
+    {
+      "src": "api/cron.py",
+      "use": "@vercel/python"
     }
   ],
   "routes": [
+    {
+      "src": "/api/cron",
+      "dest": "api/cron.py"
+    },
     {
       "src": "/(.*)",
       "dest": "api/webhook.py"
