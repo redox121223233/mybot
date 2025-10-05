@@ -2,25 +2,18 @@
 import os
 import sys
 import json
+import traceback
 from http.server import BaseHTTPRequestHandler
-from concurrent.futures import ThreadPoolExecutor
-import asyncio
+
+from async_loop import submit
 
 # Add parent directory to path
 sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
-# Thread pool for background processing
-executor = ThreadPoolExecutor(max_workers=2)
-
-def process_update_sync(update_data):
-    """Process update in background thread"""
-    try:
-        from bot import process_update
-        asyncio.run(process_update(update_data))
-    except Exception as e:
-        print(f"Background processing error: {e}")
-        import traceback
-        traceback.print_exc()
+def submit_update(update_data):
+    """Schedule update processing on persistent event loop"""
+    from bot import process_update
+    submit(process_update(update_data))
 
 class handler(BaseHTTPRequestHandler):
     """Vercel serverless handler - Fast response"""
@@ -49,11 +42,12 @@ class handler(BaseHTTPRequestHandler):
                 'update_id': update_data.get('update_id')
             }).encode())
 
-            # Process in background (don't wait)
-            executor.submit(process_update_sync, update_data)
+            # Process asynchronously without blocking response
+            submit_update(update_data)
 
         except Exception as e:
             print(f"Webhook error: {e}")
+            traceback.print_exc()
             self.send_response(200)
             self.send_header('Content-Type', 'application/json')
             self.end_headers()

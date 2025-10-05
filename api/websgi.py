@@ -1,7 +1,9 @@
 import os
+import os
 import sys
 import json
-from typing import Dict, Any
+
+from async_loop import run_sync
 
 # Environment variables
 BOT_TOKEN = os.getenv("BOT_TOKEN", "8324626018:AAEiEd_zcpuw10s1nIWr5bryj1yyZDX0yl0")
@@ -38,8 +40,7 @@ def app(environ, start_response):
                 print(f"📨 Processing update: {update_data.get('update_id', 'unknown')}")
                 
                 # Process update (synchronously for WSGI)
-                import asyncio
-                asyncio.run(process_update(update_data))
+                run_sync(process_update(update_data))
                 
                 response = {'status': 'ok', 'update_id': update_data.get('update_id')}
             else:
