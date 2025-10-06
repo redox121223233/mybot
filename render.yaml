@@ -1,0 +1,16 @@
+services:
+  - type: web
+    name: telegram-sticker-bot
+    env: docker
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: ADMIN_ID
+        sync: false
+      - key: CHANNEL_ID
+        sync: false
+      - key: SUPPORT_USERNAME
+        sync: false
+    autoDeploy: true
