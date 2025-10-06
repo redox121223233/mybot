@@ -53,15 +53,28 @@ def process_update_blocking(update_data):
     try:
         from bot import process_update
 
-        # Create fresh event loop for this request
-        loop = get_or_create_event_loop()
+        # Create completely fresh event loop for each request
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
 
-        # Run the update processing
         try:
+            # Run the update processing
             loop.run_until_complete(process_update(update_data))
         finally:
-            # Don't close - reuse for next request
-            pass
+            # Keep loop open for pending tasks
+            try:
+                # Give pending tasks a chance to complete
+                pending = asyncio.all_tasks(loop)
+                if pending:
+                    loop.run_until_complete(asyncio.gather(*pending, return_exceptions=True))
+            except:
+                pass
+
+            # Now close the loop
+            try:
+                loop.close()
+            except:
+                pass
 
     except Exception as e:
         print(f"❌ Error processing update: {e}")
@@ -86,7 +99,14 @@ class handler(BaseHTTPRequestHandler):
             body = self.rfile.read(content_length)
             update_data = json.loads(body.decode('utf-8'))
 
-            print(f"📨 Received update {update_data.get('update_id')}")
+            update_id = update_data.get('update_id')
+            update_type = 'message' if 'message' in update_data else 'callback_query' if 'callback_query' in update_data else 'other'
+
+            print(f"📨 Update {update_id} - Type: {update_type}")
+
+            if update_type == 'callback_query':
+                cb_data = update_data.get('callback_query', {}).get('data', 'N/A')
+                print(f"🔘 Callback data: {cb_data}")
 
             # Process update (blocking)
             process_update_blocking(update_data)
