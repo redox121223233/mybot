@@ -1,9 +1,0 @@
-{
-  "example_user_456": {
-    "expires_at": 1725984000,
-    "created_at": 1694448000,
-    "days": 30,
-    "admin_id": 6053579919,
-    "plan": "1month"
-  }
-}
