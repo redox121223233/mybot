@@ -7,9 +7,10 @@ import asyncio
 import os
 from api.bot_functions import set_webhook_url
 
-# تنظیمات
-WEBHOOK_URL = "https://mybot-xyz.vercel.app/webhook"
-BOT_TOKEN = os.getenv("BOT_TOKEN", "8324626018:AAEiEd_zcpuw10s1nIWr5bryj1yyZDX0yl0")
+# تنظیمات - URL را با مقدار واقعی جایگزین کنید
+# بعد از deployment در Vercel، URL را به صورت زیر تنظیم کنید:
+WEBHOOK_URL = "https://mybot-redox.vercel.app/webhook"
+BOT_TOKEN = "8324626018:AAEiEd_zcpuw10s1nIWr5bryj1yyZDX0yl0"
 
 async def main():
     """تنظیم webhook"""

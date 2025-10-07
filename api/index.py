@@ -8,12 +8,17 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 
 # Import bot functions
 from api.bot_functions import process_update
+from api.cold_start import handle_cold_start
 
 def handler(event: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
     """
     Vercel serverless function handler - Main endpoint
+    بدون استفاده از cron job - فقط در زمان درخواست فعال می‌شود
     """
     try:
+        # مدیریت کولد استارت بدون cron job
+        handle_cold_start()
+        
         method = event.get('httpMethod', 'GET')
         path = event.get('path', '/')
         
