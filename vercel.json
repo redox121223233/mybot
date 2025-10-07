@@ -8,12 +8,12 @@
   ],
   "routes": [
     {
-      "src": "/webhook/(.*)",
+      "src": "/webhook",
       "dest": "/api/webhook"
     },
     {
-      "src": "/api/(.*)",
-      "dest": "/api/$1"
+      "src": "/health",
+      "dest": "/api/index"
     },
     {
       "src": "/(.*)",
@@ -21,11 +21,7 @@
     }
   ],
   "env": {
-    "PYTHONPATH": "/var/task"
-  },
-  "functions": {
-    "api/*.py": {
-      "maxDuration": 30
-    }
+    "BOT_TOKEN": "@bot_token",
+    "WEBHOOK_URL": "@webhook_url"
   }
 }
