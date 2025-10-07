@@ -9,7 +9,7 @@ from aiogram.types import Update
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
-BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8324626018:AAEiEd_zcpuw10s1nIWr5bryj1yyZDX0yl0").strip()
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN باید در environment variables تنظیم شود.")
 
