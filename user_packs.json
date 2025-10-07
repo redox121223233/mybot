@@ -1,0 +1,24 @@
+{
+  "example_user_123": [
+    {
+      "name": "my_pack_123_by_MyBot",
+      "title": "پک من",
+      "created_at": 1694448000,
+      "sticker_count": 5
+    },
+    {
+      "name": "funny_pack_123_by_MyBot", 
+      "title": "پک خنده‌دار",
+      "created_at": 1694451600,
+      "sticker_count": 3
+    }
+  ],
+  "example_user_456": [
+    {
+      "name": "work_pack_456_by_MyBot",
+      "title": "پک کاری",
+      "created_at": 1694455200,
+      "sticker_count": 8
+    }
+  ]
+}
