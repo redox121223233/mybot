@@ -139,3 +139,4 @@ sudo journalctl -u telegram-bot -f
 - مطمئن شوید فونت‌های فارسی در پوشه `fonts/` قرار دارند
 - برای استیکر ویدیویی، FFmpeg باید نصب باشد
 - توکن ربات را از @BotFather دریافت کنید
+# Trigger deployment
