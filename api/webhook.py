@@ -9,26 +9,24 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(__file__)))
 # Import bot functions
 from api.bot_functions import process_update
 
-def handler(event: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
+def handler(request):
     """
     Vercel serverless function handler - Dedicated webhook endpoint
     """
     try:
-        if event.get('httpMethod') != 'POST':
+        if request.method != 'POST':
             return {
                 'statusCode': 405,
                 'headers': {'Content-Type': 'application/json'},
                 'body': json.dumps({'error': 'Method not allowed'})
             }
         
-        body = event.get('body', '{}')
-        if isinstance(body, str):
-            try:
-                update_data = json.loads(body)
-            except json.JSONDecodeError:
-                update_data = {}
-        else:
-            update_data = body
+        try:
+            update_data = request.get_json() or {}
+            print(f"Webhook received: {update_data}")
+        except Exception as e:
+            print(f"JSON parse error: {e}")
+            update_data = {}
         
         import asyncio
         asyncio.run(process_update(update_data))
@@ -40,6 +38,7 @@ def handler(event: Dict[str, Any], context: Dict[str, Any]) -> Dict[str, Any]:
         }
     
     except Exception as e:
+        print(f"Webhook error: {e}")
         return {
             'statusCode': 200,  # Return 200 to prevent Telegram retries
             'headers': {'Content-Type': 'application/json'},
