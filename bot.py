@@ -125,12 +125,19 @@ def infer_from_text(text: str) -> Dict[str, str]:
 # ============ فونت‌های محلی ============
 FONT_DIR = os.path.join(os.path.dirname(__file__), "fonts")
 LOCAL_FONT_FILES = {
+    # فونت‌های فارسی
     "Vazirmatn": ["Vazirmatn-Regular.ttf", "Vazirmatn-Medium.ttf"],
     "NotoNaskh": ["NotoNaskhArabic-Regular.ttf", "NotoNaskhArabic-Medium.ttf"],
     "Sahel": ["Sahel.ttf", "Sahel-Bold.ttf"],
     "IRANSans": ["IRANSans.ttf", "IRANSansX-Regular.ttf"],
-    "Default": ["NotoNaskhArabic-Regular.ttf", "Vazirmatn-Regular.ttf", "Sahel.ttf"],
+    # فونت‌های انگلیسی
+    "Roboto": ["Roboto-Regular.ttf", "Roboto-Medium.ttf"],
+    "Default": ["Vazirmatn-Regular.ttf", "Roboto-Regular.ttf"],
 }
+
+# فونت‌های فارسی و انگلیسی
+PERSIAN_FONTS = ["Vazirmatn", "NotoNaskh", "Sahel", "IRANSans"]
+ENGLISH_FONTS = ["Roboto"]
 
 def _load_local_fonts() -> Dict[str, str]:
     found: Dict[str, str] = {}
@@ -149,25 +156,75 @@ def available_font_options() -> List[Tuple[str, str]]:
     keys = list(_LOCAL_FONTS.keys())
     return [(k, k) for k in keys[:8]] if keys else [("Default", "Default")]
 
-def resolve_font_path(font_key: Optional[str]) -> str:
+def resolve_font_path(font_key: Optional[str], text: str = "") -> str:
+    """انتخاب فونت مناسب بر اساس زبان متن"""
+    # اگر فونت مشخص شده و موجود است، از آن استفاده کن
     if font_key and font_key in _LOCAL_FONTS:
         return _LOCAL_FONTS[font_key]
+    
+    # اگر فونت مشخص نشده، بر اساس زبان متن انتخاب کن
+    if text:
+        lang = _detect_language(text)
+        if lang == "persian":
+            # اولویت با فونت‌های فارسی
+            for font_name in PERSIAN_FONTS:
+                if font_name in _LOCAL_FONTS:
+                    return _LOCAL_FONTS[font_name]
+        else:
+            # اولویت با فونت‌های انگلیسی
+            for font_name in ENGLISH_FONTS:
+                if font_name in _LOCAL_FONTS:
+                    return _LOCAL_FONTS[font_name]
+    
+    # در غیر این صورت، اولین فونت موجود را برگردان
     return next(iter(_LOCAL_FONTS.values()), "")
 
 # ============ رندر تصویر/استیکر ============
 CANVAS = (512, 512)
 
+def _detect_language(text: str) -> str:
+    """تشخیص زبان متن (فارسی یا انگلیسی)"""
+    if not text:
+        return "english"
+    
+    # شمارش کاراکترهای فارسی/عربی
+    persian_chars = 0
+    english_chars = 0
+    
+    for char in text:
+        # محدوده کاراکترهای فارسی/عربی در یونیکد
+        if '\u0600' <= char <= '\u06FF' or '\u0750' <= char <= '\u077F' or '\uFB50' <= char <= '\uFDFF' or '\uFE70' <= char <= '\uFEFF':
+            persian_chars += 1
+        # محدوده کاراکترهای انگلیسی
+        elif ('a' <= char.lower() <= 'z'):
+            english_chars += 1
+    
+    # اگر بیش از 30% کاراکترها فارسی باشند، متن فارسی است
+    total_chars = persian_chars + english_chars
+    if total_chars > 0 and persian_chars / total_chars > 0.3:
+        return "persian"
+    
+    return "english"
+
 def _prepare_text(text: str) -> str:
     if not text:
         return ""
     
-    # استفاده از arabic_reshaper برای اتصال حروف فارسی
-    reshaped_text = arabic_reshaper.reshape(text.strip())
+    # تشخیص زبان
+    lang = _detect_language(text)
     
-    # استفاده از bidi برای ترتیب صحیح راست به چپ
-    bidi_text = get_display(reshaped_text)
-    
-    return bidi_text
+    # فقط برای متن‌های فارسی از reshaper و bidi استفاده می‌کنیم
+    if lang == "persian":
+        # استفاده از arabic_reshaper برای اتصال حروف فارسی
+        reshaped_text = arabic_reshaper.reshape(text.strip())
+        
+        # استفاده از bidi برای ترتیب صحیح راست به چپ
+        bidi_text = get_display(reshaped_text)
+        
+        return bidi_text
+    else:
+        # برای متن انگلیسی فقط strip می‌کنیم
+        return text.strip()
 
 def _parse_hex(hx: str) -> Tuple[int, int, int, int]:
     hx = (hx or "#ffffff").strip().lstrip("#")
@@ -265,15 +322,18 @@ def render_image(text: str, position: str, font_key: str, color_hex: str, size_k
     size_map = {"small": 64, "medium": 96, "large": 128}
     base_size = size_map.get(size_key, 96)
 
-    font_path = resolve_font_path(font_key)
+    # آماده‌سازی متن
+    txt = _prepare_text(text)
+    
+    # انتخاب فونت مناسب بر اساس زبان متن
+    font_path = resolve_font_path(font_key, text)
     try:
         font = ImageFont.truetype(font_path, size=base_size) if font_path else ImageFont.load_default()
     except Exception:
         font = ImageFont.load_default()
 
-    txt = _prepare_text(text)
     if not font_path:
-        font_path = resolve_font_path("Default")
+        font_path = resolve_font_path("Default", text)
     final_size = fit_font_size(draw, txt, font_path, base_size, box_w, box_h)
     try:
         font = ImageFont.truetype(font_path, size=final_size) if font_path else ImageFont.load_default()
@@ -711,16 +771,67 @@ async def on_quota(cb: CallbackQuery):
 async def on_sub(cb: CallbackQuery):
     if not await ensure_membership(cb):
         return
+    
+    kb = InlineKeyboardBuilder()
+    kb.button(text="📊 نظرسنجی اشتراک", callback_data="sub:survey")
+    kb.button(text="💎 پلن‌های اشتراک", callback_data="sub:plans")
+    kb.button(text="بازگشت ⬅️", callback_data="menu:home")
+    kb.adjust(2, 1)
+    
+    text = """🎯 بخش اشتراک و نظرسنجی
+
+لطفاً یکی از گزینه‌های زیر را انتخاب کنید:
+
+📊 نظرسنجی: نظر خود را درباره اضافه شدن اشتراک ویژه ثبت کنید
+💎 پلن‌های اشتراک: مشاهده پلن‌های اشتراک و قیمت‌ها"""
+    
+    await cb.message.answer(text, reply_markup=kb.as_markup())
+    await cb.answer()
+
+@router.callback_query(F.data == "sub:survey")
+async def on_sub_survey(cb: CallbackQuery):
+    if not await ensure_membership(cb):
+        return
     u = user(cb.from_user.id)
     yes = sum(1 for v in USERS.values() if v.get("vote") == "yes")
     no = sum(1 for v in USERS.values() if v.get("vote") == "no")
     kb = InlineKeyboardBuilder()
     kb.button(text="بله ✅", callback_data="vote:yes")
     kb.button(text="خیر ❌", callback_data="vote:no")
-    kb.button(text="بازگشت ⬅️", callback_data="menu:home")
+    kb.button(text="بازگشت ⬅️", callback_data="menu:sub")
     kb.adjust(2, 1)
     yours = "بله" if u.get("vote") == "yes" else ("خیر" if u.get("vote") == "no" else "ثبت نشده")
     await cb.message.answer(f"اشتراک بیاریم؟\nرأی شما: {yours}\nآمار فعلی: بله {yes} | خیر {no}", reply_markup=kb.as_markup())
+    await cb.answer()
+
+@router.callback_query(F.data == "sub:plans")
+async def on_sub_plans(cb: CallbackQuery):
+    if not await ensure_membership(cb):
+        return
+    
+    kb = InlineKeyboardBuilder()
+    kb.button(text="💬 تماس با پشتیبانی", url=f"https://t.me/{SUPPORT_USERNAME.lstrip('@')}")
+    kb.button(text="بازگشت ⬅️", callback_data="menu:sub")
+    kb.adjust(1, 1)
+    
+    text = """💎 پلن‌های اشتراک ویژه
+
+با خرید اشتراک ویژه از امکانات زیر بهره‌مند شوید:
+✨ استفاده نامحدود از ربات
+🎨 دسترسی به تمام فونت‌ها و قالب‌ها
+🚀 سرعت بالاتر در ساخت استیکر
+🎯 پشتیبانی اختصاصی
+
+📋 پلن‌های موجود:
+
+🔹 اشتراک یک ماهه: ۲۰,۰۰۰ تومان
+🔹 اشتراک سه ماهه: ۳۰,۰۰۰ تومان (۵۰٪ تخفیف!)
+🔹 اشتراک شش ماهه: ۶۰,۰۰۰ تومان
+
+📞 برای خرید اشتراک با ایدی زیر در تماس باشید:
+👤 @onedaytoalive"""
+    
+    await cb.message.answer(text, reply_markup=kb.as_markup())
     await cb.answer()
 
 @router.callback_query(F.data.func(lambda d: d and d.startswith("vote:")))
@@ -736,7 +847,12 @@ async def on_vote(cb: CallbackQuery):
     yes = sum(1 for v in USERS.values() if v.get("vote") == "yes")
     no = sum(1 for v in USERS.values() if v.get("vote") == "no")
     txt = f"اشتراک بیاریم؟\nرأی شما: {'بله' if choice == 'yes' else 'خیر'}\nآمار فعلی: بله {yes} | خیر {no}"
-    await cb.message.edit_text(txt, reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+    
+    kb = InlineKeyboardBuilder()
+    kb.button(text="بازگشت ⬅️", callback_data="menu:sub")
+    kb.adjust(1)
+    
+    await cb.message.edit_text(txt, reply_markup=kb.as_markup())
 
 # ----- استیکر ساده -----
 @router.callback_query(F.data == "menu:simple")
