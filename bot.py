@@ -597,7 +597,7 @@ def main_menu_kb(is_admin: bool = False):
     kb.button(text="استیکر هوش مصنوعی 🤖", callback_data="menu:ai")
     kb.button(text="سهمیه امروز ⏳", callback_data="menu:quota")
     kb.button(text="راهنما ℹ️", callback_data="menu:help")
-    kb.button(text="اشتراک / نظرسنجی 📊", callback_data="menu:sub")
+    kb.button(text="پلن‌های اشتراک 💎", callback_data="menu:sub")
     kb.button(text="پشتیبانی 🛟", callback_data="menu:support")
     if is_admin:
         kb.button(text="پنل ادمین 🛠", callback_data="menu:admin")
@@ -735,7 +735,7 @@ async def on_help(cb: CallbackQuery):
         "• استیکر ساده 🪄: متن بده؛ پس‌زمینه را انتخاب کن (شفاف/پیش‌فرض/عکس)، پیش‌نمایش بگیر و تایید کن. بعد از تایید می‌تونی به پک خودت اضافه کنی.\n"
         "• استیکر هوش مصنوعی 🤖: متن بده؛ موقعیت، فونت، رنگ، اندازه و پس‌زمینه را انتخاب کن؛ پیش‌نمایش و تایید. بعد از تایید می‌تونی به پک اضافه کنی.\n"
         "• سهمیه امروز ⏳: تعداد باقی‌مانده امروز و زمان تمدید سهمیه AI را می‌بینی.\n"
-        "• اشتراک / نظرسنجی 📊: رأی بده که اشتراک اضافه شود یا نه.\n"
+        "• پلن‌های اشتراک 💎: مشاهده پلن‌های اشتراک ویژه و قیمت‌ها.\n"
         "• پشتیبانی 🛟: ارتباط با پشتیبانی.\n"
         "• نکته پک: قبل از ساخت اولین استیکر، عنوان و نام پک را وارد کن. نام باید انگلیسی باشد؛ آخرش خودکار به شکل _by_نام‌بات تنظیم می‌شود."
     )
@@ -760,45 +760,8 @@ async def on_sub(cb: CallbackQuery):
         return
     
     kb = InlineKeyboardBuilder()
-    kb.button(text="📊 نظرسنجی اشتراک", callback_data="sub:survey")
-    kb.button(text="💎 پلن‌های اشتراک", callback_data="sub:plans")
-    kb.button(text="بازگشت ⬅️", callback_data="menu:home")
-    kb.adjust(2, 1)
-    
-    text = """🎯 بخش اشتراک و نظرسنجی
-
-لطفاً یکی از گزینه‌های زیر را انتخاب کنید:
-
-📊 نظرسنجی: نظر خود را درباره اضافه شدن اشتراک ویژه ثبت کنید
-💎 پلن‌های اشتراک: مشاهده پلن‌های اشتراک و قیمت‌ها"""
-    
-    await cb.message.answer(text, reply_markup=kb.as_markup())
-    await cb.answer()
-
-@router.callback_query(F.data == "sub:survey")
-async def on_sub_survey(cb: CallbackQuery):
-    if not await ensure_membership(cb):
-        return
-    u = user(cb.from_user.id)
-    yes = sum(1 for v in USERS.values() if v.get("vote") == "yes")
-    no = sum(1 for v in USERS.values() if v.get("vote") == "no")
-    kb = InlineKeyboardBuilder()
-    kb.button(text="بله ✅", callback_data="vote:yes")
-    kb.button(text="خیر ❌", callback_data="vote:no")
-    kb.button(text="بازگشت ⬅️", callback_data="menu:sub")
-    kb.adjust(2, 1)
-    yours = "بله" if u.get("vote") == "yes" else ("خیر" if u.get("vote") == "no" else "ثبت نشده")
-    await cb.message.answer(f"اشتراک بیاریم؟\nرأی شما: {yours}\nآمار فعلی: بله {yes} | خیر {no}", reply_markup=kb.as_markup())
-    await cb.answer()
-
-@router.callback_query(F.data == "sub:plans")
-async def on_sub_plans(cb: CallbackQuery):
-    if not await ensure_membership(cb):
-        return
-    
-    kb = InlineKeyboardBuilder()
     kb.button(text="💬 تماس با پشتیبانی", url=f"https://t.me/{SUPPORT_USERNAME.lstrip('@')}")
-    kb.button(text="بازگشت ⬅️", callback_data="menu:sub")
+    kb.button(text="بازگشت ⬅️", callback_data="menu:home")
     kb.adjust(1, 1)
     
     text = """💎 پلن‌های اشتراک ویژه
@@ -808,6 +771,7 @@ async def on_sub_plans(cb: CallbackQuery):
 🎨 دسترسی به تمام فونت‌ها و قالب‌ها
 🚀 سرعت بالاتر در ساخت استیکر
 🎯 پشتیبانی اختصاصی
+🆕 ویژگی‌های جدیدتری که اضافه خواهند شد
 
 📋 پلن‌های موجود:
 
@@ -821,25 +785,7 @@ async def on_sub_plans(cb: CallbackQuery):
     await cb.message.answer(text, reply_markup=kb.as_markup())
     await cb.answer()
 
-@router.callback_query(F.data.func(lambda d: d and d.startswith("vote:")))
-async def on_vote(cb: CallbackQuery):
-    if not await ensure_membership(cb):
-        return
-    choice = cb.data.split(":", 1)[1]
-    if choice in ("yes", "no"):
-        user(cb.from_user.id)["vote"] = choice
-        await cb.answer("رأی ثبت شد ✅")
-    else:
-        await cb.answer("نامعتبر")
-    yes = sum(1 for v in USERS.values() if v.get("vote") == "yes")
-    no = sum(1 for v in USERS.values() if v.get("vote") == "no")
-    txt = f"اشتراک بیاریم؟\nرأی شما: {'بله' if choice == 'yes' else 'خیر'}\nآمار فعلی: بله {yes} | خیر {no}"
-    
-    kb = InlineKeyboardBuilder()
-    kb.button(text="بازگشت ⬅️", callback_data="menu:sub")
-    kb.adjust(1)
-    
-    await cb.message.edit_text(txt, reply_markup=kb.as_markup())
+
 
 # ----- استیکر ساده -----
 @router.callback_query(F.data == "menu:simple")
