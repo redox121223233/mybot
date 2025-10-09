@@ -23,17 +23,35 @@ if project_root not in sys.path:
 # Set environment variable for bot.py
 os.environ["BOT_TOKEN"] = BOT_TOKEN
 
+# Global instances to avoid re-creation - این بخش کلیدی برای جلوگیری از خطای Router Attachment
+_bot_instance = None
+_dispatcher_instance = None
+
+def get_bot_instance():
+    """Get or create bot instance"""
+    global _bot_instance
+    if _bot_instance is None:
+        _bot_instance = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    return _bot_instance
+
+def get_dispatcher_instance():
+    """Get or create dispatcher instance with router"""
+    global _dispatcher_instance
+    if _dispatcher_instance is None:
+        from bot import router
+        _dispatcher_instance = Dispatcher()
+        _dispatcher_instance.include_router(router)
+    return _dispatcher_instance
+
 async def process_update(update_data: Dict[str, Any]) -> None:
     """
-    پردازش update دریافتی از webhook
+    پردازش update دریافتی از webhook - بهینه شده برای جلوگیری از re-initialization
+    این تابع از instance های سراسری استفاده می‌کنه تا از خطای Router Attachment جلوگیری بشه
     """
     try:
-        # Import router from main bot (after setting BOT_TOKEN)
-        from bot import router
-        
-        bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-        dp = Dispatcher()
-        dp.include_router(router)
+        # Get existing instances - از instance های قبلی استفاده می‌کنیم
+        bot = get_bot_instance()
+        dp = get_dispatcher_instance()
         
         # Create update object
         update = Update(**update_data)
@@ -46,8 +64,4 @@ async def process_update(update_data: Dict[str, Any]) -> None:
         import traceback
         traceback.print_exc()
         # Don't raise exception to prevent webhook retries
-    finally:
-        try:
-            await bot.session.close()
-        except:
-            pass
+        # حذف finally block برای بستن session - چون از instance سراسری استفاده می‌کنیم

@@ -39,10 +39,25 @@ class handler(BaseHTTPRequestHandler):
                         logger.info(f"Message text: {message['text']}")
                         if message['text'] == '/start':
                             logger.info("Received /start command")
+                elif 'callback_query' in update_data:
+                    callback_query = update_data['callback_query']
+                    logger.info(f"Callback query data: {callback_query.get('data', 'No data')}")
                 
-                # Try to process the update
+                # پاسخ سریع به تلگرام قبل از پردازش کامل
+                # این باعث می‌شه تلگرام تاخیر کمتری احساس کنه
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                response = {'status': 'ok', 'message': 'Webhook processed'}
+                self.wfile.write(json.dumps(response).encode())
+                logger.info("Response sent quickly")
+                
+                # حالا update رو در background پردازش می‌کنیم
+                # این کار باعث می‌شه پاسخ سریع‌تر برسه
                 try:
-                    logger.info("Attempting to process update...")
+                    logger.info("Processing update in background...")
+                    # استفاده از asyncio.create_task برای پردازش غیرهمزمان
+                    # برای Vercel باید از asyncio.run استفاده کنیم چون create_task ممکنه کار نکنه
                     asyncio.run(process_update(update_data))
                     logger.info("Update processed successfully")
                 except Exception as e:
@@ -50,15 +65,14 @@ class handler(BaseHTTPRequestHandler):
                     # Don't raise the exception to prevent Telegram retries
             else:
                 logger.info("No content in request")
-            
-            # Send success response
-            self.send_response(200)
-            self.send_header('Content-Type', 'application/json')
-            self.end_headers()
-            response = {'status': 'ok', 'message': 'Webhook processed'}
-            self.wfile.write(json.dumps(response).encode())
-            logger.info("Response sent successfully")
-            
+                # Send success response
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                response = {'status': 'ok', 'message': 'No content'}
+                self.wfile.write(json.dumps(response).encode())
+                logger.info("Response sent successfully")
+                
         except Exception as e:
             # Log error but still send success response to prevent Telegram retries
             logger.error(f"Webhook error: {e}")
@@ -67,12 +81,13 @@ class handler(BaseHTTPRequestHandler):
             self.end_headers()
             response = {'status': 'ok', 'error': str(e)}
             self.wfile.write(json.dumps(response).encode())
+            logger.info("Error response sent successfully")
     
     def do_GET(self):
         logger.info("Webhook GET request received")
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
         self.end_headers()
-        response = {'status': 'ok', 'message': 'Webhook is active'}
+        response = {'status': 'ok', 'message': 'Webhook is active and optimized'}
         self.wfile.write(json.dumps(response).encode())
         logger.info("GET response sent successfully")
