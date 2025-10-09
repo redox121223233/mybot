@@ -52,16 +52,28 @@ class handler(BaseHTTPRequestHandler):
                 self.wfile.write(json.dumps(response).encode())
                 logger.info("Response sent quickly")
                 
-                # حالا update رو در background پردازش می‌کنیم
-                # این کار باعث می‌شه پاسخ سریع‌تر برسه
+                # حالا update رو در محیط سرورلس پردازش می‌کنیم
+                # با مدیریت صحیح event loop
                 try:
-                    logger.info("Processing update in background...")
-                    # استفاده از asyncio.create_task برای پردازش غیرهمزمان
-                    # برای Vercel باید از asyncio.run استفاده کنیم چون create_task ممکنه کار نکنه
-                    asyncio.run(process_update(update_data))
-                    logger.info("Update processed successfully")
+                    logger.info("Processing update in serverless environment...")
+                    
+                    # ایجاد event loop جدید برای هر درخواست در سرورلس
+                    import asyncio
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    
+                    try:
+                        # پردازش update در event loop جدید
+                        loop.run_until_complete(process_update(update_data))
+                        logger.info("Update processed successfully in serverless")
+                    except Exception as process_error:
+                        logger.error(f"Error in serverless processing: {process_error}")
+                    finally:
+                        # بستن event loop بعد از پردازش
+                        loop.close()
+                        
                 except Exception as e:
-                    logger.error(f"Error processing update: {e}")
+                    logger.error(f"Error setting up event loop: {e}")
                     # Don't raise the exception to prevent Telegram retries
             else:
                 logger.info("No content in request")
@@ -88,6 +100,6 @@ class handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header('Content-Type', 'application/json')
         self.end_headers()
-        response = {'status': 'ok', 'message': 'Webhook is active and optimized'}
+        response = {'status': 'ok', 'message': 'Webhook is active and optimized for serverless'}
         self.wfile.write(json.dumps(response).encode())
         logger.info("GET response sent successfully")

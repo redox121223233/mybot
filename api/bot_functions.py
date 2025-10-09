@@ -28,10 +28,15 @@ _bot_instance = None
 _dispatcher_instance = None
 
 def get_bot_instance():
-    """Get or create bot instance"""
+    """Get or create bot instance - مدیریت صحیح session برای سرورلس"""
     global _bot_instance
     if _bot_instance is None:
-        _bot_instance = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+        # ایجاد bot با session جدید برای هر درخواست در سرورلس
+        _bot_instance = Bot(
+            BOT_TOKEN, 
+            default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+            session_timeout=30  # timeout کوتاه‌تر برای سرورلس
+        )
     return _bot_instance
 
 def get_dispatcher_instance():
@@ -46,8 +51,9 @@ def get_dispatcher_instance():
 async def process_update(update_data: Dict[str, Any]) -> None:
     """
     پردازش update دریافتی از webhook - بهینه شده برای جلوگیری از re-initialization
-    این تابع از instance های سراسری استفاده می‌کنه تا از خطای Router Attachment جلوگیری بشه
+    و مدیریت صحیح session در محیط سرورلس
     """
+    bot = None
     try:
         # Get existing instances - از instance های قبلی استفاده می‌کنیم
         bot = get_bot_instance()
@@ -64,4 +70,16 @@ async def process_update(update_data: Dict[str, Any]) -> None:
         import traceback
         traceback.print_exc()
         # Don't raise exception to prevent webhook retries
-        # حذف finally block برای بستن session - چون از instance سراسری استفاده می‌کنیم
+    finally:
+        # در محیط سرورلس، session رو می‌بندیم تا مشکل Event Loop Closed پیش نیاد
+        # اما فقط اگر bot رو در این تابع ایجاد کرده باشیم
+        if bot and hasattr(bot, 'session') and bot.session:
+            try:
+                # فقط session رو می‌بندیم، bot instance رو نگه می‌داریم
+                await bot.session.close()
+                # bot instance رو reset می‌کنیم تا در دفعه بعد session جدید بسازه
+                global _bot_instance
+                _bot_instance = None
+            except Exception as close_error:
+                print(f"Error closing bot session: {close_error}")
+                # اگر بسته نشد، مشکلی نیست - ادامه می‌دیم
