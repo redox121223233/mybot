@@ -34,8 +34,7 @@ def get_bot_instance():
         # ایجاد bot با session جدید برای هر درخواست در سرورلس
         _bot_instance = Bot(
             BOT_TOKEN, 
-            default=DefaultBotProperties(parse_mode=ParseMode.HTML),
-            session_timeout=30  # timeout کوتاه‌تر برای سرورلس
+            default=DefaultBotProperties(parse_mode=ParseMode.HTML)
         )
     return _bot_instance
 
