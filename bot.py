@@ -20,7 +20,7 @@ import arabic_reshaper
 from bidi.algorithm import get_display
 
 # =============== پیکربندی ===============
-BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+BOT_TOKEN = os.getenv("BOT_TOKEN", "8324626018:AAEiEd_zcpuw10s1nIWr5bryj1yyZDX0yl0").strip()
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN را در محیط تنظیم کنید.")
 
