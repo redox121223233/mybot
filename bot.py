@@ -956,9 +956,9 @@ async def on_ai_callbacks(cb: CallbackQuery):
     action = parts[1] if len(parts) > 1 else ""
     value = parts[2] if len(parts) > 2 else ""
 
-    if not is_admin and left <= 0 and action not in ("edit", "type"):
+    if not is_admin and left_ai <= 0 and action not in ("edit", "type"):
         eta = _fmt_eta(_seconds_to_reset(u))
-        return await cb.answer(f"سهمیه امروز تمام شد. تمدید: {eta}", show_alert=True)
+        return await cb.answer(f"سهمیه AI امروز تمام شد. تمدید: {eta}", show_alert=True)
 
     if action == "type":
         if value == "image":
@@ -1264,9 +1264,9 @@ async def on_message(message: Message):
         
         # دریافت متن
         if a["text"] is None and message.text:
-            if left <= 0 and not is_admin:
+            if left_ai <= 0 and not is_admin:
                 eta = _fmt_eta(_seconds_to_reset(u))
-                return await message.answer(f"سهمیه امروز تمام شد. تمدید در: {eta}")
+                return await message.answer(f"سهمیه AI امروز تمام شد. تمدید در: {eta}")
             
             a["text"] = message.text.strip()
             inferred = infer_from_text(a["text"])
