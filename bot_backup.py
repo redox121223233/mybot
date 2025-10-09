@@ -247,7 +247,7 @@ def _parse_hex(hx: str) -> Tuple[int, int, int, int]:
 def wrap_text_to_width(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, max_width: int) -> List[str]:
     """
     چینش متن با رعایت زبان فارسی و محدودیت عرض
-    برای متن فارسی، کلمات باید از بالا به پایین و به ترتیب چیده شوند
+    برای متن فارسی، خطوط باید از بالا به پایین و با رعایت RTL باشند
     """
     if not text.strip():
         return [text]
@@ -269,7 +269,7 @@ def wrap_text_to_width(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.Fre
     except ValueError:
         return [text]
     
-    # الگوریتم چینش هوشمند برای فارسی
+    # برای متن فارسی، سعی می‌کنیم کلمات مرتبط را در یک خط نگه داریم
     words = text.split()
     if not words:
         return [text]
@@ -305,7 +305,31 @@ def wrap_text_to_width(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.Fre
     if current_line:
         lines.append(current_line)
     
+    # برای متن فارسی، خطوط باید از بالا به پایین باشند
+    # (ترتیب در لیست باید همان ترتیب نمایش باشد)
     return lines
+
+def optimize_text_wrapping_for_persian(text: str, lines: List[str], lang: str) -> List[str]:
+    """
+    بهینه‌سازی چینش متن برای زبان فارسی
+    برای فارسی، سعی می‌کنیم کلمات را به صورت منطقی بچینیم
+    """
+    if lang != "persian" or len(lines) <= 1:
+        return lines
+    
+    # برای متن فارسی، ممکن است بخواهیم خطوط را بازآرایی کنیم
+    # یا فاصله‌ها را تنظیم کنیم
+    optimized_lines = []
+    
+    for line in lines:
+        # حذف فاصله‌های اضافی در ابتدا و انتها
+        optimized_line = line.strip()
+        
+        # اگر خط خالی نیست، اضافه می‌کنیم
+        if optimized_line:
+            optimized_lines.append(optimized_line)
+    
+    return optimized_lines
 
 def fit_font_size(draw: ImageDraw.ImageDraw, text: str, font_path: str, base: int, max_w: int, max_h: int) -> int:
     size = base
@@ -394,7 +418,12 @@ def render_image(text: str, position: str, font_key: str, color_hex: str, size_k
     except Exception:
         font = ImageFont.load_default()
 
-    lines = wrap_text_to_width(draw, txt, font, box_w)
+       # تشخیص زبان برای بهینه‌سازی
+       lang = _detect_language(txt)
+       if lang == "persian":
+           lines = optimize_text_wrapping_for_persian(txt, lines, lang)
+       wrapped = "\n".join(lines)
+        lines = optimize_text_wrapping_for_persian(txt, lines, lang)
     wrapped = "\n".join(lines)
     bbox = draw.multiline_textbbox((0, 0), wrapped, font=font, spacing=6, align="center", stroke_width=2)
     tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
