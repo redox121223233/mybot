@@ -1,50 +1,55 @@
+import os
 import json
+import logging
+import asyncio
+import sys
+from http.server import BaseHTTPRequestHandler
+
+# Add parent directory to path
+project_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if project_root not in sys.path:
+    sys.path.insert(0, project_root)
+
 from api.bot_functions import process_update
 
-def handler(request):
-    """Webhook endpoint for Telegram updates"""
-    try:
-        # Only accept POST requests
-        if request.method != 'POST':
-            return {
-                'statusCode': 405,
-                'headers': {'Content-Type': 'application/json'},
-                'body': json.dumps({'error': 'Method not allowed'})
-            }
-        
-        # Get the update data from the request
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("webhook")
+
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "")
+API_URL = f"https://api.telegram.org/bot{BOT_TOKEN}/"
+
+class handler(BaseHTTPRequestHandler):
+    def do_POST(self):
         try:
-            update_data = json.loads(request.body)
-            print(f"Webhook received update: {update_data.get('update_id')}")
-        except json.JSONDecodeError as e:
-            print(f"Invalid JSON in webhook: {e}")
-            return {
-                'statusCode': 400,
-                'headers': {'Content-Type': 'application/json'},
-                'body': json.dumps({'error': 'Invalid JSON'})
-            }
-        
-        # Process the update asynchronously
-        import asyncio
-        try:
-            asyncio.run(process_update(update_data))
-            print("Update processed successfully")
+            content_length = int(self.headers.get('Content-Length', 0))
+            if content_length > 0:
+                body = self.rfile.read(content_length)
+                data = json.loads(body.decode('utf-8'))
+                logger.info(f"Webhook received: {data}")
+
+                # Process the update asynchronously
+                try:
+                    asyncio.run(process_update(data))
+                except Exception as e:
+                    logger.error(f"Error processing update: {e}")
+
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+
+            response = {'status': 'ok', 'message': 'Webhook received'}
+            self.wfile.write(json.dumps(response).encode())
+
         except Exception as e:
-            print(f"Error processing update: {e}")
-            # Don't return error to Telegram to prevent retries
-        
-        # Always return success to Telegram
-        return {
-            'statusCode': 200,
-            'headers': {'Content-Type': 'application/json'},
-            'body': json.dumps({'status': 'ok'})
-        }
-        
-    except Exception as e:
-        print(f"Webhook error: {e}")
-        # Always return success to prevent Telegram from retrying
-        return {
-            'statusCode': 200,
-            'headers': {'Content-Type': 'application/json'},
-            'body': json.dumps({'status': 'ok', 'error': str(e)})
-        }
+            logger.error(f"Webhook error: {e}")
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': str(e)}).encode())
+
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-Type', 'application/json')
+        self.end_headers()
+        response = {'status': 'ok', 'message': 'Webhook endpoint is active'}
+        self.wfile.write(json.dumps(response).encode())

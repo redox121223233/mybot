@@ -1,22 +1,33 @@
+import os
 import json
+import logging
+from http.server import BaseHTTPRequestHandler
 
-def handler(request):
-    """Simple health check endpoint"""
-    try:
-        print("Health check requested")
-        return {
-            'statusCode': 200,
-            'headers': {'Content-Type': 'application/json'},
-            'body': json.dumps({
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("index")
+
+class handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        try:
+            logger.info("Health check requested")
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            
+            response = {
                 'status': 'healthy',
                 'bot': 'running',
                 'message': 'Bot is active!'
-            })
-        }
-    except Exception as e:
-        print(f"Health check error: {e}")
-        return {
-            'statusCode': 200,
-            'headers': {'Content-Type': 'application/json'},
-            'body': json.dumps({'error': str(e)})
-        }
+            }
+            self.wfile.write(json.dumps(response).encode())
+            
+        except Exception as e:
+            logger.error(f"Health check error: {e}")
+            self.send_response(200)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({'error': str(e)}).encode())
+
+    def do_POST(self):
+        # Redirect POST requests to GET for health check
+        self.do_GET()
