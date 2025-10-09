@@ -161,11 +161,13 @@ def _prepare_text(text: str) -> str:
     if not text:
         return ""
     
-    # فقط از arabic_reshaper استفاده کن تا حروف متصل شوند
-    # بدون bidi تا مشکل ایجاد نشود
+    # استفاده از arabic_reshaper برای اتصال حروف فارسی
     reshaped_text = arabic_reshaper.reshape(text.strip())
     
-    return reshaped_text
+    # استفاده از bidi برای ترتیب صحیح راست به چپ
+    bidi_text = get_display(reshaped_text)
+    
+    return bidi_text
 
 def _parse_hex(hx: str) -> Tuple[int, int, int, int]:
     hx = (hx or "#ffffff").strip().lstrip("#")
