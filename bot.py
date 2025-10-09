@@ -29,11 +29,12 @@ SUPPORT_USERNAME = "@onedaytoalive"
 ADMIN_ID = 6053579919
 
 MAINTENANCE = False  # حالت نگهداری بخش AI
-DAILY_LIMIT = 5      # سهمیه روزانه AI (ادمین نامحدود)
+DAILY_LIMIT_AI = 3   # سهمیه روزانه AI (ادمین نامحدود)
+DAILY_LIMIT_SIMPLE = 50  # سهمیه روزانه استیکر ساده (ادمین نامحدود)
 BOT_USERNAME = ""    # بعداً در main پر می‌شود
 
 # ============ حافظه ساده (in-memory) ============
-USERS: Dict[int, Dict[str, Any]] = {}     # {user_id: {ai_used:int, vote:str|None, day_start:int, pack:{title,name,created:bool}}}
+USERS: Dict[int, Dict[str, Any]] = {}     # {user_id: {ai_used:int, simple_used:int, vote:str|None, day_start:int, pack:{title,name,created:bool}}}
 SESSIONS: Dict[int, Dict[str, Any]] = {}  # {user_id: {"mode":..., "ai":{}, "simple":{}, "pack_wizard":{}, "await_feedback":bool, "last_sticker":bytes, "last_video_sticker":bytes}}
 ADMIN_PENDING: Dict[int, Dict[str, Any]] = {}
 
@@ -48,12 +49,19 @@ def _reset_daily_if_needed(u: Dict[str, Any]):
     if day_start is None or day_start < today:
         u["day_start"] = today
         u["ai_used"] = 0
+        u["simple_used"] = 0
 
-def _quota_left(u: Dict[str, Any], is_admin: bool) -> int:
+def _quota_left_ai(u: Dict[str, Any], is_admin: bool) -> int:
     if is_admin:
         return 999999
     _reset_daily_if_needed(u)
-    return max(0, DAILY_LIMIT - int(u.get("ai_used", 0)))
+    return max(0, DAILY_LIMIT_AI - int(u.get("ai_used", 0)))
+
+def _quota_left_simple(u: Dict[str, Any], is_admin: bool) -> int:
+    if is_admin:
+        return 999999
+    _reset_daily_if_needed(u)
+    return max(0, DAILY_LIMIT_SIMPLE - int(u.get("simple_used", 0)))
 
 def _seconds_to_reset(u: Dict[str, Any]) -> int:
     _reset_daily_if_needed(u)
@@ -74,7 +82,7 @@ def _fmt_eta(secs: int) -> str:
 
 def user(uid: int) -> Dict[str, Any]:
     if uid not in USERS:
-        USERS[uid] = {"ai_used": 0, "vote": None, "day_start": _today_start_ts(), "pack": None}
+        USERS[uid] = {"ai_used": 0, "simple_used": 0, "vote": None, "day_start": _today_start_ts(), "pack": None}
     _reset_daily_if_needed(USERS[uid])
     return USERS[uid]
 
@@ -210,8 +218,21 @@ def _prepare_text(text: str) -> str:
     if not text:
         return ""
     
-    # فقط strip می‌کنیم - فونت‌های مدرن مثل Vazirmatn خودشان از RTL و اتصال حروف پشتیبانی می‌کنند
-    return text.strip()
+    # پاکسازی متن
+    text = text.strip()
+    
+    # تشخیص زبان متن
+    lang = _detect_language(text)
+    
+    # اگر متن فارسی/عربی است، از arabic_reshaper و bidi استفاده می‌کنیم
+    if lang == "persian":
+        # اتصال حروف فارسی/عربی
+        reshaped_text = arabic_reshaper.reshape(text)
+        # تبدیل به RTL (راست به چپ)
+        bidi_text = get_display(reshaped_text)
+        return bidi_text
+    
+    return text
 
 def _parse_hex(hx: str) -> Tuple[int, int, int, int]:
     hx = (hx or "#ffffff").strip().lstrip("#")
@@ -748,10 +769,12 @@ async def on_quota(cb: CallbackQuery):
         return
     u = user(cb.from_user.id)
     is_admin = (cb.from_user.id == ADMIN_ID)
-    left = _quota_left(u, is_admin)
+    left_ai = _quota_left_ai(u, is_admin)
+    left_simple = _quota_left_simple(u, is_admin)
     eta = _fmt_eta(_seconds_to_reset(u))
-    quota_txt = "نامحدود" if is_admin else f"{left} از {DAILY_LIMIT}"
-    await cb.message.answer(f"سهمیه امروز: {quota_txt}\nتمدید در: {eta}", reply_markup=back_to_menu_kb(is_admin))
+    quota_ai_txt = "نامحدود" if is_admin else f"{left_ai} از {DAILY_LIMIT_AI}"
+    quota_simple_txt = "نامحدود" if is_admin else f"{left_simple} از {DAILY_LIMIT_SIMPLE}"
+    await cb.message.answer(f"📊 سهمیه امروز:\n🤖 استیکر AI: {quota_ai_txt}\n✏️ استیکر ساده: {quota_simple_txt}\n⏰ تمدید در: {eta}", reply_markup=back_to_menu_kb(is_admin))
     await cb.answer()
 
 @router.callback_query(F.data == "menu:sub")
@@ -794,10 +817,22 @@ async def on_simple(cb: CallbackQuery):
         return
     if await need_pack_setup(cb.from_user.id):
         return await start_pack_wizard(cb, cb.from_user.id)
+    
+    # بررسی محدودیت روزانه
+    u = user(cb.from_user.id)
+    is_admin = (cb.from_user.id == ADMIN_ID)
+    left_simple = _quota_left_simple(u, is_admin)
+    
+    if left_simple <= 0 and not is_admin:
+        eta = _fmt_eta(_seconds_to_reset(u))
+        await cb.message.answer(f"سهمیه استیکر ساده امروز تمام شد. تمدید در: {eta}", reply_markup=back_to_menu_kb(False))
+        await cb.answer()
+        return
+    
     s = sess(cb.from_user.id)
     s["mode"] = "simple"
     s["simple"] = {"state": "ASK_TEXT", "text": None, "bg_mode": None, "bg_photo": None}
-    await cb.message.answer("متن استیکر ساده رو بفرست ✍️", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+    await cb.message.answer(f"متن استیکر ساده رو بفرست ✍️\n(سهمیه امروز: {'نامحدود' if is_admin else f'{left_simple} از {DAILY_LIMIT_SIMPLE}'})", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
     await cb.answer()
 
 @router.callback_query(F.data.func(lambda d: d and d.startswith("simple:bg:")))
@@ -826,10 +861,25 @@ async def on_simple_bg(cb: CallbackQuery):
 
 @router.callback_query(F.data == "simple:confirm")
 async def on_simple_confirm(cb: CallbackQuery):
+    # بررسی محدودیت روزانه
+    u = user(cb.from_user.id)
+    is_admin = (cb.from_user.id == ADMIN_ID)
+    left_simple = _quota_left_simple(u, is_admin)
+    
+    if left_simple <= 0 and not is_admin:
+        eta = _fmt_eta(_seconds_to_reset(u))
+        await cb.answer(f"سهمیه استیکر ساده امروز تمام شد. تمدید: {eta}", show_alert=True)
+        return
+    
     st = sess(cb.from_user.id)["simple"]
     webp = render_image(text=st["text"], position="center", font_key="Default", color_hex="#FFFFFF",
                         size_key="medium", bg_mode=st.get("bg_mode") or "transparent", bg_photo=st.get("bg_photo"), as_webp=True)
     sess(cb.from_user.id)["last_sticker"] = webp
+    
+    # افزایش شمارنده استفاده
+    if not is_admin:
+        u["simple_used"] = u.get("simple_used", 0) + 1
+    
     await cb.message.answer_sticker(BufferedInputFile(webp, filename="sticker.webp"))
     await cb.message.answer("از این استیکر راضی بودی؟", reply_markup=rate_kb())
     await cb.answer("ارسال شد")
@@ -852,10 +902,10 @@ async def on_ai(cb: CallbackQuery):
         return
     u = user(cb.from_user.id)
     is_admin = (cb.from_user.id == ADMIN_ID)
-    left = _quota_left(u, is_admin)
+    left_ai = _quota_left_ai(u, is_admin)
     eta = _fmt_eta(_seconds_to_reset(u))
-    if left <= 0 and not is_admin:
-        await cb.message.answer(f"سهمیه امروز تمام شد. تمدید در: {eta}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+    if left_ai <= 0 and not is_admin:
+        await cb.message.answer(f"سهمیه AI امروز تمام شد. تمدید در: {eta}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
         await cb.answer()
         return
     s = sess(cb.from_user.id)
@@ -869,7 +919,7 @@ async def on_ai(cb: CallbackQuery):
     kb.button(text="بازگشت ⬅️", callback_data="menu:home")
     kb.adjust(2, 1)
     
-    await cb.message.answer(f"نوع استیکر را انتخاب کن:\n(سهمیه امروز: {'نامحدود' if is_admin else f'{left} از {DAILY_LIMIT}'} | تمدید: {eta})", reply_markup=kb.as_markup())
+    await cb.message.answer(f"نوع استیکر را انتخاب کن:\n(سهمیه AI امروز: {'نامحدود' if is_admin else f'{left_ai} از {DAILY_LIMIT_AI}'} | تمدید: {eta})", reply_markup=kb.as_markup())
     await cb.answer()
 
 async def send_ai_preview(message_or_cb, uid: int):
@@ -899,7 +949,7 @@ async def on_ai_callbacks(cb: CallbackQuery):
 
     u = user(cb.from_user.id)
     is_admin = (cb.from_user.id == ADMIN_ID)
-    left = _quota_left(u, is_admin)
+    left_ai = _quota_left_ai(u, is_admin)
 
     a = sess(cb.from_user.id)["ai"]
     parts = cb.data.split(":", 2)
@@ -1014,10 +1064,10 @@ async def on_ai_callbacks(cb: CallbackQuery):
         await cb.answer()
 
     if action == "confirm":
-        left = _quota_left(u, is_admin)
-        if left <= 0 and not is_admin:
+        left_ai = _quota_left_ai(u, is_admin)
+        if left_ai <= 0 and not is_admin:
             eta = _fmt_eta(_seconds_to_reset(u))
-            return await cb.answer(f"سهمیه امروز تمام شد. تمدید: {eta}", show_alert=True)
+            return await cb.answer(f"سهمیه AI امروز تمام شد. تمدید: {eta}", show_alert=True)
         
         if a.get("video_mode"):
             # پردازش استیکر ویدیویی
@@ -1189,11 +1239,11 @@ async def on_message(message: Message):
         a = s["ai"]
         u = user(uid)
         is_admin = (uid == ADMIN_ID)
-        left = _quota_left(u, is_admin)
+        left_ai = _quota_left_ai(u, is_admin)
         
         # دریافت ویدیو برای استیکر ویدیویی
         if a.get("video_mode") and a.get("video_data") is None and message.video:
-            if left <= 0 and not is_admin:
+            if left_ai <= 0 and not is_admin:
                 eta = _fmt_eta(_seconds_to_reset(u))
                 return await message.answer(f"سهمیه امروز تمام شد. تمدید در: {eta}")
             
