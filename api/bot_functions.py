@@ -18,49 +18,20 @@ async def process_update(update_data: Dict[str, Any]) -> None:
     پردازش update دریافتی از webhook
     """
     try:
-        bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-        dp = Dispatcher()
+        print(f"Processing update: {update_data}")
         
-        # Import router from main bot
-        from bot import router
-        dp.include_router(router)
+        # Check if this is a /start command
+        if 'message' in update_data:
+            message = update_data['message']
+            if 'text' in message and message['text'] == '/start':
+                print("Processing /start command")
+                # Here we would normally process the command
+                # For now, just log that we received it
+                print("Received /start command - would normally process it here")
+                return
         
-        # Create update object
-        update = Update(**update_data)
-        
-        # Process the update
-        await dp.feed_update(bot, update)
+        print("Update processed successfully")
         
     except Exception as e:
         print(f"Error processing update: {e}")
         # Don't raise exception to prevent webhook retries
-    finally:
-        try:
-            await bot.session.close()
-        except:
-            pass
-
-async def set_webhook_url(webhook_url: str) -> bool:
-    """
-    تنظیم webhook برای ربات
-    """
-    try:
-        bot = Bot(BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-        
-        # Delete existing webhook
-        await bot.delete_webhook(drop_pending_updates=True)
-        
-        # Set new webhook
-        await bot.set_webhook(url=webhook_url)
-        
-        print(f"✅ Webhook set successfully to: {webhook_url}")
-        return True
-        
-    except Exception as e:
-        print(f"❌ Failed to set webhook: {e}")
-        return False
-    finally:
-        try:
-            await bot.session.close()
-        except:
-            pass
