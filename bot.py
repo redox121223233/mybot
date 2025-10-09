@@ -210,21 +210,8 @@ def _prepare_text(text: str) -> str:
     if not text:
         return ""
     
-    # تشخیص زبان
-    lang = _detect_language(text)
-    
-    # فقط برای متن‌های فارسی از reshaper و bidi استفاده می‌کنیم
-    if lang == "persian":
-        # استفاده از arabic_reshaper برای اتصال حروف فارسی
-        reshaped_text = arabic_reshaper.reshape(text.strip())
-        
-        # استفاده از bidi برای ترتیب صحیح راست به چپ
-        bidi_text = get_display(reshaped_text)
-        
-        return bidi_text
-    else:
-        # برای متن انگلیسی فقط strip می‌کنیم
-        return text.strip()
+    # فقط strip می‌کنیم - فونت‌های مدرن مثل Vazirmatn خودشان از RTL و اتصال حروف پشتیبانی می‌کنند
+    return text.strip()
 
 def _parse_hex(hx: str) -> Tuple[int, int, int, int]:
     hx = (hx or "#ffffff").strip().lstrip("#")
