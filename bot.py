@@ -235,10 +235,45 @@ def _parse_hex(hx: str) -> Tuple[int, int, int, int]:
         b = int(hx[4:6], 16)
     return (r, g, b, 255)
 
+def wrap_text_to_width_persian(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, max_width: int) -> List[str]:
+    """تابع ویژه برای پردازش متن فارسی با ترتیب صحیح"""
+    words = text.split()
+    if not words:
+        return [text]
+    
+    # ابتدا تمام کلمات را در یک خط قرار بده و ببین چند خط می‌شود
+    lines: List[str] = []
+    
+    # گروه‌بندی کلمات بر اساس عرض
+    i = 0
+    while i < len(words):
+        current_line = words[i]
+        j = i + 1
+        
+        # تا جایی که می‌تواند کلمات را به خط اضافه کن
+        while j < len(words):
+            trial = current_line + " " + words[j]
+            if draw.textlength(trial, font=font) <= max_width:
+                current_line = trial
+                j += 1
+            else:
+                break
+        
+        lines.append(current_line)
+        i = j
+    
+    return lines
+
 def wrap_text_to_width(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, max_width: int) -> List[str]:
     words = text.split()
     if not words:
         return [text]
+    
+    # برای متن فارسی از تابع ویژه استفاده کن
+    if is_persian(text):
+        return wrap_text_to_width_persian(draw, text, font, max_width)
+    
+    # برای انگلیسی: روش معمولی
     lines: List[str] = []
     cur = ""
     for w in words:
@@ -250,6 +285,7 @@ def wrap_text_to_width(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.Fre
             cur = w
     if cur:
         lines.append(cur)
+    
     return lines
 
 def fit_font_size(draw: ImageDraw.ImageDraw, text: str, font_path: str, base: int, max_w: int, max_h: int) -> int:
