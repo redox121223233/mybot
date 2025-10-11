@@ -210,8 +210,20 @@ def _prepare_text(text: str) -> str:
     if not text:
         return ""
     
-    # فقط strip می‌کنیم - فونت‌های مدرن مثل Vazirmatn خودشان از RTL و اتصال حروف پشتیبانی می‌کنند
-    return text.strip()
+    # استفاده از arabic_reshaper برای اتصال حروف فارسی
+    reshaped_text = arabic_reshaper.reshape(text.strip())
+    
+    # استفاده از bidi برای ترتیب صحیح متن RTL
+    bidi_text = get_display(reshaped_text)
+    
+    return bidi_text
+
+def is_persian(text):
+    """بررسی اینکه آیا متن فارسی است یا نه"""
+    if not text:
+        return False
+    persian_pattern = re.compile(r'[؀-ۿݐ-ݿࢠ-ࣿ]')
+    return bool(persian_pattern.search(text))
 
 def _parse_hex(hx: str) -> Tuple[int, int, int, int]:
     hx = (hx or "#ffffff").strip().lstrip("#")
@@ -309,18 +321,15 @@ def render_image(text: str, position: str, font_key: str, color_hex: str, size_k
     size_map = {"small": 64, "medium": 96, "large": 128}
     base_size = size_map.get(size_key, 96)
 
-    # آماده‌سازی متن
-    txt = _prepare_text(text)
-    
-    # انتخاب فونت مناسب بر اساس زبان متن
-    font_path = resolve_font_path(font_key, text)
+    font_path = resolve_font_path(font_key)
     try:
         font = ImageFont.truetype(font_path, size=base_size) if font_path else ImageFont.load_default()
     except Exception:
         font = ImageFont.load_default()
 
+    txt = _prepare_text(text)
     if not font_path:
-        font_path = resolve_font_path("Default", text)
+        font_path = resolve_font_path("Default")
     final_size = fit_font_size(draw, txt, font_path, base_size, box_w, box_h)
     try:
         font = ImageFont.truetype(font_path, size=final_size) if font_path else ImageFont.load_default()
@@ -329,33 +338,94 @@ def render_image(text: str, position: str, font_key: str, color_hex: str, size_k
 
     lines = wrap_text_to_width(draw, txt, font, box_w)
     wrapped = "\n".join(lines)
-    bbox = draw.multiline_textbbox((0, 0), wrapped, font=font, spacing=6, align="center", stroke_width=2)
-    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-
-    if position == "top":
-        y = padding + th / 2
-    elif position == "bottom":
-        y = H - padding - th / 2
+    
+    # تعیین ترازبندی و موقعیت بر اساس زبان
+    is_fa = is_persian(text)
+    
+    if is_fa:
+        # برای متن فارسی - راست به چپ
+        align = "right"
+        # محاسبه پهنا برای ترازبندی راست
+        bbox = draw.multiline_textbbox((0, 0), wrapped, font=font, spacing=6, align="right", stroke_width=2)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        
+        if position == "top":
+            x = W - padding
+            y = padding
+            anchor = "rt"
+        elif position == "bottom":
+            x = W - padding
+            y = H - padding
+            anchor = "rb"
+        else:  # center
+            x = W - padding
+            y = H / 2
+            anchor = "rm"
     else:
-        y = H / 2
+        # برای متن انگلیسی - چپ به راست
+        align = "left"
+        bbox = draw.multiline_textbbox((0, 0), wrapped, font=font, spacing=6, align="left", stroke_width=2)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        
+        if position == "top":
+            x = padding
+            y = padding
+            anchor = "lt"
+        elif position == "bottom":
+            x = padding
+            y = H - padding
+            anchor = "lb"
+        else:  # center
+            x = W / 2
+            y = H / 2
+            anchor = "mm"
+            align = "center"
 
-    draw.multiline_text(
-        (W / 2, y),
-        wrapped,
-        font=font,
-        fill=color,
-        anchor="mm",
-        align="center",
-        spacing=6,
-        stroke_width=2,
-        stroke_fill=(0, 0, 0, 220)
-    )
+    # Handle multiline text positioning manually since anchor support varies
+    if '\n' in wrapped:
+        lines = wrapped.split('\n')
+        try:
+            line_height = font.getbbox('A')[3] + 6  # Line height with spacing
+        except:
+            line_height = font.getsize('A')[1] + 6  # Fallback for older PIL versions
+        total_height = len(lines) * line_height
+        
+        # Adjust starting y position based on anchor
+        if anchor.endswith('m'):  # middle
+            start_y = y - total_height // 2
+        elif anchor.endswith('b'):  # bottom
+            start_y = y - total_height
+        else:  # top
+            start_y = y
+        
+        # Draw each line
+        for i, line in enumerate(lines):
+            line_y = start_y + i * line_height
+            draw.text(
+                (x, line_y),
+                line,
+                font=font,
+                fill=color,
+                anchor=anchor[0] + 't',  # Use top alignment for individual lines
+                stroke_width=2,
+                stroke_fill=(0, 0, 0, 220)
+            )
+    else:
+        # Single line text - use regular text with anchor
+        draw.text(
+            (x, y),
+            wrapped,
+            font=font,
+            fill=color,
+            anchor=anchor,
+            stroke_width=2,
+            stroke_fill=(0, 0, 0, 220)
+        )
 
     buf = BytesIO()
     img.save(buf, format="WEBP" if as_webp else "PNG")
     return buf.getvalue()
 
-# ============ پردازش ویدیو ============
 def _check_ffmpeg() -> bool:
     """بررسی وجود ffmpeg در سیستم"""
     try:
