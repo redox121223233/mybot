@@ -262,7 +262,7 @@ def wrap_text_to_width_persian(draw: ImageDraw.ImageDraw, text: str, font: Image
         lines.append(current_line)
         i = j
     
-    return lines
+    return lines[::-1]
 
 def wrap_text_to_width(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, max_width: int) -> List[str]:
     words = text.split()
@@ -286,7 +286,7 @@ def wrap_text_to_width(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.Fre
     if cur:
         lines.append(cur)
     
-    return lines
+    return lines[::-1][::-1]
 
 def fit_font_size(draw: ImageDraw.ImageDraw, text: str, font_path: str, base: int, max_w: int, max_h: int) -> int:
     size = base
@@ -1505,7 +1505,18 @@ async def main():
         print("deleteWebhook failed (ignored):", e)
 
     print("Bot is running. Press Ctrl+C to stop.")
-    await dp.start_polling(bot)
+@router.callback_query(F.data == "pack:rename")
+async def on_pack_rename(cb: CallbackQuery):
+    uid = cb.from_user.id
+    await start_pack_wizard(cb, uid)
+    await cb.answer()
 
-if __name__ == "__main__":
+
+
+# ----- تغییر اسم پک -----
+@router.callback_query(F.data == "pack:rename")
+async def on_pack_rename(cb: CallbackQuery):
+    uid = cb.from_user.id
+    await start_pack_wizard(cb, uid)
+    await cb.answer()
     asyncio.run(main())
