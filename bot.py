@@ -262,7 +262,19 @@ def wrap_text_to_width_persian(draw: ImageDraw.ImageDraw, text: str, font: Image
         lines.append(current_line)
         i = j
     
-    return lines[::-1]
+    # برای متن فارسی، هر کلمه رو در یک خط جداگانه قرار بده
+    # این کار باعث میشه کلمه اول بالاترین خط باشه
+    final_lines: List[str] = []
+    
+    # اگر بیشتر از 2 کلمه داریم، هر کلمه رو در یک خط قرار بده
+    if len(words) > 2:
+        for word in words:
+            final_lines.append(word)
+    else:
+        # برای متون کوتاه، همه کلمات رو در یک خط قرار بده
+        final_lines = [" ".join(words)]
+    
+    return final_lines
 
 def wrap_text_to_width(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.FreeTypeFont, max_width: int) -> List[str]:
     words = text.split()
@@ -286,7 +298,7 @@ def wrap_text_to_width(draw: ImageDraw.ImageDraw, text: str, font: ImageFont.Fre
     if cur:
         lines.append(cur)
     
-    return lines[::-1][::-1]
+    return lines
 
 def fit_font_size(draw: ImageDraw.ImageDraw, text: str, font_path: str, base: int, max_w: int, max_h: int) -> int:
     size = base
@@ -1505,18 +1517,7 @@ async def main():
         print("deleteWebhook failed (ignored):", e)
 
     print("Bot is running. Press Ctrl+C to stop.")
-@router.callback_query(F.data == "pack:rename")
-async def on_pack_rename(cb: CallbackQuery):
-    uid = cb.from_user.id
-    await start_pack_wizard(cb, uid)
-    await cb.answer()
+    await dp.start_polling(bot)
 
-
-
-# ----- تغییر اسم پک -----
-@router.callback_query(F.data == "pack:rename")
-async def on_pack_rename(cb: CallbackQuery):
-    uid = cb.from_user.id
-    await start_pack_wizard(cb, uid)
-    await cb.answer()
+if __name__ == "__main__":
     asyncio.run(main())
