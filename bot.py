@@ -1,4 +1,4 @@
-from aiogram import Bot, Dispatcher, types
+from aiogram import Bot, Dispatcher, types, Router
 from aiogram.types import Message, InputFile
 from aiogram.filters import Command
 import asyncio
@@ -8,10 +8,8 @@ import textwrap
 import arabic_reshaper
 from bidi.algorithm import get_display
 
-# Initialize bot and dispatcher
-BOT_TOKEN = os.getenv('BOT_TOKEN', 'YOUR_BOT_TOKEN_HERE')
-bot = Bot(token=BOT_TOKEN)
-dp = Dispatcher()
+# Initialize router (always available)
+router = Router()
 
 def wrap_text_to_width_persian(text, font, max_width):
     """Wrap Persian text to fit within a specified width."""
@@ -44,11 +42,11 @@ def wrap_text_to_width_persian(text, font, max_width):
     # بدون reverse کردن - ترتیب طبیعی حفظ می‌شود
     return lines
 
-@dp.message(Command("start"))
+@router.message(Command("start"))
 async def cmd_start(message: Message):
     await message.answer("سلام! خوش آمدید به ربات تبدیل متن به استیکر. لطفاً یک متن فارسی ارسال کنید.")
 
-@dp.message()
+@router.message()
 async def handle_message(message: Message):
     text = message.text
     
@@ -90,8 +88,24 @@ async def handle_message(message: Message):
     # Clean up
     os.remove(image_path)
 
+# Initialize bot only if token is available
+BOT_TOKEN = os.getenv('BOT_TOKEN', '')
+if BOT_TOKEN and BOT_TOKEN != 'YOUR_BOT_TOKEN_HERE':
+    bot = Bot(token=BOT_TOKEN)
+else:
+    # For serverless environment, bot will be initialized by the environment
+    bot = None
+
+# For serverless compatibility - export bot and router
+__all__ = ['router', 'bot']
+
+# For local testing
 async def main():
-    await dp.start_polling(bot)
+    if bot:
+        dp = Dispatcher()
+        dp.include_router(router)
+        await dp.start_polling(bot)
 
 if __name__ == '__main__':
-    asyncio.run(main())
+    if bot:
+        asyncio.run(main())
