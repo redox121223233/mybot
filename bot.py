@@ -1,8 +1,3 @@
-
-
-باشه حتماً. این کد کامل و بدون کم و کاست است. تمام ویژگی‌هایی که درخواست کردید در آن پیاده‌سازی شده است.
-
-```python
 import asyncio
 import os
 import re
@@ -1019,4 +1014,3 @@ async def on_message(message: Message):
 
 # برای سازگاری با محیط سرورلس
 __all__ = ['router']
-```
