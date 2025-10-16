@@ -485,11 +485,16 @@ async def on_quota(cb: CallbackQuery):
 async def on_simple(cb: CallbackQuery):
     s = sess(cb.from_user.id)
     s["pack_wizard"] = {"step": "awaiting_name", "mode": "simple"}
+    
+    # FIX: Calculate dynamic max length
+    suffix = f"_by_{BOT_USERNAME}"
+    max_len = 64 - len(suffix)
+    
     rules_text = (
-        "نام پک را بنویس (مثال: my_stickers):\n\n"
-        "• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
-        "• باید با حرف شروع شود\n"
-        "• حداکثر ۳۲ کاراکتر"
+        f"نام پک را بنویس (مثال: my_stickers):\n\n"
+        f"• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
+        f"• باید با حرف شروع شود\n"
+        f"• حداکثر {max_len} کاراکتر"
     )
     await cb.message.answer(rules_text, reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
     await cb.answer()
@@ -510,11 +515,16 @@ async def on_ai(cb: CallbackQuery):
 
     s = sess(cb.from_user.id)
     s["pack_wizard"] = {"step": "awaiting_name", "mode": "ai"}
+
+    # FIX: Calculate dynamic max length
+    suffix = f"_by_{BOT_USERNAME}"
+    max_len = 64 - len(suffix)
+
     rules_text = (
-        "نام پک را بنویس (مثال: my_stickers):\n\n"
-        "• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
-        "• باید با حرف شروع شود\n"
-        "• حداکثر ۳۲ کاراکتر"
+        f"نام پک را بنویس (مثال: my_stickers):\n\n"
+        f"• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
+        f"• باید با حرف شروع شود\n"
+        f"• حداکثر {max_len} کاراکتر"
     )
     await cb.message.answer(rules_text, reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
     await cb.answer()
@@ -822,13 +832,17 @@ async def on_message(message: Message):
     pack_wizard = s.get("pack_wizard", {})
     if pack_wizard.get("step") == "awaiting_name" and message.text:
         pack_name = message.text.strip()
-        # Regex for strict validation: starts with a letter, contains lowercase letters, numbers, underscore, max 32 chars
-        if not re.fullmatch(r"^[a-z][a-z0-9_]{0,31}$", pack_name):
+        
+        # FIX: Calculate dynamic max length and regex
+        suffix = f"_by_{BOT_USERNAME}"
+        max_len = 64 - len(suffix)
+        # Regex for strict validation with dynamic length
+        if not re.fullmatch(rf"^[a-z][a-z0-9_]{{0,{max_len - 1}}}$", pack_name):
             await message.answer(
-                "نام پک نامعتبر است. لطفا طبق قوانین یک نام جدید انتخاب کنید:\n\n"
-                "• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
-                "• باید با حرف شروع شود\n"
-                "• حداکثر ۳۲ کاراکتر",
+                f"نام پک نامعتبر است. لطفا طبق قوانین یک نام جدید انتخاب کنید:\n\n"
+                f"• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
+                f"• باید با حرف شروع شود\n"
+                f"• حداکثر {max_len} کاراکتر",
                 reply_markup=back_to_menu_kb(is_admin)
             )
             return
