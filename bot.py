@@ -725,7 +725,7 @@ async def _handle_pack_creation(user_id: int, pack_title: str, message_to_reply:
     except TelegramBadRequest as e:
         if "invalid sticker set name is specified" in e.message:
             await message_to_reply.answer(
-                f"❌ نام پک «{pack_title» تکراری است یا نامعتبر.\n"
+                f"❌ نام پک «{pack_title}» تکراری است یا نامعتبر.\n"  # این خط اصلاح شد
                 "لطفاً نام دیگری را امتحان کنید:",
                 reply_markup=back_to_menu_kb(user_id == ADMIN_ID)
             )
