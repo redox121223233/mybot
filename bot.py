@@ -400,8 +400,11 @@ async def check_pack_exists(bot: Bot, short_name: str) -> bool:
         await bot.get_sticker_set(name=short_name)
         return True
     except TelegramBadRequest as e:
-        if "invalid sticker set name specified" in e.message:
+        # This error means the name format is wrong OR the set doesn't exist.
+        # We'll treat it as "does not exist" for our purposes.
+        if "STICKERSET_INVALID" in e.message or "invalid sticker set name specified" in e.message:
             return False
+        # Re-raise other potential errors
         raise
 
 # ============ روتر ============
@@ -917,15 +920,16 @@ async def on_pack_confirm_name(cb: CallbackQuery):
         return
 
     short_name = f"{clean_name}_by_{cb.from_user.id}_bot"
-    pack_exists = await check_pack_exists(cb.bot, short_name)
 
-    if pack_exists:
-        s["current_pack_short_name"] = short_name
-        s["current_pack_title"] = original_name
-        s["pack_wizard"] = {}
-        await cb.message.answer(f"استیکرها به پک موجود «{original_name}» اضافه خواهند شد.")
-    else:
-        try:
+    try:
+        pack_exists = await check_pack_exists(cb.bot, short_name)
+
+        if pack_exists:
+            s["current_pack_short_name"] = short_name
+            s["current_pack_title"] = original_name
+            s["pack_wizard"] = {}
+            await cb.message.answer(f"استیکرها به پک موجود «{original_name}» اضافه خواهند شد.")
+        else:
             dummy_img = render_image("First Sticker", "center", "center", "Default", "#FFFFFF", "medium", as_webp=True)
             sticker_to_add = InputSticker(
                 sticker=BufferedInputFile(dummy_img, filename="sticker.webp"),
@@ -944,28 +948,27 @@ async def on_pack_confirm_name(cb: CallbackQuery):
             s["pack_wizard"] = {}
             pack_link = f"https://t.me/addstickers/{short_name}"
             await cb.message.answer(f"پک استیکر «{original_name}» ساخته شد!\n{pack_link}\n\nحالا استیکر بعدی خود را بسازید.")
-        except TelegramBadRequest as e:
-            await cb.message.answer(f"خطا در ساخت پک: {e.message}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
-            s["pack_wizard"] = {}
-            await cb.answer()
-            return
-        except Exception as e:
-            await cb.message.answer(f"خطای غیرمنتظره در ساخت پک: {e}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
-            s["pack_wizard"] = {}
-            await cb.answer()
-            return
 
-    if mode == "simple":
-        s["mode"] = "simple"
-        s["simple"] = {"text": None, "bg_mode": "transparent", "bg_photo_bytes": None}
-        await cb.message.answer("متن استیکر ساده رو بفرست:", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
-    elif mode == "ai":
-        s["mode"] = "ai"
-        s["ai"] = {
-            "text": None, "v_pos": "center", "h_pos": "center", "font": "Default",
-            "color": "#FFFFFF", "size": "large", "bg_photo_bytes": None
-        }
-        await cb.message.answer("نوع استیکر هوش مصنوعی را انتخاب کنید:", reply_markup=ai_type_kb())
+        if mode == "simple":
+            s["mode"] = "simple"
+            s["simple"] = {"text": None, "bg_mode": "transparent", "bg_photo_bytes": None}
+            await cb.message.answer("متن استیکر ساده رو بفرست:", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+        elif mode == "ai":
+            s["mode"] = "ai"
+            s["ai"] = {
+                "text": None, "v_pos": "center", "h_pos": "center", "font": "Default",
+                "color": "#FFFFFF", "size": "large", "bg_photo_bytes": None
+            }
+            await cb.message.answer("نوع استیکر هوش مصنوعی را انتخاب کنید:", reply_markup=ai_type_kb())
+
+    except TelegramBadRequest as e:
+        # This will catch errors from check_pack_exists (e.g., STICKERSET_INVALID)
+        # or from create_new_sticker_set if the name is still somehow invalid.
+        await cb.message.answer(f"خطا: نام پک «{short_name}» توسط تلگرام تایید نشد.\n\nلطفا با نام ساده‌تر و انگلیسی دیگری تلاش کنید.", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+        s["pack_wizard"] = {}
+    except Exception as e:
+        await cb.message.answer(f"خطای غیرمنتظره در ساخت پک: {e}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+        s["pack_wizard"] = {}
     
     await cb.answer()
 
