@@ -51,8 +51,10 @@ def save_users(users_data: Dict[int, Dict[str, Any]]):
 def get_user(uid: int) -> Dict[str, Any]:
     """اطلاعات یک کاربر خاص را گرفته و در صورت نیاز آپدیت می‌کند"""
     users = load_users()
-    now_ts = int(datetime.now(timezone.utc).timestamp())
-    today_start_ts = int(datetime(now_ts.year, now_ts.month, now_ts.day, tzinfo=timezone.utc).timestamp())
+    # --- خطای اصلاح شده ---
+    now_dt = datetime.now(timezone.utc)
+    today_start_ts = int(datetime(now_dt.year, now_dt.month, now_dt.day, tzinfo=timezone.utc).timestamp())
+    # --- پایان خطای اصلاح شده ---
 
     if uid not in users:
         users[uid] = {"ai_used": 0, "day_start_ts": today_start_ts}
