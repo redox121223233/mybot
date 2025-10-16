@@ -29,7 +29,7 @@ ADMIN_ID = 6053579919
 
 MAINTENANCE = False
 DAILY_LIMIT = 5
-BOT_USERNAME = ""
+BOT_USERNAME = "matnstickerbot" # نام کاربری ربات شما بدون @
 
 # ============ حافظه ساده (in-memory) ============
 USERS: Dict[int, Dict[str, Any]] = {}
@@ -386,13 +386,6 @@ def admin_panel_kb():
     kb.adjust(1)
     return kb.as_markup()
 
-def admin_confirm_kb():
-    kb = InlineKeyboardBuilder()
-    kb.button(text="تایید", callback_data="admin:confirm_action")
-    kb.button(text="انصراف", callback_data="admin:cancel_action")
-    kb.adjust(2)
-    return kb.as_markup()
-
 # ============ توابع کمکی پک ============
 async def check_pack_exists(bot: Bot, short_name: str) -> bool:
     """Checks if a sticker pack with the given short name exists."""
@@ -493,8 +486,10 @@ async def on_simple(cb: CallbackQuery):
     s = sess(cb.from_user.id)
     s["pack_wizard"] = {"step": "awaiting_name", "mode": "simple"}
     rules_text = (
-        "نام پک را بنویس (مثلاً: MyStickers):\n\n"
-        "می‌توانید از حروف، عدد و فاصله استفاده کنید. ربات آن را برای تلگرام مناسب می‌کند."
+        "نام پک را بنویس (مثال: my_stickers):\n\n"
+        "• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
+        "• باید با حرف شروع شود\n"
+        "• حداکثر ۳۲ کاراکتر"
     )
     await cb.message.answer(rules_text, reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
     await cb.answer()
@@ -516,8 +511,10 @@ async def on_ai(cb: CallbackQuery):
     s = sess(cb.from_user.id)
     s["pack_wizard"] = {"step": "awaiting_name", "mode": "ai"}
     rules_text = (
-        "نام پک را بنویس (مثلاً: MyStickers):\n\n"
-        "می‌توانید از حروف، عدد و فاصله استفاده کنید. ربات آن را برای تلگرام مناسب می‌کند."
+        "نام پک را بنویس (مثال: my_stickers):\n\n"
+        "• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
+        "• باید با حرف شروع شود\n"
+        "• حداکثر ۳۲ کاراکتر"
     )
     await cb.message.answer(rules_text, reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
     await cb.answer()
@@ -724,7 +721,6 @@ async def on_rate_yes(cb: CallbackQuery):
         return
 
     try:
-        # FIX 1: Updated InputSticker for new aiogram version
         sticker_to_add = InputSticker(
             sticker=BufferedInputFile(sticker_bytes, filename="sticker.webp"),
             emoji_list=["😀"],
@@ -738,7 +734,6 @@ async def on_rate_yes(cb: CallbackQuery):
         await cb.message.answer(f"استیکر با موفقیت به پک «{pack_title}» اضافه شد.", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
     except TelegramBadRequest as e:
         await cb.message.answer(f"خطا در افزودن استیکر به پک: {e.message}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
-    # FIX 2: Safely convert exception to string
     except Exception as e:
         await cb.message.answer(f"خطای غیرمنتظره: {str(e)}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
 
@@ -767,7 +762,7 @@ async def on_message(message: Message):
                     await message.bot.copy_message(chat_id=user_id, from_chat_id=message.chat.id, message_id=message.message_id)
                     success_count += 1
                 except Exception:
-                    pass # Ignore users who blocked the bot
+                    pass
             await message.answer(f"پیام همگانی با موفقیت به {success_count} کاربر ارسال شد.")
             return
 
@@ -823,31 +818,73 @@ async def on_message(message: Message):
         )
         return
 
-    # Handle pack name input
+    # Handle pack name input with strict validation
     pack_wizard = s.get("pack_wizard", {})
     if pack_wizard.get("step") == "awaiting_name" and message.text:
-        original_pack_name = message.text.strip()
-        # Sanitize the name
-        clean_name = re.sub(r'[^a-z0-9_]', '_', original_pack_name.lower())
-        if not clean_name or not clean_name[0].isalpha():
-            clean_name = 'a' + clean_name
-        clean_name = clean_name[:32]
+        pack_name = message.text.strip()
+        # Regex for strict validation: starts with a letter, contains lowercase letters, numbers, underscore, max 32 chars
+        if not re.fullmatch(r"^[a-z][a-z0-9_]{0,31}$", pack_name):
+            await message.answer(
+                "نام پک نامعتبر است. لطفا طبق قوانین یک نام جدید انتخاب کنید:\n\n"
+                "• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
+                "• باید با حرف شروع شود\n"
+                "• حداکثر ۳۲ کاراکتر",
+                reply_markup=back_to_menu_kb(is_admin)
+            )
+            return
+
+        # Name is valid, proceed to create/check pack
+        short_name = f"{pack_name}_by_{BOT_USERNAME}"
+        mode = pack_wizard.get("mode")
         
-        s["pack_wizard"]["original_name"] = original_pack_name
-        s["pack_wizard"]["clean_name"] = clean_name
-        s["pack_wizard"]["step"] = "confirm_name"
+        try:
+            pack_exists = await check_pack_exists(message.bot, short_name)
 
-        kb = InlineKeyboardBuilder()
-        kb.button(text="تایید", callback_data="pack:confirm_name")
-        kb.button(text="تلاش مجدد", callback_data="pack:retry_name")
-        kb.adjust(2)
+            if pack_exists:
+                s["current_pack_short_name"] = short_name
+                s["current_pack_title"] = pack_name
+                s["pack_wizard"] = {}
+                await message.answer(f"استیکرها به پک موجود «{pack_name}» اضافه خواهند شد.")
+            else:
+                dummy_img = render_image("First Sticker", "center", "center", "Default", "#FFFFFF", "medium", as_webp=True)
+                sticker_to_add = InputSticker(
+                    sticker=BufferedInputFile(dummy_img, filename="sticker.webp"),
+                    emoji_list=["🎉"],
+                    emoji_format="text"
+                )
+                await message.bot.create_new_sticker_set(
+                    user_id=uid,
+                    name=short_name,
+                    title=pack_name,
+                    stickers=[sticker_to_add],
+                    sticker_type='regular',
+                    sticker_format='static'
+                )
+                s["current_pack_short_name"] = short_name
+                s["current_pack_title"] = pack_name
+                s["pack_wizard"] = {}
+                pack_link = f"https://t.me/addstickers/{short_name}"
+                await message.answer(f"پک استیکر «{pack_name}» با موفقیت ساخته شد!\n{pack_link}\n\nحالا استیکر بعدی خود را بسازید.")
 
-        await message.answer(
-            f"نام وارد شده: «{original_pack_name}»\n"
-            f"نام مناسب شده برای تلگرام: <code>{clean_name}</code>\n\n"
-            "آیا این نام مناسب است؟",
-            reply_markup=kb.as_markup()
-        )
+            # Proceed to the actual sticker creation based on the mode
+            if mode == "simple":
+                s["mode"] = "simple"
+                s["simple"] = {"text": None, "bg_mode": "transparent", "bg_photo_bytes": None}
+                await message.answer("متن استیکر ساده رو بفرست:", reply_markup=back_to_menu_kb(is_admin))
+            elif mode == "ai":
+                s["mode"] = "ai"
+                s["ai"] = {
+                    "text": None, "v_pos": "center", "h_pos": "center", "font": "Default",
+                    "color": "#FFFFFF", "size": "large", "bg_photo_bytes": None
+                }
+                await message.answer("نوع استیکر هوش مصنوعی را انتخاب کنید:", reply_markup=ai_type_kb())
+
+        except TelegramBadRequest as e:
+            await message.answer(f"خطا در ساخت پک: {e.message}", reply_markup=back_to_menu_kb(is_admin))
+            s["pack_wizard"] = {}
+        except Exception as e:
+            await message.answer(f"خطای غیرمنتظره در ساخت پک: {str(e)}", reply_markup=back_to_menu_kb(is_admin))
+            s["pack_wizard"] = {}
         return
 
     if message.photo:
@@ -906,79 +943,6 @@ async def on_message(message: Message):
             await message.answer("موقعیت عمودی متن:", reply_markup=ai_vpos_kb())
     else:
         await message.answer("از منوی زیر انتخاب کن:", reply_markup=main_menu_kb(is_admin))
-
-@router.callback_query(F.data == "pack:confirm_name")
-async def on_pack_confirm_name(cb: CallbackQuery):
-    s = sess(cb.from_user.id)
-    pack_wizard = s.get("pack_wizard", {})
-    clean_name = pack_wizard.get("clean_name")
-    original_name = pack_wizard.get("original_name")
-    mode = pack_wizard.get("mode")
-
-    if not clean_name:
-        await cb.answer("خطا، اطلاعات پک یافت نشد.", show_alert=True)
-        return
-
-    short_name = f"{clean_name}_by_{cb.from_user.id}_bot"
-
-    try:
-        pack_exists = await check_pack_exists(cb.bot, short_name)
-
-        if pack_exists:
-            s["current_pack_short_name"] = short_name
-            s["current_pack_title"] = original_name
-            s["pack_wizard"] = {}
-            await cb.message.answer(f"استیکرها به پک موجود «{original_name}» اضافه خواهند شد.")
-        else:
-            dummy_img = render_image("First Sticker", "center", "center", "Default", "#FFFFFF", "medium", as_webp=True)
-            # FIX 1: Updated InputSticker for new aiogram version
-            sticker_to_add = InputSticker(
-                sticker=BufferedInputFile(dummy_img, filename="sticker.webp"),
-                emoji_list=["🎉"],
-                emoji_format="text"
-            )
-            await cb.bot.create_new_sticker_set(
-                user_id=cb.from_user.id,
-                name=short_name,
-                title=original_name,
-                stickers=[sticker_to_add],
-                sticker_type='regular',
-                sticker_format='static'
-            )
-            s["current_pack_short_name"] = short_name
-            s["current_pack_title"] = original_name
-            s["pack_wizard"] = {}
-            pack_link = f"https://t.me/addstickers/{short_name}"
-            await cb.message.answer(f"پک استیکر «{original_name}» ساخته شد!\n{pack_link}\n\nحالا استیکر بعدی خود را بسازید.")
-
-        if mode == "simple":
-            s["mode"] = "simple"
-            s["simple"] = {"text": None, "bg_mode": "transparent", "bg_photo_bytes": None}
-            await cb.message.answer("متن استیکر ساده رو بفرست:", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
-        elif mode == "ai":
-            s["mode"] = "ai"
-            s["ai"] = {
-                "text": None, "v_pos": "center", "h_pos": "center", "font": "Default",
-                "color": "#FFFFFF", "size": "large", "bg_photo_bytes": None
-            }
-            await cb.message.answer("نوع استیکر هوش مصنوعی را انتخاب کنید:", reply_markup=ai_type_kb())
-
-    except TelegramBadRequest as e:
-        await cb.message.answer(f"خطا: نام پک «{short_name}» توسط تلگرام تایید نشد.\n\nلطفا با نام ساده‌تر و انگلیسی دیگری تلاش کنید.", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
-        s["pack_wizard"] = {}
-    # FIX 2: Safely convert exception to string
-    except Exception as e:
-        await cb.message.answer(f"خطای غیرمنتظره در ساخت پک: {str(e)}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
-        s["pack_wizard"] = {}
-    
-    await cb.answer()
-
-@router.callback_query(F.data == "pack:retry_name")
-async def on_pack_retry_name(cb: CallbackQuery):
-    s = sess(cb.from_user.id)
-    s["pack_wizard"]["step"] = "awaiting_name"
-    await cb.message.answer("لطفا نام جدیدی برای پک وارد کنید:")
-    await cb.answer()
 
 async def main():
     dp = Dispatcher()
