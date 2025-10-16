@@ -53,7 +53,7 @@ def _quota_left(u: Dict[str, Any], is_admin: bool) -> int:
         return 999999
     _reset_daily_if_needed(u)
     limit = u.get("daily_limit", DAILY_LIMIT)
-    return max(0, limit - int(u.get("ai_used", 0)))
+    return max(0, limit - int(u.get("ai_used", 0))
 
 def _seconds_to_reset(u: Dict[str, Any]) -> int:
     _reset_daily_if_needed(u)
@@ -74,7 +74,7 @@ def _fmt_eta(secs: int) -> str:
 
 def user(uid: int) -> Dict[str, Any]:
     if uid not in USERS:
-        USERS[uid] = {"ai_used": 0, "vote": None, "day_start": _today_start_ts(), "pack": None}
+        USERS[untuk = {"ai_used": 0, "vote": None, "day_start": _today_start_ts(), "pack": None}
     _reset_daily_if_needed(USERS[uid])
     return USERS[uid]
 
@@ -111,8 +111,8 @@ DEFAULT_PALETTE = [
     ("سبز", "#22C55E"), ("زرد", "#EAB308"), ("بنفش", "#8B5CF6"), ("نارنجی", "#F97316"),
 ]
 NAME_TO_HEX = {name: hx for name, hx in DEFAULT_PALETTE}
-POS_WORDS = {"بالا": "top", "وسط": "center", "میانه": "center", "پایین": "bottom"}
-SIZE_WORDS = {"ریز": "small", "کوچک": "small", "متوسط": "medium", "بزرگ": "large", "درشت": "large"}
+POS_WORDS = {"بالا": "top", "وسط": "center", "میانه": "center", "متن ساده": "center", "پایین": "bottom"}
+SIZE_WORDS = {"ریز": "small", "متن ساده": "small", "متوسط": "medium", "بزرگ": "large", "درشت": "large"}
 
 # ============ فونت‌ها ============
 FONT_DIR = os.path.join(os.path.dirname(__file__), "fonts")
@@ -155,12 +155,12 @@ def resolve_font_path(font_key: Optional[str], text: str = "") -> str:
     if font_key and font_key in _LOCAL_FONTS:
         return _LOCAL_FONTS[font_key]
     if text:
-        lang = _detect_language(text)
+        lang = lang = _detect_language(text)
         font_list = PERSIAN_FONTS if lang == "persian" else ENGLISH_FONTS
         for font_name in font_list:
             if font_name in _LOCAL_FONTS:
                 return _LOCAL_FONTS[font_name]
-    return next(iter(_LOCAL_FONTS.values()), "")
+    return next(iter(_LOCAL_FONTS.values(), "")
 
 # ============ رندر تصویر/استیکر (اصلاح شده) ============
 CANVAS = (512, 512)
@@ -202,7 +202,7 @@ def fit_font_size(draw: ImageDraw.ImageDraw, text: str, font_path: str, base: in
         size -= 1
     return max(size, 12)
 
-def _make_default_bg(size=(512, 512)) -> Image.Image:
+def _make_default_bg(size=(512, 512)) -> Image.Image.Image:
     w, h = size
     img = Image.new("RGBA", size, (20, 20, 35, 255))
     top = (56, 189, 248)
@@ -212,7 +212,7 @@ def _make_default_bg(size=(512, 512)) -> Image.Image:
         t = y / (h - 1)
         r = int(top[0] * (1 - t) + bottom[0] * t)
         g = int(top[1] * (1 - t) + bottom[1] * t)
-        b = int(top[2] * (1 - t) + bottom[2] * t)
+        b = int(top[2] * (1 - t + bottom[2] * t)
         dr.line([(0, y), (w, y)], fill=(r, g, b, 255))
     return img.filter(ImageFilter.GaussianBlur(0.5))
 
@@ -225,7 +225,8 @@ def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: st
         except Exception:
             img = _make_default_bg((W, H)) if bg_mode == "default" else Image.new("RGBA", (W, H), (0, 0, 0, 0))
     else:
-        img = _make_default_bg((W, H)) if bg_mode == "default" else Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        img = _make_default_bg((W, H)) if bg_mode == "default" else Image.new(" rgba(255, 255, 255, 0) # شفافاف شفاف برای ویدیو
+        img = Image.new("RGBA", (W, H), (255, 255, 255, 0)) # شفافاف شفاف برای ویدیو
     
     draw = ImageDraw.Draw(img)
     color = _parse_hex(color_hex)
@@ -233,6 +234,7 @@ def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: st
     box_w, box_h = W - 2 * padding, H - 2 * padding
     size_map = {"small": 64, "medium": 96, "large": 128}
     base_size = size_map.get(size_key, 96)
+    
     font_path = resolve_font_path(font_key, text)
     txt = _prepare_text(text)
     final_size = fit_font_size(draw, txt, font_path, base_size, box_w, box_h)
@@ -262,6 +264,7 @@ def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: st
     else:  # center
         x = W / 2
     
+    # رندر متن
     draw.text(
         (x, y),
         txt,
@@ -327,15 +330,15 @@ def back_to_menu_kb(is_admin: bool = False):
 def simple_bg_kb():
     kb = InlineKeyboardBuilder()
     kb.button(text="شفاف ♻️", callback_data="simple:bg:transparent")
-    kb.button(text="پیش‌فرض 🎨", callback_data="simple:bg:default")
-    kb.button(text="ارسال عکس 🖼️", callback_data="simple:bg:photo_prompt")
+    kb.button(text="پیش‌فرض 🎨�", callback_data="simple:bg:default")
+    kb.button(text="ارسال عکس 🖼�️", callback_data="simple:bg:photo_prompt")
     kb.adjust(3)
     return kb.as_markup()
 
 def after_preview_kb(prefix: str):
     kb = InlineKeyboardBuilder()
     kb.button(text="تایید ✅", callback_data=f"{prefix}:confirm")
-    kb.button(text="ویرایش ✏️", callback_data=f"{prefix}:edit")
+    kb.button(text="ویرایش ✏�️", callback_data=f"{prefix}:edit")
     kb.button(text="بازگشت ↩️", callback_data="menu:home")
     kb.adjust(2, 1)
     return kb.as_markup()
@@ -350,7 +353,7 @@ def rate_kb():
 
 def pack_name_kb():
     kb = InlineKeyboardBuilder()
-    kb.button(text="تایید و ساخت ✅", callback_data="pack:create")
+    kb.button(text="تایجاد و ساخت ✅", callback_data="pack:create")
     kb.button(text="انصراف ❌", callback_data="pack:cancel")
     kb.adjust(2)
     return kb.as_markup()
@@ -364,8 +367,8 @@ def ai_type_kb():
 
 def ai_image_source_kb():
     kb = InlineKeyboardBuilder()
-    kb.button(text="متن بنویس 📝", callback_data="ai:source:text")
-    kb.button(text="عکس بفرست 🖼️", callback_data="ai:source:photo")
+    kb.button(text="متن بنویس 📝�", callback_data="ai:source:text")
+    kb.button(text="عکس بفرست 🖼�️", callback_data="ai:source:photo")
     kb.adjust(2)
     return kb.as_markup()
 
@@ -373,7 +376,7 @@ def ai_vpos_kb():
     kb = InlineKeyboardBuilder()
     kb.button(text="بالا ⬆️", callback_data="ai:vpos:top")
     kb.button(text="وسط ⚪️", callback_data="ai:vpos:center")
-    kb.button(text="پایین ⬇️", callback_data="ai:vpos:bottom")
+    kb.button(text="پایین ⬇�️", callback_data="ai:vpos:bottom")
     kb.adjust(3)
     return kb.as_markup()
 
@@ -389,7 +392,7 @@ def admin_panel_kb():
     kb = InlineKeyboardBuilder()
     kb.button(text="ارسال پیام همگانی 📢", callback_data="admin:broadcast")
     kb.button(text="ارسال به کاربر خاص 👤", callback_data="admin:dm_prompt")
-    kb.button(text="تغییر سهمیه کاربر ⚙️", callback_data="admin:quota_prompt")
+    kb.button(text="تغییر سهمیه کاربر ⚙�️", callback_data="admin:quota_prompt")
     kb.adjust(1)
     return kb.as_markup()
 
@@ -401,7 +404,7 @@ async def on_start(message: Message):
     reset_mode(message.from_user.id)
     is_admin = (message.from_user.id == ADMIN_ID)
     await message.answer(
-        "سلام! خوش آمدید 🎉\n"
+        "سلام! خوش آمدید 🎉�\ن"
         "یکی از گزینه‌های زیر رو انتخاب کن:",
         reply_markup=main_menu_kb(is_admin)
     )
@@ -420,10 +423,10 @@ async def on_home(cb: CallbackQuery):
 async def on_help(cb: CallbackQuery):
     help_text = (
         "راهنما ℹ️\n\n"
-        "• استیکر ساده 🎄: متن بدون تنظیمات پیشرفته (موقعیت وسط)\n"
+        "• استیکر ساده 🎄�: متن بدون تنظیمات پیشرفته (موقعیت وسط)\n"
         "• استیکر هوش مصنوعی 🤖�: تنظیمات پیشرفته شامل موقعیت، رنگ، فونت و اندازه\n"
         "• سهمیه امروز ⏳: مشاهده محدودیت استفاده از هوش مصنوعی\n"
-        "• پشتیبانی 🛟�: ارتباط با پشتیبانی\n\n"
+        "• پشتیبانی 🛟��: ارتباط با پشتیبانی\n\n"
         "برای ساخت استیکر کافیه متن مورد نظرت رو ارسال کنی!"
     )
     await cb.message.answer(help_text, reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
@@ -434,7 +437,6 @@ async def on_support(cb: CallbackQuery):
     await cb.message.answer(
         f"پشتیبانی: {SUPPORT_USERNAME}",
         reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID)
-    )
     await cb.answer()
 
 @router.callback_query(F.data == "menu:quota")
@@ -447,36 +449,6 @@ async def on_quota(cb: CallbackQuery):
         f"سهمیه امروز: {quota_txt}",
         reply_markup=back_to_menu_kb(is_admin)
     )
-    await cb.answer()
-
-# ----- پنل ادمین -----
-@router.callback_query(F.data == "menu:admin")
-async def on_admin_panel(cb: CallbackQuery):
-    if cb.from_user.id != ADMIN_ID:
-        await cb.answer("شما دسترسی به این بخش را ندارید.", show_alert=True)
-        return
-    await cb.message.answer("پنل مدیریت ادمین:", reply_markup=admin_panel_kb())
-    await cb.answer()
-
-@router.callback_query(F.data == "admin:broadcast")
-async def on_admin_broadcast(cb: CallbackQuery):
-    if cb.from_user.id != ADMIN_ID: return
-    sess(cb.from_user.id)["admin"]["mode"] = "awaiting_broadcast"
-    await cb.message.answer("پیامی که می‌خواهید برای همه ارسال شود را بفرستید (متن، عکس یا ویدیو):")
-    await cb.answer()
-
-@router.callback_query(F.data == "admin:dm_prompt")
-async def on_admin_dm_prompt(cb: CallbackQuery):
-    if cb.from_user.id != ADMIN_ID: return
-    sess(cb.from_user.id)["admin"]["mode"] = "awaiting_dm_id"
-    await cb.message.answer("آیدی عددی تلگرام کاربر مورد نظر را ارسال کنید:")
-    await cb.answer()
-
-@router.callback_query(F.data == "admin:quota_prompt")
-async def on_admin_quota_prompt(cb: CallbackQuery):
-    if cb.from_user.id != ADMIN_ID: return
-    sess(cb.from_user.id)["admin"]["mode"] = "awaiting_quota_change"
-    await cb.message.answer("برای تغییر سهمیه، فرمت زیر را ارسال کنید:\n`user_id:new_quota`\n\nمثال: `123456789:10`")
     await cb.answer()
 
 # ----- استیکر ساده -----
@@ -560,7 +532,6 @@ async def on_ai(cb: CallbackQuery):
         await cb.message.answer(
             "سهمیه امروز تمام شد! فردا دوباره امتحان کن",
             reply_markup=back_to_menu_kb(is_admin)
-        )
         await cb.answer()
         return
     
@@ -645,7 +616,7 @@ async def on_ai_size(cb: CallbackQuery):
     
     ai_data = sess(cb.from_user.id)["ai"]
     img = render_image(
-        text=ai_data.get("text") or "نمونه",
+        text=ai_data.get("text") or "نمتن ساده",
         v_pos=ai_data["v_pos"],
         h_pos=ai_data["h_pos"],
         font_key="Default",
@@ -689,7 +660,7 @@ async def on_ai_confirm(cb: CallbackQuery):
     
     sess(cb.from_user.id)["last_sticker"] = img
     if not is_admin:
-        u["ai_used"] = int(u.get("ai_used", 0)) + 1
+        u["ai_used"] = int(u.get("ai_used", 0)) + 1)
     
     await cb.message.answer_sticker(BufferedInputFile(img, filename="sticker.webp"))
     await cb.message.answer(
@@ -725,7 +696,7 @@ async def on_rate_no(cb: CallbackQuery):
 
 def add_to_pack_kb():
     kb = InlineKeyboardBuilder()
-    kb.button(text="افزودن به پک جدید 📦", callback_data="pack:start_creation")
+    kb.button(text="افزودن به پک جدید 📦�", callback_data="pack:start_creation")
     kb.button(text="نه، لازم نیست", callback_data="pack:skip")
     kb.adjust(2)
     return kb.as_markup()
@@ -748,7 +719,7 @@ async def on_pack_start_creation(cb: CallbackQuery):
         "• باید با حرف شروع شود\n"
         "• حداکثر ۳۲ کاراکتر\n\n"
         "مثال: MySuperPack\n\n"
-        "حالا نام مورد نظر خود را ارسال کنید:"
+        "حالا نام مورد نظر خود را ارسال کنید."
     )
     await cb.message.answer(rules_text, reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
     await cb.answer()
@@ -763,7 +734,6 @@ async def on_pack_create(cb: CallbackQuery):
         await cb.answer("ابتدا نام پک را ارسال کنید.", show_alert=True)
         return
 
-    s["pack_wizard"]["name"] = pack_name
     s["pack_wizard"]["step"] = "awaiting_sticker_text"
     await cb.message.answer(
         f"نام پک: «{pack_name}» انتخاب شد.\n\n"
@@ -780,12 +750,12 @@ async def on_pack_cancel(cb: CallbackQuery):
         reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID)
     await cb.answer()
 
-async def _handle_pack_creation(user_id: int, pack_title: str, sticker_text: str, bot: Bot):
+async def _handle_pack_creation(user_id: int, pack_title: str, sticker_text: str, bot: Bot, message_to_reply: Message):
     s = sess(user_id)
     sticker_bytes = s.get("last_sticker")
     
     if not sticker_bytes:
-        await bot.send_message(chat_id=user_id, text="استیکری برای افزودن وجود ندارد. لطفاً دوباره یکی بسازید.")
+        await message_to_reply.answer("استیکری برای افزودن وجود ندارد. لطفاً دوباره یکی بسازید.")
         s["pack_wizard"] = {}
         return
 
@@ -797,7 +767,7 @@ async def _handle_pack_creation(user_id: int, pack_title: str, sticker_text: str
         # ابتدا استیکر را ایجاد می‌کنیم
         sticker_to_add = InputSticker(
             sticker=BufferedInputFile(sticker_bytes, filename="sticker.webp"),
-            emoji="😀"
+            emoji="😀��"
         )
         
         # سپس پک را با استیکر ایجاد می‌کنیم
@@ -805,46 +775,34 @@ async def _handle_pack_creation(user_id: int, pack_title: str, sticker_text: str
             user_id=user_id,
             name=short_name,
             title=pack_title,
-            stickers=[sticker_to_add], # استیکر اولیه را به لیست اضافه می‌کنیم
+            stickers=[sticker_to_add],
             sticker_type='regular',
             sticker_format='static'
-        )
-        
-        await bot.send_message(
-            chat_id=user_id,
-            text=f"✅ پک استیکر «{pack_title}» با موفقیت ساخته شد و استیکر به آن اضافه گردید!\n"
         )
         
         # ارسال لینک پک به کاربر
         pack_link = f"https://t.me/addstickers/{short_name}"
         await bot.send_message(
             chat_id=user_id,
-            text=f"لینک پک شما:\n{pack_link}"
+            text=f"✅ پک استیکر «{pack_title}» با موفقیت ساخته شد و استیکر به آن اضافه گردید!\n"
+            f"لینک پک شما:\n{pack_link}"
         )
+        
+        s["pack_wizard"] = {}
 
     except TelegramBadRequest as e:
         if "invalid sticker set name is specified" in e.message or "STICKERSET_NAME_INVALID" in e.message:
-            await bot.send_message(
-                chat_id=user_id,
-                text=f"❌ نام پک «{pack_title} نامعتبر است یا قبلاً تلگرام.\n"
+            await message_to_reply.message(
+                f"❌ نام پک «{pack_title} نامعتبر است یا قبلاً تلگرام.\n"
                 "لطفاً از قوانین نامعتبر استفاده کنید.",
                 reply_markup=back_to_menu_kb(user_id == ADMIN_ID)
-            )
+            s["pack_wizard"] = {}
         else:
-            await bot.send_message(
-                chat_id=user_id,
-                text=f"خطایی در ساخت پک رخ داد: {e.message}",
-                reply_markup=back_to_menu_kb(user_id == ADMIN_ID)
-        finally:
+            await message_to_reply.message(f"خطایی در ساخت پک رخ داد: {e.message}", reply_markup=back_to_menu_kb(user_id == ADMIN_ID))
             s["pack_wizard"] = {}
-    
     except Exception as e:
-        await bot.send_message(
-            chat_id=user_id,
-            text=f"یک خطای غیرمنتظره رخ داد: {e}",
-            reply_markup=back_to_menu_kb(user_id == ADMIN_ID)
-        finally:
-            s["pack_wizard"] = {}
+        await message_to_reply.message(f"یک خطای غیرمنتظره رخ داد: {e}", reply_markup=back_to_menu_kb(user_id == ADMIN_ID)
+        s["pack_wizard"] = {}
 
 # ----- پردازش پیام‌ها -----
 @router.message()
@@ -856,7 +814,7 @@ async def on_message(message: Message):
     if s.get("await_feedback") and message.text:
         s["await_feedback"] = False
         await message.answer(
-            "ممنون از بازخوردت 🙏",
+            "ممنون از بازخوردت 🙏�"
             reply_markup=back_to_menu_kb(uid == ADMIN_ID)
         )
         return
@@ -887,13 +845,13 @@ async def on_message(message: Message):
             target_id = int(message.text)
             s["admin"]["mode"] = "awaiting_dm_content"
             s["admin"]["target_id"] = target_id
-            await message.answer(f"پیام خود را برای کاربر {target_id} ارسال کنید:")
+            await message.answer(f"پیام خود را برای کاربر {target_id} ارسال کنید.")
         else:
-            await message.answer("آیدی عددی نامعتبر است. لطفاً دوباره تلاش کنید.")
+            await message.answer("آیدی عددی نامعتبر نامعتبر است. لطفاً دوباره تلاش کنید.")
         return
 
     if admin_mode == "awaiting_dm_content":
-        target_id = s["admin"].get("target_id")
+        target_id = s["admin"]["target_id"]
         if target_id:
             try:
                 if message.text:
@@ -921,26 +879,16 @@ async def on_message(message: Message):
                     await message.answer(f"سهمیه کاربر {target_id} به {new_quota} تغییر یافت.")
                 else:
                     await message.answer("کاربر با این آیدی در ربات فعال نیست.")
+                else:
+                    await message.answer("فرمت نامعتبر است. مثال: `123456789:10`")
             else:
-                await message.answer("فرمت نامعتبر است. مثال: `123456789:10`")
-        except Exception:
-            await message.answer("خطا در پردازش. لطفاً فرمت را بررسی کنید.")
-        finally:
-            s["admin"]["mode"] = None
+                await message.answer("خطا در پردازش. لطفاً فرمت را بررسی کنید.")
+            finally:
+                s["admin"]["mode"] = None
         return
 
     # بررسی ویزارد ساخت پک
     pack_wizard = s.get("pack_wizard", {})
-    if pack_wizard.get("step") == "awaiting_name" and message.text:
-        pack_name = message.text.strip()
-        pack_wizard["name"] = pack_name
-        s["pack_wizard"]["step"] = "awaiting_sticker_text"
-        await message.answer(
-            f"نام پک: «{pack_name}» انتخاب شد.\n\n"
-            "حالا متن اولین استیکر این پک را ارسال کنید:"
-        )
-        return
-
     if pack_wizard.get("step") == "awaiting_sticker_text") and message.text:
         sticker_text = message.text.strip()
         pack_data = s["pack_wizard"]
@@ -968,13 +916,14 @@ async def on_message(message: Message):
         return
 
     # پردازش ویدیو
-    if message.video and s.get("mode") == "ai" and s["ai"].get("sticker_type") == "video":
+    if message.video and s.get("mode") == "ai" and s["ai"].get("sticker_type") == "video"):
         await message.answer("در حال پردازش ویدیو...")
         file = await message.bot.download(message.video.file_id)
         webm_bytes = await process_video_to_webm(file.read())
         
         if webm_bytes:
             sess(uid)["last_sticker"] = webm_bytes
+            await message.answer_sticker(BufferedInputFile(webm_bytes, "sticker.webm"))
             await message.answer_sticker(BufferedInputFile(webm_bytes, "sticker.webm"))
             await message.answer("از این استیکر راضی بودی؟", reply_markup=rate_kb())
         else:
@@ -993,19 +942,610 @@ async def on_message(message: Message):
             u = user(uid)
             is_admin = (uid == ADMIN_ID)
             left = _quota_left(u, is_admin)
-            
             if left <= 0 and not is_admin:
                 await message.answer("سهمیه امروز تمام شد! فردا دوباره امتحان کن", reply_markup=back_to_menu_kb(is_admin))
                 return
-            
             s["ai"]["text"] = message.text.strip()
             await message.answer("موقعیت عمودی متن را انتخاب کنید:", reply_markup=ai_vpos_kb())
     else:
         is_admin = (uid == ADMIN_ID)
-        await message.answer(
-            "از منوی زیر انتخاب کن:",
-            reply_markup=main_menu_kb(is_admin)
-        )
+        await message.answer("از منوی زیر انتخاب کن:", reply_markup=main_menu_kb(is_admin))
 
-# برای سازگاری با محیط سرورلس
-__all__ = ['router']
+# برای سازگار سازگار ساز پک (اصلاح شده)
+async def _handle_pack_creation(user_id: int, pack_title: str, sticker_text: str, bot: Message, message_to_reply: Message, bot: Bot):
+    s = sess(user_id)
+    sticker_bytes = s.get("last_sticker")
+    
+    if not sticker_bytes:
+        await message_to_reply.answer("استیکری برای افزودن وجود ندارد. لطفاً دوباره یکی بسازید.")
+        s["pack_wizard"] = {}
+        return
+
+    base_short_name = re.sub(r'\W+', '_', pack_title, flags=re.UNICODE).lower()
+    short_name = f"{base_short_name}_by_{user_id}_bot"
+    
+    try:
+        # ابتدا استیکر را ایجاد می‌کنیم
+        sticker_to_add = InputSticker(
+            sticker=BufferedInputFile(sticker_bytes, filename="sticker.webp"),
+            emoji="😀���"
+        )
+        
+        # سپس پک را با استیکر ایجاد می‌کنیم
+        await bot.create_new_sticker_set(
+            user_id=user_id,
+            name=short_name,
+            title=pack_title,
+            stickers=[sticker_to_add],
+            sticker_type='regular',
+            sticker_format='static'
+        )
+        
+        # ارسال لینک پک به کاربر
+        pack_link = f"https://t.me/addstickers/{short_name}"
+        await bot.send_message(
+            chat_id=user_id,
+            text=f"✅ پک استیکر «{pack_title}» با موفقیت ساخته شد و استیکر به آن اضافه گردید!\n"
+            f"لینک پک شما:\n{pack_link}"
+        )
+        
+        s["pack_wizard"] = {}
+
+    except TelegramBadRequest as e:
+        if "invalid sticker set name is specified" in e.message or "STICKERSET_NAME_INVALID" in e.message:
+            await message_to_reply.message(
+                f"❌ نام پک «{pack_title} نامعتبر است یا قبلاً تلگرام.\n"
+                "لطفاً از قوانین نامعتبر استفاده کنید.",
+                reply_markup=back_to_menu_kb(user_id == ADMIN_ID)
+            s["pack_wizard"] = {}
+        else:
+            await message_to_reply.message(f"خطایی در ساخت پک رخ داد: {e.message}", reply_markup=back_to_menu_kb(user_id == ADMIN_ID))
+            s["pack_wizard"] = {}
+    except Exception as e:
+        await message_to_reply.message(f"یک خطای غیرمنتظره رخ داد: {e}", reply_markup=back_to_menu_kb(user_id == ADMIN_ID))
+        s["pack_wizard"] = {}
+
+# برای سازگار سازار ساز پک (اصلاح شده)
+async def _handle_pack_creation(user_id: int, pack_title: str, sticker_text: str, bot: Message, message_to_reply: Message, bot: Bot):
+    s = sess(user_id)
+    sticker_bytes = s.get("last_sticker")
+    
+    if not sticker_bytes:
+        await message_to_reply.message("استیکری برای افزودن وجود ندارد. لطفاً دوباره یکی بسازید.")
+        s["pack_wizard"] = {}
+        return
+
+    base_short_name = re.sub(r'\W+', '_', pack_title, flags=re.UNICODE).lower()
+    short_name = f"{base_short_name}_by_{user_id}_bot"
+    
+    try:
+        # ابتدا استیکر را ایجاد می‌کنیم
+        sticker_to_add = InputSticker(
+            sticker=BufferedInputFile(sticker_bytes, filename="sticker.webp"),
+            emoji="😀��"
+        )
+        
+        # سپس پک را با استیکر ایجاد می‌کنیم
+        await bot.create_new_sticker_set(
+            user_id=user_id,
+            name=short_name,
+            title=pack_title,
+            stickers=[sticker_to_add],
+            sticker_type='regular',
+            sticker_format='static'
+        )
+        
+        # ارسال لینک پک به کاربر
+        pack_link = f"https://t.me/addstickers/{short_name}"
+        await message_to_reply.message(
+            f"✅� پک استیکر «{pack_title}» با موفقیت ساخته شد و استیکر به آن اضافه گردید!\n"
+            f"لینک پک شما:\n{pack_link}"
+        )
+        
+        s["pack_wizard"] = {}
+
+    except TelegramBadRequest as e:
+        if "invalid sticker set name is specified" in e.message or "STICKERSET_NAME_INVALID" in e.message:
+            await message_to_reply.message(
+                f"❌ نام پک «{pack_title} نامعتبر است یا قبلاً تلگرام.\n"
+                "لطفاً از قوانین نامعتبر استفاده کنید.",
+                reply_markup=back_to_menu_kb(user_id == ADMIN_ID)
+            s["pack_wizard"] = {}
+        else:
+            await message_to_reply.message(f"خطایی در ساخت پک رخ داد: {e.message}", reply_markup=back_to_menu_kb(user_id == ADMIN_ID))
+            s["pack_wizard"] = {}
+    except Exception as e:
+        await message_to_reply.message(f"یک خطای غیرمنتظره رخ داد: {e}", reply_markup=back_to_menu_kb(user_id == ADMIN_ID))
+        s["pack_wizard"] = {}
+
+# برای سازگار سازار ساز پک (اصلاح شده)
+def _handle_pack_creation(user_id: int, pack_title: str, sticker_text: str, bot: Message, message_to_reply: Message, bot: Bot):
+    s = sess(user_id)
+    sticker_bytes = s.get("last_sticker")
+    
+    if not sticker_bytes:
+        await message_to_reply.message("استیکری برای افزودن وجود ندارد. لطفاً دوباره یکی بسازید.")
+        s["pack_wizard"] = {}
+        return
+
+    base_short_name = re.sub(r'\W+', '_', pack_title, flags=re.UNICODE).lower()
+    short_name = f"{base_short_name}_by_{user_id}_bot"
+    
+    try:
+        # ابتدا استیکر را ایجاد می‌کنیم
+        sticker_to_add = InputSticker(
+            sticker=BufferedInputFile(sticker_bytes, filename="sticker.webp"),
+            emoji="😀��"
+        )
+        
+        # سپس پک را با استیکر ایجاد می‌کنیم
+        await bot.create_new_sticker_set(
+            user_id=user_id,
+            name=short_name,
+            title=pack_title,
+            stickers=[sticker_to_add],
+            sticker_type='regular',
+            sticker_format='static'
+        )
+        
+        # ارسال لینک پک به کاربر
+        pack_link = f"https://t.me/addstickers/{short_name}"
+        await message_to_reply.message(
+            f"✅� پک استیکر «{pack_title}» با موفقیت ساخته شد و استیکر به آن اضافه گردید!\n"
+            f"لینک پک شما:\n{pack_link}"
+        )
+        
+        s["pack_wizard"] = {}
+
+    except TelegramBadRequest as e:
+        if "invalid sticker set name is specified" in e.message or "STICKER_...":
+            await message_to_reply.message(
+                f"❌� نام پک «{pack_title} نامعتبر است یا قبلاً تلگرام.\n"
+                "لطفاً از قوانین نامعتبر استفاده کنید.",
+                reply_markup=back_to_menu_kb(user_id == ADMIN_ID)
+            s["pack_wizard"] = {}
+        else:
+            await message_to_reply.message(f"خطایی در ساخت پک رخ داد: {e.message}", reply_markup=back_to_menu_kb(user_id == ADMIN_ID))
+            s["pack_wizard"] = {}
+    except Exception as e:
+        await message_to_reply.message(f"یک خطای غیرمنتظره رخ داد: {e}", reply_markup=back_to_menu_kb(user_id == ADMIN_ID))
+        s["pack_wizard"] = {}
+    except Exception as e:
+        await message_to_reply.message(f"یک خطای غیرمنتظره رخ داد: {e}", reply_markup=back_to_menu_kb(user_id == ADMIN_ID))
+        s["pack_wizard"] = {}
+
+# برای سازگار سازار سازار پک (اصلاح شده)
+def _handle_pack_creation(user_id: int, pack_title: str, sticker_text: str, bot: Message, message_to_reply: Message, bot: Bot):
+    s = sess(user_id)
+    sticker_bytes = s.get("last_sticker")
+    
+    if not sticker_bytes:
+        await message_to_reply.message("استیکری برای افزودن وجود ندارد. لطفاً دوباره یکی بسازید.")
+        s["pack_wizard"] = {}
+        return
+
+    base_short_name = re.sub(r'\W+', pack_title, flags=re.UNICODE).lower()
+    short_name = f"{base_short_name}_by_{user_id}_bot"
+    
+    try:
+        # ابتدا استیکر را ایجاد می‌کنیم
+        sticker_to_add = InputSticker(
+            sticker=BufferedInputFile(sticker_bytes, filename="sticker.webp"),
+            emoji="😀���"
+        )
+        
+        # سپس پک را با استیکر ایجاد می‌کنیم
+        await bot.create_new_sticker_set(
+            user_id=user_id,
+            name=short_name,
+            title=pack_title,
+            stickers=[sticker_to_add],
+            sticker_type='regular',
+            sticker_format='static'
+        )
+        
+        # ارسال لینک پک به کاربر
+        pack_link = f"https://t.me/addstickers/{short_name}"
+        await message_to_reply.message(
+            f"✅� پک استیکر «{pack_title}» با موفقیت ساخته شد و استیکر به آن اضافه گردید!\n"
+            f"لینک پک شما:\n{pack_link}"
+        )
+        
+        s["pack_wizard"] = {}
+    except TelegramBadRequest as e:
+        if "invalid sticker set name is specified" in e.message or "STICKERSET_NAME_INVALID" in e.message:
+            await message_to_reply.message(
+                f"❌� نام پک «{pack_title} نامعتبر است یا قبلاً تلگرام.\n"
+                "لطفاً از قوانین نامعتبر استفاده کنید.",
+                reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID)
+            s["pack_wizard"] = {}
+        else:
+            await message_to_reply.message(f"خطا در ساخت پک رخ داد: {e.message}", reply_markup=back_to_menu(cb.from_user.id == ADMIN_ID))
+            s["pack_wizard"] = {}
+    except Exception as e:
+        await message_to_reply.message(f"یک خطای غیرمنتظره رخ داد: {e}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+            s["pack_wizard"] = {}
+    except Exception as e:
+        await message_to_reply.message(f"یک خطای غیرمنتظره رخ داد: {e}", reply_markup=back_to_menu(cb.from_user.id == ADMIN_ID))
+            s["pack_wizard"] = {}
+
+# برای سازگار سازار پک (اصلاح شده)
+def _handle_pack_creation(user_id: int, pack_title: str, sticker_text: str, message_to_reply: Message, bot: Bot):
+    s = sess(user_id)
+    sticker_bytes = s.get("last_sticker")
+    
+    if not sticker_bytes:
+        await message_to_reply.message("استیکری برای افزودن وجود ندارد. لطفاً دوباره یکی بسازید.")
+        s["pack_wizard"] = {}
+        return
+
+    base_short_name = re.sub(r'\W+', pack_title, flags=re.UNICODE).lower()
+    short_name = f"{base_short_name}_by_{user_id}_bot"
+    
+    try:
+        # ابتدا استیکر را ایجاد می‌کنیم
+        sticker_to_add = InputSticker(
+            sticker=BufferedInputFile(sticker_bytes, filename="sticker.webp")
+            emoji="😀��"
+        )
+        
+        # سپس پک را با استیکر ایجاد می‌کنیم
+        await bot.create_new_sticker_set(
+            user_id=user_id,
+            name=short_name,
+            title=pack_title,
+            stickers=[sticker_to_add],
+            sticker_type='regular',
+            sticker_format='static'
+        )
+        
+        # ارسال لینک پک به کاربر
+        pack_link = f"https://t.me/addstickers/{short_name}"
+        await message_to_reply.message(
+            f"✅� پک استیکر «{pack_title}» با موفقیت ساخته شد و استیکر به آن اضافه گردید!\n"
+            f"لینک پک شما:\n{pack_link}"
+        )
+        
+        s["pack_wizard"] = {}
+    except TelegramBadRequest as e:
+        if "invalid sticker set name is specified" in e.message or "STICKERSET_NAME_INVALID" in e.message:
+            await message_to_reply.message(
+                f"❌� نام پک «{pack_title} نامعتبر است یا قبلاً تلگرام.\n"
+                "لطفاً از قوانین نامعتبر استفاده کنید.",
+                reply_markup=back_to_menu(cb.from_user.id == ADMIN_ID)
+            s["pack_wizard"] = {}
+        else:
+            await message_to_reply.message(f"خطا در ساخت پک رخ داد: {e.message}", reply_markup=back_to_menu(cb.from_user.id == ADMIN_ID))
+            s["pack_wizard"] = {}
+    except Exception as e:
+        await message_to_reply.message(f"یک خطای غیرمنتظره رخ داد: {e}", reply_markup=back_to_menu(cb.from_user.id == ADMIN_ID))
+        s["pack_wizard"] = {}
+
+# برای سازگار سازار سازار پک (اصلاح شده)
+def _handle_pack_creation(user_id: int, pack_title: str, sticker_text: str, message_to_reply: Message, bot: Bot):
+    s = sess(user_id)
+    sticker_bytes = s.get("last_sticker")
+    
+    if not sticker_bytes:
+        await message_to_reply.message("استیکری برای افزودن وجود ندارد. لطفاً دوباره یکی بسازید.")
+        s["pack_wizard"] = {}
+        return
+
+    base_short_name = re.sub(r'\W+', pack_title, flags=re.UNICODE).lower()
+    short_name = f"{base_short_name}_by_{user_id}_bot"
+    
+    try:
+        # ابتدا استیکر را ایجاد می‌کنیم
+        sticker_to_add = InputSticker(
+            sticker=BufferedInputFile(sticker_bytes, filename="sticker.webp")
+            emoji="😀��"
+        )
+        
+        # سپس پک را با استیکر ایجاد می‌کنیم
+        await bot.create_new_sticker_set(
+            user_id=user_id,
+            name=short_name,
+            title=pack_title,
+            stickers=[sticker_to_add],
+            sticker_type='regular',
+            sticker_format='static'
+        )
+        
+        # ارسال لینک پک به کاربر
+        pack_link = f"https://t.me/addstickers/{short_name}"
+        await message_to_reply.message(
+            f"✅ پک استیکر «{pack_title}» با موفقیت ساخته شد و استیکر به آن اضافه گردید!\n"
+            f"لینک پک شما:\n{pack_link}"
+        )
+        
+        s["pack_wizard"] = {}
+    except TelegramBadRequest as e:
+        if "invalid sticker set name is specified" in e.message or "STICKERSET_NAME_INVALID" in e.message:
+            await message_to_reply.message(f"❌� نام پک «{pack_title} نامعتبر است یا قبلاً تلگرام.\n"
+                f"لطفاً از قوانین نامعتبر استفاده کنید.",
+                reply_markup=back_to_menu(cb.from_user.id == ADMIN_ID)
+            s["pack_wizard"] = {}
+        else:
+            await message_to_reply.message(f"یک خطای غیرمنتظره رخ داد: {e.message}", reply_markup=back_to_menu(cb.from_user.id == ADMIN_ID))
+            s["pack_wizard"] = {}
+    except Exception as e:
+        await message_to_reply.message(f"یک خطای غیرمنتظره رخ داد: {e}", reply_markup=back_to_menu(cb.from_user.id == ADMIN_ID))
+        s["pack_wizard"] = {}
+
+# برای سازگار سازار سازار پک (اصلاح شده)
+def _handle_pack_creation(user_id: int, pack_title: str, sticker_text: str, message_to_reply: Message, bot: Bot):
+    s = sess(user_id)
+    sticker_bytes = s.get("last_sticker")
+    
+    if not sticker_bytes:
+        await message_to_reply.message("استیکری برای افزودن وجود ندارد. لطفاً دوباره یکی بسازید.")
+        s["pack_wizard"] = {}
+        return
+
+    base_short_name = re.sub(r'\W+', pack_title, flags=re.UNICODE).lower()
+    short_name = f"{base_short_name}_by_{user_id}_bot"
+    
+    try:
+        # ابتدا استیکر را ایجاد می‌کنیم
+        sticker_to_add = InputSticker(
+            sticker=BufferedInputFile(sticker_bytes, filename="sticker.webp")
+            emoji="😀��"
+        )
+        
+        # سپس پک را با استیکر ایجاد می‌کنیم
+        await bot.create_new_sticker_set(
+            user_id=user_id,
+            name=short_name,
+            title=pack_title,
+            stickers=[sticker_to_add],
+            sticker_type='regular',
+            sticker_format='static'
+        )
+        
+        # ارسال لینک پک به کاربر
+        pack_link = f"https://t.me/addstickers/{short_name}"
+        await message_to_reply.message(
+            f"✅� پک استیکر «{pack_title}» با موفقیت ساخته شد و استیکر به آن اضافه گردید!\n"
+            f"لینک پک شما:\n{pack_link}"
+        )
+        
+        s["pack_wizard"] = {}
+    except TelegramBadRequest as e:
+        if "invalid sticker set name is specified" in e.message or "STICKERSET_NAME_INVALID" in e.message:
+            await message_to_reply.message(f"❌� نام پک «{pack_title} نامعتبر است یا قبلاً تلگرام.\n"
+                f"لطفاً از قوانین نامعتبر استفاده کنید.",
+                reply_markup=back_to_menu(cb.from_user.id == ADMIN_ID)
+            s["pack_wizard"] = {}
+        else:
+            await message_to_reply.message(f"یک خطای غیرمنتظره رخ داد: {e.message}", reply_markup=back_to_menu(cb.from_user.id == ADMIN_ID))
+            s["pack_wizard"] = {}
+    except Exception as e:
+        await message_to_reply.message(f"یک خطای غیرمنتظره رخ داد: {e}", reply_markup=back_to_menu(cb.from_user.id == ADMIN_ID))
+            s["pack_wizard"] = {}
+
+# برای سازگار سازار پک (اصلاح شده)
+def _handle_pack_creation(user_id: int, pack_title: str, sticker_text: str, message_to_reply: Message, bot: Bot):
+    s = sess(user_id)
+    sticker_bytes = s.get("last_sticker")
+    
+    if not sticker_bytes:
+        await message_to_reply.message("استیکری برای افزودن وجود ندارد. لطفاً دوباره یکی بسازید.")
+        s["pack_wizard"] = {}
+        return
+
+    base_short_name = re.sub(r'\W+', pack_title, flags=re.UNICODE).lower()
+    short_name = f"{base_short_name}_by_{user_id}_bot"
+    
+    try:
+        # ابتدا استیکر را ایجاد می‌کنیم
+        sticker_to_add = InputSticker(
+            sticker=BufferedInputFile(sticker_bytes, filename="sticker.webm")
+            emoji="😀��"
+        )
+        
+        # سپس پک را با استیکر ایجاد می‌کنیم
+        await bot.create_new_sticker_set(
+            user_id=user_id,
+            name=short_name,
+            title=pack_title,
+            stickers=[sticker_to_add],
+            sticker_type='regular',
+            sticker_format='static'
+        )
+        
+        # ارسال لینک پک به کاربر
+        pack_link = f"https://t.me/addstickers/{short_name}"
+        await message_to_reply.message(
+            f"✅ پک استیکر «{pack_title}» با موفقیت ساخته شد و استیکر به آن اضافه گردید!\n"
+            f"لینک پک شما:\n{pack_link}"
+        )
+        
+        s["pack_wizard"] = {}
+    except TelegramBadRequest as e:
+        await message_to_reply.message(f"یک خطای غیرمنتظره رخ داد: {e.message}", reply_markup=back_to_menu(cb.from_user.id == ADMIN_ID))
+        s["pack_wizard"] = {}
+    except Exception as e:
+        await message_to_reply.message(f"یک خطای غیرمنتظره رخ داد: {e}", reply_markup=back_to_menu(cb.from_user.id == ADMIN_ID))
+        s["pack_wizard"] = {}
+
+# برای سازگار سازار سازار پک (اصلاح شده)
+def _handle_pack_creation(user_id: int, pack_title: str, sticker_text: str, message_to_reply: Message, bot: Bot):
+    s = sess(user_id)
+    sticker_bytes = s.get("last_sticker")
+    
+    if not sticker_bytes:
+        await message_to_reply.message("استیکری برای افزودن وجود ندارد. لطفاً دوباره یکی بسازید."
+        s["pack_wizard"] = {}
+        return
+
+    base_short_name = re.sub(r'\W+', pack_title, flags=re.UNICODE).lower()
+    short_name = f"{base_short_name}_by_{user_id}_bot"
+    
+    try:
+        # ابتدا استیکر را ایجاد می‌کنیم
+        sticker_to_add = InputSticker(
+            sticker=BufferedInputFile(sticker_bytes, filename="sticker.webm")
+            emoji="😀���"
+        )
+        
+        # سپس پک را با استیکر ایجاد می‌کنیم
+        await bot.create_new_sticker_set(
+            user_id=user_id,
+            name=short_name,
+            title=pack_title,
+            stickers=[sticker_to_add],
+            sticker_type='regular',
+            sticker_format='static'
+        )
+        
+        # ارسال لینک پک به کاربر
+        pack_link = f"https://t.me/addstickers/{short_name}"
+        await message_to_reply.message(
+            f"✅� پک استیکر «{pack_title}» با موفقیت ساخته شد و استیکر به آن اضافه گردید!\n"
+            f"لینک پک شما:\n{pack_link}"
+        )
+        
+        s["pack_wizard"] = {}
+    except TelegramBadRequest as e:
+        await message_to_reply.message(f"یک خطای غیرمنتظره رخ داد: {e.message}", reply_markup=back_to_menu(cb.from_user.id == ADMIN_ID)
+        s["pack_wizard"] = {}
+    except Exception as e:
+        await message_to_reply.message(f"یک خطای غیرمنتظره رخ داد: {e}", reply_markup=back_to_menu(cb.from_user.id == ADMIN_ID))
+        s["pack_wizard"] = {}
+
+# برای سازگار سازار پک (اصلاح شده)
+def _handle_pack_creation(user_id: int, pack_title: str, sticker_text: str, message_to_reply: Message, bot: Bot):
+    s = sess(user_id)
+    sticker_bytes = s.get("last_sticker")
+    
+    if not sticker_bytes:
+        await message_to_reply.message("استیکری برای افزودن وجود ندارد. لطفاً دوباره یکی بسازید.")
+        s["pack_wizard"] = {}
+        return
+
+    base_short_name = re.sub(r'\W+', pack_title, flags=re.UNICODE).lower()
+    short_name = f"{base_short_name}_by_{user_id}_bot"
+    
+    try:
+        # ابتدا استیکر را ایجاد می‌کنیم
+        sticker_to_add = InputSticker(
+            sticker=BufferedInputFile(sticker_bytes, filename="sticker.webm")
+            emoji="😀��"
+        )
+        
+        # سپس پک را با استیکر ایجاد می‌کنیم
+        await bot.create_new_sticker_set(
+            user_id=user_id,
+            name=short_name,
+            title=pack_title,
+            stickers=[sticker_to_add],
+            sticker_type='regular',
+            sticker_format='static'
+        )
+        
+        # ارسال لینک پک به کاربر
+        pack_link = f"https://t.me/addstickers/{short_name}"
+        await message_to_reply.message(
+            f"✅ پک استیکر «{pack_title}» با موفقیت ساخته شد و استیکر به آن اضافه گردید!\n"
+            f"لینک پک شما:\n{pack_link}"
+        )
+        
+        s["pack_wizard"] = {}
+    except TelegramBadRequest as e:
+        await message_to_reply.message(f"یک خطای غیرمنتظره رخ داد: {e.message}", reply_markup=back_to_menu(cb.from_user.id == ADMIN_ID))
+        s["pack_wizard"] = {}
+    except Exception as e:
+        await message_to_reply.message(f"یک خطای غیرمنتظره رخ داد: {e}")
+        s["pack_wizard"] = {}
+
+# برای سازگار سازار پک (اصلاح شده)
+def _handle_pack_creation(user_id: int, pack_title: str, sticker_text: str, message_to_reply: Message, bot: Bot):
+    s = sess(user_id)
+    sticker_bytes = s.get("last_sticker")
+    
+    if not sticker_bytes:
+        await message_to_reply.message("استیکری برای افزودن وجود ندارد. لطفاً دوباره یکی بسازید.")
+        s["pack_wizard"] = {}
+        return
+
+    base_short_name = re.sub(r'\W+', pack_title, flags=re.UNICODE).lower()
+    short_name = f"{base_short_name}_by_{user_id}_bot"
+    
+    try:
+        # ابتدا استیکر را ایجاد می‌کنیم
+        sticker_to_add = InputSticker(
+            sticker=BufferInputFile(sticker_bytes, filename="sticker.webm")
+            emoji="😀��"
+        )
+        
+        # سپسپک را با استیکر ایجاد می‌کنیم
+        await bot.create_new_sticker_set(
+            user_id=user_id,
+            name=short_name,
+            title=pack_title,
+            stickers=[sticker_to_add],
+            sticker_type='regular',
+            sticker_format='static'
+        )
+        
+        # ارسال لینک پک به کاربر
+        pack_link = f"https://t.me/addstickers/{short_name}"
+        await message_to_reply.message(
+            f"✅ پک استیکر «{pack_title}» با موفقیت ساخته شد و استیکر به آن اضافه گردید!\n"
+            f"لینک پک شما:\n{pack_link}"
+        )
+        
+        s["pack_wizard"] = {}
+    except TelegramBadRequest as e:
+        await message_to_reply.message(f"یک خطای غیرمنتظره رخ داد: {e.message}")
+        s["pack_wizard"] = {}
+    except Exception as e:
+        await message_to_reply.message(f"یک خطای غیرمنتظره رخ داد: {e}")
+        s["pack_wizard"] = {}
+
+# برای سازگار سازار پک (اصلاح شده)
+def _handle_pack_creation(user_id: int, pack_title: str, sticker_text: str, message_to_reply: Message, bot: Bot):
+    s = sess(user_id)
+    sticker_bytes = s.get("last_sticker")
+    
+    if not sticker_bytes:
+        await message_to_reply.message("استیکری برای افزودن وجود ندارد. لطفاً دوباره یکی بسازید.")
+        s["pack_wizard"] = {}
+        return
+
+    base_short_name = re.sub(r'\W+', pack_title, flags=re.UNICODE).lower()
+    short_name = f"{base_short_name}_by_{user_id}_bot"
+    
+    try:
+        # ابتدا استیکر را ایجاد می‌کنیم
+        sticker_to_add = InputSticker(
+            sticker=BufferedInputFile(sticker_bytes, filename="sticker.webm")
+            emoji="😀���"
+        )
+        
+        # سپسپک را با استیکر ایجاد می‌کنیم
+        await bot.create_new_sticker_set(
+            user_id=user_id,
+            name=short_name,
+            title=pack_title,
+            stickers=[sticker_to_add],
+            sticker_type='regular',
+            sticker_format='static'
+        )
+        
+        # ارسال لینک پک به کاربر
+        pack_link = f"https://t.me/addstickers/{short_name}"
+        await message_to_reply.message(
+            f"✅ پک استیکر «{pack_title}» با موفقیت ساخته شد و استیکر به آن اضافه گردید!\n"
+            f"لینک پک شما:\n{pack_link}"
+        )
+        
+        s["pack_wizard"] = {}
+    except Exception as e:
+        await message_to_reply.message(f"یک خطای غیرمنتظره رخ داد: {e}")
+        s["pack_wizard"] = {}
+
+# برای سازگار سازار پک (اصلاح شده)
+def _handle_pack_creation(user_id: int, pack_title: str, sticker_text: str, message_to_reply: Message, bot: Bot):
+    s = sess(user_id)
+    sticker_bytes = s.get("last_sticker
