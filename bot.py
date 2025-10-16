@@ -52,7 +52,9 @@ def _quota_left(u: Dict[str, Any], is_admin: bool) -> int:
     if is_admin:
         return 999999
     _reset_daily_if_needed(u)
-    return max(0, DAILY_LIMIT - int(u.get("ai_used", 0)))
+    # ابتدا سهمیه سفارشی کاربر را چک می‌کند
+    limit = u.get("daily_limit", DAILY_LIMIT)
+    return max(0, limit - int(u.get("ai_used", 0)))
 
 def _seconds_to_reset(u: Dict[str, Any]) -> int:
     _reset_daily_if_needed(u)
@@ -86,7 +88,8 @@ def sess(uid: int) -> Dict[str, Any]:
             "pack_wizard": {}, 
             "await_feedback": False,
             "last_sticker": None,
-            "last_video_sticker": None
+            "last_video_sticker": None,
+            "admin": {} # برای حالت‌های ادمین
         }
     return SESSIONS[uid]
 
@@ -100,6 +103,7 @@ def reset_mode(uid: int):
     s["last_sticker"] = None
     s["last_video_sticker"] = None
     s["pack_wizard"] = {}
+    s["admin"] = {} # حالت ادمین هم ریست می‌شود
     # پاک کردن اطلاعات کاربر برای ریست سهمیه
     if uid in USERS:
         del USERS[uid]
@@ -237,9 +241,9 @@ def _make_default_bg(size=(512, 512)) -> Image.Image:
     
     return img.filter(ImageFilter.GaussianBlur(0.5))
 
-def render_image(text: str, position: str, font_key: str, color_hex: str, size_key: str, 
+def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: str, size_key: str, 
                 bg_mode: str = "transparent", bg_photo: Optional[bytes] = None, as_webp: bool = False) -> bytes:
-    """رندر تصویر استیکر با متن فارسی (اصلاح شده)"""
+    """رندر تصویر استیکر با موقعیت‌دهی کامل"""
     W, H = CANVAS
     
     if bg_photo:
@@ -272,28 +276,29 @@ def render_image(text: str, position: str, font_key: str, color_hex: str, size_k
     text_width = bbox[2] - bbox[0]
     text_height = bbox[3] - bbox[1]
 
-    is_fa = is_persian(text)
-
-    if position == "top":
+    # موقعیت‌دهی عمودی
+    if v_pos == "top":
         y = padding
-    elif position == "bottom":
+    elif v_pos == "bottom":
         y = H - padding - text_height
     else:  # center
         y = (H - text_height) / 2
 
-    if is_fa:
-        x = W - padding
-        anchor = "rm"
-    else:
+    # موقعیت‌دهی افقی
+    if h_pos == "left":
         x = padding
-        anchor = "lm"
+    elif h_pos == "right":
+        x = W - padding
+    else:  # center
+        x = W / 2
     
+    # رندر متن
     draw.text(
         (x, y),
         txt,
         font=font,
         fill=color,
-        anchor=anchor,
+        anchor="mm", # anchor را به mm (middle-middle) تغییر دادیم تا محاسبات درست باشد
         stroke_width=2,
         stroke_fill=(0, 0, 0, 220)
     )
@@ -396,12 +401,28 @@ def ai_image_source_kb():
     kb.adjust(2)
     return kb.as_markup()
 
-def ai_pos_kb():
+def ai_vpos_kb():
     kb = InlineKeyboardBuilder()
-    kb.button(text="بالا ⬆️", callback_data="ai:pos:top")
-    kb.button(text="وسط ⚪️", callback_data="ai:pos:center")
-    kb.button(text="پایین ⬇️", callback_data="ai:pos:bottom")
+    kb.button(text="بالا ⬆️", callback_data="ai:vpos:top")
+    kb.button(text="وسط ⚪️", callback_data="ai:vpos:center")
+    kb.button(text="پایین ⬇️", callback_data="ai:vpos:bottom")
     kb.adjust(3)
+    return kb.as_markup()
+
+def ai_hpos_kb():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="چپ ⬅️", callback_data="ai:hpos:left")
+    kb.button(text="وسط ⚪️", callback_data="ai:hpos:center")
+    kb.button(text="راست ➡️", callback_data="ai:hpos:right")
+    kb.adjust(3)
+    return kb.as_markup()
+
+def admin_panel_kb():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="ارسال پیام همگانی 📢", callback_data="admin:broadcast")
+    kb.button(text="ارسال به کاربر خاص 👤", callback_data="admin:dm_prompt")
+    kb.button(text="تغییر سهمیه کاربر ⚙️", callback_data="admin:quota_prompt")
+    kb.adjust(1)
     return kb.as_markup()
 
 # ============ ربات و روتر ============
@@ -453,11 +474,42 @@ async def on_quota(cb: CallbackQuery):
     u = user(cb.from_user.id)
     is_admin = (cb.from_user.id == ADMIN_ID)
     left = _quota_left(u, is_admin)
-    quota_txt = "نامحدود" if is_admin else f"{left} از {DAILY_LIMIT}"
+    quota_txt = "نامحدود" if is_admin else f"{left} از {u.get('daily_limit', DAILY_LIMIT)}"
     await cb.message.answer(
         f"سهمیه امروز: {quota_txt}",
         reply_markup=back_to_menu_kb(is_admin)
     )
+    await cb.answer()
+
+# ----- پنل ادمین -----
+@router.callback_query(F.data == "menu:admin")
+async def on_admin_panel(cb: CallbackQuery):
+    if cb.from_user.id != ADMIN_ID:
+        await cb.answer("شما دسترسی به این بخش را ندارید.", show_alert=True)
+        return
+    
+    await cb.message.answer("پنل مدیریت ادمین:", reply_markup=admin_panel_kb())
+    await cb.answer()
+
+@router.callback_query(F.data == "admin:broadcast")
+async def on_admin_broadcast(cb: CallbackQuery):
+    if cb.from_user.id != ADMIN_ID: return
+    sess(cb.from_user.id)["admin"]["mode"] = "awaiting_broadcast"
+    await cb.message.answer("پیامی که می‌خواهید برای همه ارسال شود را بفرستید (متن، عکس یا ویدیو):")
+    await cb.answer()
+
+@router.callback_query(F.data == "admin:dm_prompt")
+async def on_admin_dm_prompt(cb: CallbackQuery):
+    if cb.from_user.id != ADMIN_ID: return
+    sess(cb.from_user.id)["admin"]["mode"] = "awaiting_dm_id"
+    await cb.message.answer("آیدی عددی تلگرام کاربر مورد نظر را ارسال کنید:")
+    await cb.answer()
+
+@router.callback_query(F.data == "admin:quota_prompt")
+async def on_admin_quota_prompt(cb: CallbackQuery):
+    if cb.from_user.id != ADMIN_ID: return
+    sess(cb.from_user.id)["admin"]["mode"] = "awaiting_quota_change"
+    await cb.message.answer("برای تغییر سهمیه، فرمت زیر را ارسال کنید:\n`user_id:new_quota`\n\nمثال: `123456789:10`")
     await cb.answer()
 
 # ----- استیکر ساده -----
@@ -465,423 +517,4 @@ async def on_quota(cb: CallbackQuery):
 async def on_simple(cb: CallbackQuery):
     s = sess(cb.from_user.id)
     s["mode"] = "simple"
-    s["simple"] = {"text": None, "bg_mode": "transparent", "bg_photo_bytes": None}
-    await cb.message.answer(
-        "متن استیکر ساده رو بفرست:",
-        reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID)
-    )
-    await cb.answer()
-
-@router.callback_query(F.data.startswith("simple:bg:"))
-async def on_simple_bg(cb: CallbackQuery):
-    s = sess(cb.from_user.id)["simple"]
-    mode = cb.data.split(":")[-1]
-    if mode == "photo_prompt":
-        s["awaiting_bg_photo"] = True
-        await cb.message.answer("عکس مورد نظر برای پس‌زمینه را ارسال کنید:", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
-    else:
-        s["bg_mode"] = mode
-        s["bg_photo_bytes"] = None
-        if s.get("text"):
-            img = render_image(
-                text=s["text"], 
-                position="center", 
-                font_key="Default", 
-                color_hex="#FFFFFF",
-                size_key="medium", 
-                bg_mode=mode, 
-                bg_photo=s.get("bg_photo_bytes"),
-                as_webp=False
-            )
-            file_obj = BufferedInputFile(img, filename="preview.png")
-            await cb.message.answer_photo(
-                file_obj, 
-                caption="پیش‌نمایش آماده است",
-                reply_markup=after_preview_kb("simple")
-            )
-    await cb.answer()
-
-@router.callback_query(F.data == "simple:confirm")
-async def on_simple_confirm(cb: CallbackQuery):
-    s = sess(cb.from_user.id)["simple"]
-    img = render_image(
-        text=s["text"] or "سلام",
-        position="center",
-        font_key="Default",
-        color_hex="#FFFFFF",
-        size_key="medium",
-        bg_mode=s.get("bg_mode") or "transparent",
-        bg_photo=s.get("bg_photo_bytes"),
-        as_webp=True
-    )
-    sess(cb.from_user.id)["last_sticker"] = img
-    await cb.message.answer_sticker(BufferedInputFile(img, filename="sticker.webp"))
-    await cb.message.answer(
-        "از این استیکر راضی بودی؟",
-        reply_markup=rate_kb()
-    )
-    await cb.answer()
-
-@router.callback_query(F.data == "simple:edit")
-async def on_simple_edit(cb: CallbackQuery):
-    await cb.message.answer(
-        "پس‌زمینه رو انتخاب کن:",
-        reply_markup=simple_bg_kb()
-    )
-    await cb.answer()
-
-# ----- استیکر هوش مصنوعی -----
-@router.callback_query(F.data == "menu:ai")
-async def on_ai(cb: CallbackQuery):
-    u = user(cb.from_user.id)
-    is_admin = (cb.from_user.id == ADMIN_ID)
-    left = _quota_left(u, is_admin)
-    
-    if left <= 0 and not is_admin:
-        await cb.message.answer(
-            "سهمیه امروز تمام شد! فردا دوباره امتحان کن",
-            reply_markup=back_to_menu_kb(is_admin)
-        )
-        await cb.answer()
-        return
-    
-    s = sess(cb.from_user.id)
-    s["mode"] = "ai"
-    s["ai"] = {
-        "text": None, "position": "center", "font": "Default",
-        "color": "#FFFFFF", "size": "large", "bg_photo_bytes": None
-    }
-    
-    await cb.message.answer(
-        "نوع استیکر هوش مصنوعی را انتخاب کنید:",
-        reply_markup=ai_type_kb()
-    )
-    await cb.answer()
-
-@router.callback_query(F.data.startswith("ai:type:"))
-async def on_ai_type(cb: CallbackQuery):
-    sticker_type = cb.data.split(":")[-1]
-    s = sess(cb.from_user.id)
-    s["ai"]["sticker_type"] = sticker_type
-
-    if sticker_type == "image":
-        await cb.message.answer("منبع استیکر تصویری را انتخاب کنید:", reply_markup=ai_image_source_kb())
-    elif sticker_type == "video":
-        if not is_ffmpeg_installed():
-            await cb.message.answer(
-                "⚠️ قابلیت ویدیو فعال نیست. FFmpeg نصب نیست.",
-                reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID)
-            )
-        else:
-            await cb.message.answer("یک فایل ویدیو ارسال کنید:", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
-    await cb.answer()
-
-@router.callback_query(F.data == "ai:source:text")
-async def on_ai_source_text(cb: CallbackQuery):
-    await cb.message.answer("متن استیکر تصویری را بفرست:", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
-    await cb.answer()
-
-@router.callback_query(F.data == "ai:source:photo")
-async def on_ai_source_photo(cb: CallbackQuery):
-    sess(cb.from_user.id)["ai"]["awaiting_bg_photo"] = True
-    await cb.message.answer("عکس مورد نظر برای پس‌زمینه را ارسال کنید:", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
-    await cb.answer()
-
-@router.callback_query(F.data.startswith("ai:pos:"))
-async def on_ai_pos(cb: CallbackQuery):
-    pos = cb.data.split(":")[-1]
-    sess(cb.from_user.id)["ai"]["position"] = pos
-    
-    kb = InlineKeyboardBuilder()
-    for name, hx in DEFAULT_PALETTE:
-        kb.button(text=name, callback_data=f"ai:color:{hx}")
-    kb.adjust(4)
-    
-    await cb.message.answer("رنگ متن:", reply_markup=kb.as_markup())
-    await cb.answer()
-
-@router.callback_query(F.data.func(lambda d: d and d.startswith("ai:color:")))
-async def on_ai_color(cb: CallbackQuery):
-    color = cb.data.split(":")[-1]
-    sess(cb.from_user.id)["ai"]["color"] = color
-    
-    kb = InlineKeyboardBuilder()
-    for label, val in [("کوچک", "small"), ("متوسط", "medium"), ("بزرگ", "large")]:
-        kb.button(text=label, callback_data=f"ai:size:{val}")
-    kb.adjust(3)
-    
-    await cb.message.answer("اندازه فونت:", reply_markup=kb.as_markup())
-    await cb.answer()
-
-@router.callback_query(F.data.func(lambda d: d and d.startswith("ai:size:")))
-async def on_ai_size(cb: CallbackQuery):
-    size = cb.data.split(":")[-1]
-    sess(cb.from_user.id)["ai"]["size"] = size
-    
-    ai_data = sess(cb.from_user.id)["ai"]
-    img = render_image(
-        text=ai_data.get("text") or "نمونه",
-        position=ai_data["position"],
-        font_key="Default",
-        color_hex=ai_data["color"],
-        size_key=size,
-        bg_mode="transparent",
-        bg_photo=ai_data.get("bg_photo_bytes"),
-        as_webp=False
-    )
-    
-    file_obj = BufferedInputFile(img, filename="preview.png")
-    await cb.message.answer_photo(
-        file_obj,
-        caption="پیش‌نمایش آماده است",
-        reply_markup=after_preview_kb("ai")
-    )
-    await cb.answer()
-
-@router.callback_query(F.data == "ai:confirm")
-async def on_ai_confirm(cb: CallbackQuery):
-    u = user(cb.from_user.id)
-    is_admin = (cb.from_user.id == ADMIN_ID)
-    left = _quota_left(u, is_admin)
-    
-    if left <= 0 and not is_admin:
-        await cb.answer("سهمیه تمام شد!", show_alert=True)
-        return
-    
-    ai_data = sess(cb.from_user.id)["ai"]
-    img = render_image(
-        text=ai_data.get("text") or "سلام",
-        position=ai_data["position"],
-        font_key="Default",
-        color_hex=ai_data["color"],
-        size_key=ai_data["size"],
-        bg_mode="transparent",
-        bg_photo=ai_data.get("bg_photo_bytes"),
-        as_webp=True
-    )
-    
-    sess(cb.from_user.id)["last_sticker"] = img
-    if not is_admin:
-        u["ai_used"] = int(u.get("ai_used", 0)) + 1
-    
-    await cb.message.answer_sticker(BufferedInputFile(img, filename="sticker.webp"))
-    await cb.message.answer(
-        "از این استیکر راضی بودی؟",
-        reply_markup=rate_kb()
-    )
-    await cb.answer()
-
-@router.callback_query(F.data == "ai:edit")
-async def on_ai_edit(cb: CallbackQuery):
-    await cb.message.answer(
-        "موقعیت متن:",
-        reply_markup=ai_pos_kb()
-    )
-    await cb.answer()
-
-# ----- بازخورد و افزودن به پک -----
-@router.callback_query(F.data == "rate:yes")
-async def on_rate_yes(cb: CallbackQuery):
-    await cb.message.answer(
-        "عالیه! می‌خوای به پک اضافه کنیم؟",
-        reply_markup=add_to_pack_kb()
-    )
-    await cb.answer()
-
-@router.callback_query(F.data == "rate:no")
-async def on_rate_no(cb: CallbackQuery):
-    sess(cb.from_user.id)["await_feedback"] = True
-    await cb.message.answer(
-        "چه چیزی رو دوست نداشتی؟ لطفاً نظرت رو بنویس:"
-    )
-    await cb.answer()
-
-def add_to_pack_kb():
-    kb = InlineKeyboardBuilder()
-    kb.button(text="افزودن به پک جدید 📦", callback_data="pack:start_creation")
-    kb.button(text="نه، لازم نیست", callback_data="pack:skip")
-    kb.adjust(2)
-    return kb.as_markup()
-
-@router.callback_query(F.data == "pack:skip")
-async def on_pack_skip(cb: CallbackQuery):
-    await cb.message.answer(
-        "باشه، اضافه نکردم. هر وقت خواستی از منو می‌تونی دوباره استیکر بسازی.",
-        reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID)
-    )
-    await cb.answer()
-
-@router.callback_query(F.data == "pack:start_creation")
-async def on_pack_start_creation(cb: CallbackQuery):
-    s = sess(cb.from_user.id)
-    s["pack_wizard"] = {"step": "awaiting_name"}
-    await cb.message.answer(
-        "برای ساخت پک جدید، لطفاً یک نام برای پک خود ارسال کنید.\nمثال: استیکرهای من",
-        reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID)
-    )
-    await cb.answer()
-
-@router.callback_query(F.data == "pack:create")
-async def on_pack_create(cb: CallbackQuery):
-    s = sess(cb.from_user.id)
-    pack_data = s.get("pack_wizard", {})
-    pack_name = pack_data.get("name")
-    
-    if not pack_name:
-        await cb.answer("ابتدا نام پک را ارسال کنید.", show_alert=True)
-        return
-
-    await _handle_pack_creation(cb.from_user.id, pack_name, cb.message, cb.bot)
-    await cb.answer()
-
-@router.callback_query(F.data == "pack:cancel")
-async def on_pack_cancel(cb: CallbackQuery):
-    s = sess(cb.from_user.id)
-    s["pack_wizard"] = {}
-    await cb.message.answer(
-        "عملیات ساخت پک لغو شد.",
-        reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID)
-    )
-    await cb.answer()
-
-async def _handle_pack_creation(user_id: int, pack_title: str, message_to_reply: Message, bot: Bot):
-    s = sess(user_id)
-    sticker_bytes = s.get("last_sticker")
-    
-    if not sticker_bytes:
-        await message_to_reply.answer("استیکری برای افزودن وجود ندارد. لطفاً دوباره یکی بسازید.")
-        s["pack_wizard"] = {}
-        return
-
-    base_short_name = re.sub(r'\W+', '_', pack_title, flags=re.UNICODE).lower()
-    short_name = f"{base_short_name}_by_{user_id}_bot"
-    
-    try:
-        await bot.create_new_sticker_set(
-            user_id=user_id,
-            name=short_name,
-            title=pack_title,
-            stickers=[],
-            sticker_type='regular',
-            sticker_format='static'
-        )
-        
-        await bot.add_sticker_to_set(
-            user_id=user_id,
-            name=short_name,
-            sticker=InputSticker(
-                sticker=BufferedInputFile(sticker_bytes, filename="sticker.webp"),
-                emoji="😀"
-            )
-        )
-        
-        await message_to_reply.answer(
-            f"✅ پک استیکر «{pack_title}» با موفقیت ساخته شد و استیکر به آن اضافه گردید!",
-            reply_markup=back_to_menu_kb(user_id == ADMIN_ID)
-        )
-        s["pack_wizard"] = {}
-
-    except TelegramBadRequest as e:
-        if "invalid sticker set name is specified" in e.message:
-            await message_to_reply.answer(
-                f"❌ نام پک «{pack_title}» تکراری است یا نامعتبر.\n"
-                "لطفاً نام دیگری را امتحان کنید:",
-                reply_markup=back_to_menu_kb(user_id == ADMIN_ID)
-            )
-        else:
-            await message_to_reply.answer(f"خطایی در ساخت پک رخ داد: {e.message}", reply_markup=back_to_menu_kb(user_id == ADMIN_ID))
-            s["pack_wizard"] = {}
-    except Exception as e:
-        await message_to_reply.answer(f"یک خطای غیرمنتظره رخ داد: {e}", reply_markup=back_to_menu_kb(user_id == ADMIN_ID))
-        s["pack_wizard"] = {}
-
-# ----- پردازش پیام‌ها -----
-@router.message()
-async def on_message(message: Message):
-    uid = message.from_user.id
-    s = sess(uid)
-    
-    # بررسی بازخورد
-    if s.get("await_feedback") and message.text:
-        s["await_feedback"] = False
-        await message.answer(
-            "ممنون از بازخوردت 🙏",
-            reply_markup=back_to_menu_kb(uid == ADMIN_ID)
-        )
-        return
-
-    # بررسی ویزارد ساخت پک
-    pack_wizard = s.get("pack_wizard", {})
-    if pack_wizard.get("step") == "awaiting_name" and message.text:
-        pack_name = message.text.strip()
-        pack_wizard["name"] = pack_name
-        s["pack_wizard"] = pack_wizard
-        
-        await message.answer(
-            f"نام انتخابی برای پک: «{pack_name}»\n"
-            "برای ساخت پک با این نام، دکمه زیر را بزنید:",
-            reply_markup=pack_name_kb()
-        )
-        return
-
-    # پردازش عکس برای پس‌زمینه
-    if message.photo:
-        if s.get("mode") == "simple" and s["simple"].get("awaiting_bg_photo"):
-            file = await message.bot.download(message.photo[-1].file_id)
-            s["simple"]["bg_photo_bytes"] = file.read()
-            s["simple"]["awaiting_bg_photo"] = False
-            if s["simple"].get("text"):
-                img = render_image(text=s["simple"]["text"], position="center", font_key="Default", color_hex="#FFFFFF", size_key="medium", bg_photo=s["simple"]["bg_photo_bytes"], as_webp=False)
-                await message.answer_photo(BufferedInputFile(img, "preview.png"), caption="پیش‌نمایش آماده است", reply_markup=after_preview_kb("simple"))
-            else:
-                await message.answer("عکس دریافت شد. حالا متن استیکر را بفرستید:")
-        elif s.get("mode") == "ai" and s["ai"].get("awaiting_bg_photo"):
-            file = await message.bot.download(message.photo[-1].file_id)
-            s["ai"]["bg_photo_bytes"] = file.read()
-            s["ai"]["awaiting_bg_photo"] = False
-            await message.answer("عکس دریافت شد. حالا متن استیکر را بفرستید:")
-        return
-
-    # پردازش ویدیو
-    if message.video and s.get("mode") == "ai" and s["ai"].get("sticker_type") == "video":
-        await message.answer("در حال پردازش ویدیو...")
-        file = await message.bot.download(message.video.file_id)
-        webm_bytes = await process_video_to_webm(file.read())
-        
-        if webm_bytes:
-            sess(uid)["last_sticker"] = webm_bytes
-            await message.answer_sticker(BufferedInputFile(webm_bytes, "sticker.webm"))
-            await message.answer("از این استیکر راضی بودی؟", reply_markup=rate_kb())
-        else:
-            await message.answer("پردازش ویدیو با خطا مواجه شد. لطفاً از کیفیت و حجم مناسب مطمئن شوید.", reply_markup=back_to_menu_kb(uid == ADMIN_ID))
-        return
-
-    # پردازش بر اساس حالت
-    mode = s.get("mode", "menu")
-    
-    if mode == "simple":
-        if message.text:
-            s["simple"]["text"] = message.text.strip()
-            await message.answer("پس‌زمینه رو انتخاب کن:", reply_markup=simple_bg_kb())
-    elif mode == "ai":
-        if message.text and s["ai"].get("sticker_type") == "image":
-            u = user(uid)
-            is_admin = (uid == ADMIN_ID)
-            left = _quota_left(u, is_admin)
-            
-            if left <= 0 and not is_admin:
-                await message.answer("سهمیه امروز تمام شد! فردا دوباره امتحان کن", reply_markup=back_to_menu_kb(is_admin))
-                return
-            
-            s["ai"]["text"] = message.text.strip()
-            await message.answer("موقعیت متن:", reply_markup=ai_pos_kb())
-    else:
-        # حالت پیش‌فرض
-        is_admin = (uid == ADMIN_ID)
-        await message.answer(
-            "از منوی زیر انتخاب کن:",
-            reply_markup=main_menu_kb(is_admin)
-        )
-
-# برای سازگاری با محیط سرورلس
-__all__ = ['router']
+    s["simple"] =
