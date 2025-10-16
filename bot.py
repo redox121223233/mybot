@@ -52,7 +52,6 @@ def _quota_left(u: Dict[str, Any], is_admin: bool) -> int:
     if is_admin:
         return 999999
     _reset_daily_if_needed(u)
-    # ابتدا سهمیه سفارشی کاربر را چک می‌کند
     limit = u.get("daily_limit", DAILY_LIMIT)
     return max(0, limit - int(u.get("ai_used", 0)))
 
@@ -89,12 +88,11 @@ def sess(uid: int) -> Dict[str, Any]:
             "await_feedback": False,
             "last_sticker": None,
             "last_video_sticker": None,
-            "admin": {} # برای حالت‌های ادمین
+            "admin": {}
         }
     return SESSIONS[uid]
 
 def reset_mode(uid: int):
-    """این تابع حالت کاربر را ریست می‌کند و اطلاعات او را از حافظه پاک می‌کند."""
     s = sess(uid)
     s["mode"] = "menu"
     s["ai"] = {}
@@ -103,8 +101,7 @@ def reset_mode(uid: int):
     s["last_sticker"] = None
     s["last_video_sticker"] = None
     s["pack_wizard"] = {}
-    s["admin"] = {} # حالت ادمین هم ریست می‌شود
-    # پاک کردن اطلاعات کاربر برای ریست سهمیه
+    s["admin"] = {}
     if uid in USERS:
         del USERS[uid]
 
@@ -125,7 +122,7 @@ LOCAL_FONT_FILES = {
     "Sahel": ["Sahel.ttf", "Sahel-Bold.ttf"],
     "IRANSans": ["IRANSans.ttf", "IRANSansX-Regular.ttf"],
     "Roboto": ["Roboto-Regular.ttf", "Roboto-Medium.ttf"],
-    "Default": ["Vazirmatn-Regular.ttf", "Roboto-Regular.ttf"],
+    "متن ساده": ["Vazirmatn-Regular.ttf", "Roboto-Regular.ttf"],
 }
 
 PERSIAN_FONTS = ["Vazirmatn", "NotoNaskh", "Sahel", "IRANSans"]
@@ -149,53 +146,39 @@ def available_font_options() -> List[Tuple[str, str]]:
     return [(k, k) for k in keys[:8]] if keys else [("Default", "Default")]
 
 def _detect_language(text: str) -> str:
-    """تشخیص زبان متن (فارسی یا انگلیسی)"""
     if not text:
         return "english"
-    
     persian_pattern = re.compile(r'[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]')
     return "persian" if persian_pattern.search(text) else "english"
 
 def resolve_font_path(font_key: Optional[str], text: str = "") -> str:
-    """انتخاب فونت مناسب بر اساس زبان متن"""
     if font_key and font_key in _LOCAL_FONTS:
         return _LOCAL_FONTS[font_key]
-    
     if text:
         lang = _detect_language(text)
-        if lang == "persian":
-            for font_name in PERSIAN_FONTS:
-                if font_name in _LOCAL_FONTS:
-                    return _LOCAL_FONTS[font_name]
-        else:
-            for font_name in ENGLISH_FONTS:
-                if font_name in _LOCAL_FONTS:
-                    return _LOCAL_FONTS[font_name]
-    
+        font_list = PERSIAN_FONTS if lang == "persian" else ENGLISH_FONTS
+        for font_name in font_list:
+            if font_name in _LOCAL_FONTS:
+                return _LOCAL_FONTS[font_name]
     return next(iter(_LOCAL_FONTS.values()), "")
 
 # ============ رندر تصویر/استیکر (اصلاح شده) ============
 CANVAS = (512, 512)
 
 def _prepare_text(text: str) -> str:
-    """آماده‌سازی متن فارسی برای نمایش صحیح"""
     if not text:
         return ""
-    
     reshaped_text = arabic_reshaper.reshape(text)
     bidi_text = get_display(reshaped_text)
-    
     return bidi_text
 
 def is_persian(text):
-    """بررسی اینکه آیا متن فارسی است یا نه"""
     if not text:
         return False
     persian_pattern = re.compile(r'[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]')
     return bool(persian_pattern.search(text))
 
 def _parse_hex(hx: str) -> Tuple[int, int, int, int]:
-    """تبدیل hex color به RGBA"""
     hx = (hx or "#ffffff").strip().lstrip("#")
     if len(hx) == 3:
         r, g, b = [int(c * 2, 16) for c in hx]
@@ -206,46 +189,36 @@ def _parse_hex(hx: str) -> Tuple[int, int, int, int]:
     return (r, g, b, 255)
 
 def fit_font_size(draw: ImageDraw.ImageDraw, text: str, font_path: str, base: int, max_w: int, max_h: int) -> int:
-    """تنظیم اندازه فونت برای متناسب شدن در فضا"""
     size = base
     while size > 12:
         try:
             font = ImageFont.truetype(font_path, size=size) if font_path else ImageFont.load_default()
         except Exception:
             font = ImageFont.load_default()
-        
         bbox = draw.textbbox((0, 0), text, font=font)
         tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        
         if tw <= max_w and th <= max_h:
             return size
-        
         size -= 1
-    
     return max(size, 12)
 
 def _make_default_bg(size=(512, 512)) -> Image.Image:
-    """ایجاد پس‌زمینه پیش‌فرض با گرادیانت"""
     w, h = size
     img = Image.new("RGBA", size, (20, 20, 35, 255))
     top = (56, 189, 248)
     bottom = (99, 102, 241)
     dr = ImageDraw.Draw(img)
-    
     for y in range(h):
         t = y / (h - 1)
         r = int(top[0] * (1 - t) + bottom[0] * t)
         g = int(top[1] * (1 - t) + bottom[1] * t)
         b = int(top[2] * (1 - t) + bottom[2] * t)
         dr.line([(0, y), (w, y)], fill=(r, g, b, 255))
-    
     return img.filter(ImageFilter.GaussianBlur(0.5))
 
 def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: str, size_key: str, 
                 bg_mode: str = "transparent", bg_photo: Optional[bytes] = None, as_webp: bool = False) -> bytes:
-    """رندر تصویر استیکر با موقعیت‌دهی کامل"""
     W, H = CANVAS
-    
     if bg_photo:
         try:
             img = Image.open(BytesIO(bg_photo)).convert("RGBA").resize((W, H))
@@ -258,13 +231,10 @@ def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: st
     color = _parse_hex(color_hex)
     padding = 40
     box_w, box_h = W - 2 * padding, H - 2 * padding
-    
     size_map = {"small": 64, "medium": 96, "large": 128}
     base_size = size_map.get(size_key, 96)
-    
     font_path = resolve_font_path(font_key, text)
     txt = _prepare_text(text)
-    
     final_size = fit_font_size(draw, txt, font_path, base_size, box_w, box_h)
     
     try:
@@ -292,13 +262,12 @@ def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: st
     else:  # center
         x = W / 2
     
-    # رندر متن
     draw.text(
         (x, y),
         txt,
         font=font,
         fill=color,
-        anchor="mm", # anchor را به mm (middle-middle) تغییر دادیم تا محاسبات درست باشد
+        anchor="mm",
         stroke_width=2,
         stroke_fill=(0, 0, 0, 220)
     )
@@ -316,7 +285,6 @@ def is_ffmpeg_installed() -> bool:
         return False
 
 async def process_video_to_webm(video_bytes: bytes) -> Optional[bytes]:
-    """Converts video bytes to webm format using FFmpeg."""
     if not is_ffmpeg_installed():
         return None
     try:
@@ -339,10 +307,10 @@ async def process_video_to_webm(video_bytes: bytes) -> Optional[bytes]:
 def main_menu_kb(is_admin: bool = False):
     kb = InlineKeyboardBuilder()
     kb.button(text="استیکر ساده 🎄", callback_data="menu:simple")
-    kb.button(text="استیکر هوش مصنوعی 🤖", callback_data="menu:ai")
+    kb.button(text="استیکر هوش مصنوعی 🤖�", callback_data="menu:ai")
     kb.button(text="سهمیه امروز ⏳", callback_data="menu:quota")
     kb.button(text="راهنما ℹ️", callback_data="menu:help")
-    kb.button(text="پشتیبانی 🛟", callback_data="menu:support")
+    kb.button(text="پشتیبانی 🛟�", callback_data="menu:support")
     if is_admin:
         kb.button(text="پنل ادمین 🛠", callback_data="menu:admin")
     kb.adjust(2, 2, 2, 1)
@@ -453,9 +421,9 @@ async def on_help(cb: CallbackQuery):
     help_text = (
         "راهنما ℹ️\n\n"
         "• استیکر ساده 🎄: متن بدون تنظیمات پیشرفته (موقعیت وسط)\n"
-        "• استیکر هوش مصنوعی 🤖: تنظیمات پیشرفته شامل موقعیت، رنگ، فونت و اندازه\n"
+        "• استیکر هوش مصنوعی 🤖�: تنظیمات پیشرفته شامل موقعیت، رنگ، فونت و اندازه\n"
         "• سهمیه امروز ⏳: مشاهده محدودیت استفاده از هوش مصنوعی\n"
-        "• پشتیبانی 🛟: ارتباط با پشتیبانی\n\n"
+        "• پشتیبانی 🛟�: ارتباط با پشتیبانی\n\n"
         "برای ساخت استیکر کافیه متن مورد نظرت رو ارسال کنی!"
     )
     await cb.message.answer(help_text, reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
@@ -487,7 +455,6 @@ async def on_admin_panel(cb: CallbackQuery):
     if cb.from_user.id != ADMIN_ID:
         await cb.answer("شما دسترسی به این بخش را ندارید.", show_alert=True)
         return
-    
     await cb.message.answer("پنل مدیریت ادمین:", reply_markup=admin_panel_kb())
     await cb.answer()
 
@@ -537,7 +504,7 @@ async def on_simple_bg(cb: CallbackQuery):
         if s.get("text"):
             img = render_image(
                 text=s["text"], 
-                v_pos="center", h_pos="center", # همیشه وسط
+                v_pos="center", h_pos="center",
                 font_key="Default", 
                 color_hex="#FFFFFF",
                 size_key="medium", 
@@ -558,7 +525,7 @@ async def on_simple_confirm(cb: CallbackQuery):
     s = sess(cb.from_user.id)["simple"]
     img = render_image(
         text=s["text"] or "سلام",
-        v_pos="center", h_pos="center", # همیشه وسط
+        v_pos="center", h_pos="center",
         font_key="Default",
         color_hex="#FFFFFF",
         size_key="medium",
@@ -623,9 +590,8 @@ async def on_ai_type(cb: CallbackQuery):
             await cb.message.answer(
                 "⚠️ قابلیت ویدیو فعال نیست. FFmpeg نصب نیست.",
                 reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID)
-            )
         else:
-            await cb.message.answer("یک فایل ویدیو ارسال کنید:", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+            await cb.message.answer("یک فایل ویدیو ارسال کنید:", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID)
     await cb.answer()
 
 @router.callback_query(F.data == "ai:source:text")
@@ -659,7 +625,7 @@ async def on_ai_hpos(cb: CallbackQuery):
     await cb.message.answer("رنگ متن:", reply_markup=kb.as_markup())
     await cb.answer()
 
-@router.callback_query(F.data.func(lambda d: d and d.startswith("ai:color:")))
+@router.callback_query(F.data.func(lambda d: d and d.startswith("ai:color:"))
 async def on_ai_color(cb: CallbackQuery):
     color = cb.data.split(":")[-1]
     sess(cb.from_user.id)["ai"]["color"] = color
@@ -672,7 +638,7 @@ async def on_ai_color(cb: CallbackQuery):
     await cb.message.answer("اندازه فونت:", reply_markup=kb.as_markup())
     await cb.answer()
 
-@router.callback_query(F.data.func(lambda d: d and d.startswith("ai:size:")))
+@router.callback_query(F.data.func(lambda d: d and d.startswith("ai:size:"))
 async def on_ai_size(cb: CallbackQuery):
     size = cb.data.split(":")[-1]
     sess(cb.from_user.id)["ai"]["size"] = size
@@ -776,10 +742,15 @@ async def on_pack_skip(cb: CallbackQuery):
 async def on_pack_start_creation(cb: CallbackQuery):
     s = sess(cb.from_user.id)
     s["pack_wizard"] = {"step": "awaiting_name"}
-    await cb.message.answer(
-        "برای ساخت پک جدید، لطفاً یک نام برای پک خود ارسال کنید.\nمثال: استیکرهای من",
-        reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID)
+    rules_text = (
+        "برایجاد پک جدید، لطفاً یک نام انگلیسی برای پک خود ارسال کنید.\n\n"
+        "• فقط حروف انگلیسی کوچک، عدد و زیرخطین\n"
+        "• باید با حرف شروع شود\n"
+        "• حداکثر ۳۲ کاراکتر\n\n"
+        "مثال: MySuperPack\n\n"
+        "حالا نام مورد نظر خود را ارسال کنید:"
     )
+    await cb.message.answer(rules_text, reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
     await cb.answer()
 
 @router.callback_query(F.data == "pack:create")
@@ -792,7 +763,12 @@ async def on_pack_create(cb: CallbackQuery):
         await cb.answer("ابتدا نام پک را ارسال کنید.", show_alert=True)
         return
 
-    await _handle_pack_creation(cb.from_user.id, pack_name, cb.message, cb.bot)
+    s["pack_wizard"]["name"] = pack_name
+    s["pack_wizard"]["step"] = "awaiting_sticker_text"
+    await cb.message.answer(
+        f"نام پک: «{pack_name}» انتخاب شد.\n\n"
+        "حالا متن اولین استیکر این پک را ارسال کنید:"
+    )
     await cb.answer()
 
 @router.callback_query(F.data == "pack:cancel")
@@ -802,59 +778,73 @@ async def on_pack_cancel(cb: CallbackQuery):
     await cb.message.answer(
         "عملیات ساخت پک لغو شد.",
         reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID)
-    )
     await cb.answer()
 
-async def _handle_pack_creation(user_id: int, pack_title: str, message_to_reply: Message, bot: Bot):
+async def _handle_pack_creation(user_id: int, pack_title: str, sticker_text: str, bot: Bot):
     s = sess(user_id)
     sticker_bytes = s.get("last_sticker")
     
     if not sticker_bytes:
-        await message_to_reply.answer("استیکری برای افزودن وجود ندارد. لطفاً دوباره یکی بسازید.")
+        await bot.send_message(chat_id=user_id, text="استیکری برای افزودن وجود ندارد. لطفاً دوباره یکی بسازید.")
         s["pack_wizard"] = {}
         return
 
+    # ایجاد نام کوتاه و منحصر به همراه شناسه کاربر
     base_short_name = re.sub(r'\W+', '_', pack_title, flags=re.UNICODE).lower()
     short_name = f"{base_short_name}_by_{user_id}_bot"
     
     try:
+        # ابتدا استیکر را ایجاد می‌کنیم
+        sticker_to_add = InputSticker(
+            sticker=BufferedInputFile(sticker_bytes, filename="sticker.webp"),
+            emoji="😀"
+        )
+        
+        # سپس پک را با استیکر ایجاد می‌کنیم
         await bot.create_new_sticker_set(
             user_id=user_id,
             name=short_name,
             title=pack_title,
-            stickers=[],
+            stickers=[sticker_to_add], # استیکر اولیه را به لیست اضافه می‌کنیم
             sticker_type='regular',
             sticker_format='static'
         )
         
-        await bot.add_sticker_to_set(
-            user_id=user_id,
-            name=short_name,
-            sticker=InputSticker(
-                sticker=BufferedInputFile(sticker_bytes, filename="sticker.webp"),
-                emoji="😀"
-            )
+        await bot.send_message(
+            chat_id=user_id,
+            text=f"✅ پک استیکر «{pack_title}» با موفقیت ساخته شد و استیکر به آن اضافه گردید!\n"
         )
         
-        await message_to_reply.answer(
-            f"✅ پک استیکر «{pack_title}» با موفقیت ساخته شد و استیکر به آن اضافه گردید!",
-            reply_markup=back_to_menu_kb(user_id == ADMIN_ID)
+        # ارسال لینک پک به کاربر
+        pack_link = f"https://t.me/addstickers/{short_name}"
+        await bot.send_message(
+            chat_id=user_id,
+            text=f"لینک پک شما:\n{pack_link}"
         )
-        s["pack_wizard"] = {}
 
     except TelegramBadRequest as e:
-        if "invalid sticker set name is specified" in e.message:
-            await message_to_reply.answer(
-                f"❌ نام پک «{pack_title}» تکراری است یا نامعتبر.\n"
-                "لطفاً نام دیگری را امتحان کنید:",
+        if "invalid sticker set name is specified" in e.message or "STICKERSET_NAME_INVALID" in e.message:
+            await bot.send_message(
+                chat_id=user_id,
+                text=f"❌ نام پک «{pack_title} نامعتبر است یا قبلاً تلگرام.\n"
+                "لطفاً از قوانین نامعتبر استفاده کنید.",
                 reply_markup=back_to_menu_kb(user_id == ADMIN_ID)
             )
         else:
-            await message_to_reply.answer(f"خطایی در ساخت پک رخ داد: {e.message}", reply_markup=back_to_menu_kb(user_id == ADMIN_ID))
+            await bot.send_message(
+                chat_id=user_id,
+                text=f"خطایی در ساخت پک رخ داد: {e.message}",
+                reply_markup=back_to_menu_kb(user_id == ADMIN_ID)
+        finally:
             s["pack_wizard"] = {}
+    
     except Exception as e:
-        await message_to_reply.answer(f"یک خطای غیرمنتظره رخ داد: {e}", reply_markup=back_to_menu_kb(user_id == ADMIN_ID))
-        s["pack_wizard"] = {}
+        await bot.send_message(
+            chat_id=user_id,
+            text=f"یک خطای غیرمنتظره رخ داد: {e}",
+            reply_markup=back_to_menu_kb(user_id == ADMIN_ID)
+        finally:
+            s["pack_wizard"] = {}
 
 # ----- پردازش پیام‌ها -----
 @router.message()
@@ -944,13 +934,19 @@ async def on_message(message: Message):
     if pack_wizard.get("step") == "awaiting_name" and message.text:
         pack_name = message.text.strip()
         pack_wizard["name"] = pack_name
-        s["pack_wizard"] = pack_wizard
-        
+        s["pack_wizard"]["step"] = "awaiting_sticker_text"
         await message.answer(
-            f"نام انتخابی برای پک: «{pack_name}»\n"
-            "برای ساخت پک با این نام، دکمه زیر را بزنید:",
-            reply_markup=pack_name_kb()
+            f"نام پک: «{pack_name}» انتخاب شد.\n\n"
+            "حالا متن اولین استیکر این پک را ارسال کنید:"
         )
+        return
+
+    if pack_wizard.get("step") == "awaiting_sticker_text") and message.text:
+        sticker_text = message.text.strip()
+        pack_data = s["pack_wizard"]
+        pack_title = pack_data["name"]
+        
+        await _handle_pack_creation(cb.from_user.id, pack_title, sticker_text, message.bot)
         return
 
     # پردازش عکس برای پس‌زمینه
@@ -1005,7 +1001,6 @@ async def on_message(message: Message):
             s["ai"]["text"] = message.text.strip()
             await message.answer("موقعیت عمودی متن را انتخاب کنید:", reply_markup=ai_vpos_kb())
     else:
-        # حالت پیش‌فرض
         is_admin = (uid == ADMIN_ID)
         await message.answer(
             "از منوی زیر انتخاب کن:",
