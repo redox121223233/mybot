@@ -89,7 +89,6 @@ DEFAULT_PALETTE = [
     ("سبز", "#22C55E"), ("زرد", "#EAB308"), ("بنفش", "#8B5CF6"), ("نارنجی", "#F97316"),
 ]
 NAME_TO_HEX = {name: hx for name, hx in DEFAULT_PALETTE}
-POS_WORDS = {"بالا": "top", "وسط": "center", "میانه": "center", "پایین": "bottom"}
 SIZE_WORDS = {"ریز": "small", "کوچک": "small", "متوسط": "medium", "بزرگ": "large", "درشت": "large"}
 
 # ============ فونت‌ها ============
@@ -194,8 +193,8 @@ def _make_default_bg(size=(512, 512)) -> Image.Image:
         dr.line([(0, y), (w, y)], fill=(r, g, b, 255))
     return img.filter(ImageFilter.GaussianBlur(0.5))
 
-def render_image(text: str, position: str, font_key: str, color_hex: str, size_key: str, 
-                bg_mode: str = "transparent", bg_photo: Optional[bytes] = None, as_webp: bool = False) -> bytes:
+def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: str, size_key: str, 
+                bg_mode: str = "transparent", as_webp: bool = False) -> bytes:
     W, H = CANVAS
     if bg_mode == "default":
         img = _make_default_bg((W, H))
@@ -214,34 +213,70 @@ def render_image(text: str, position: str, font_key: str, color_hex: str, size_k
         font = ImageFont.truetype(font_path, size=final_size) if font_path else ImageFont.load_default()
     except Exception:
         font = ImageFont.load_default()
+
     bbox = draw.textbbox((0, 0), txt, font=font)
     text_width = bbox[2] - bbox[0]
     text_height = bbox[3] - bbox[1]
-    is_fa = is_persian(text)
-    if position == "top":
+
+    # Vertical Position
+    if v_pos == "top":
         y = padding
-    elif position == "bottom":
+    elif v_pos == "bottom":
         y = H - padding - text_height
     else:  # center
         y = (H - text_height) / 2
-    if is_fa:
-        x = W - padding
-        anchor = "rm"
-    else:
+
+    # Horizontal Position
+    if h_pos == "left":
         x = padding
-        anchor = "lm"
+        anchor = "la"
+    elif h_pos == "right":
+        x = W - padding
+        anchor = "ra"
+    else:  # center
+        x = W / 2
+        anchor = "ma"
+    
     draw.text((x, y), txt, font=font, fill=color, anchor=anchor, stroke_width=2, stroke_fill=(0, 0, 0, 220))
+    
     buf = BytesIO()
     img.save(buf, format="WEBP" if as_webp else "PNG")
     return buf.getvalue()
 
-# ============ بررسی نصب بودن FFmpeg ============
+# ============ بررسی نصب بودن FFmpeg و پردازش ویدیو ============
 def is_ffmpeg_installed() -> bool:
     try:
-        subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True)
+        subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True, text=True)
         return True
     except (FileNotFoundError, subprocess.CalledProcessError):
         return False
+
+async def process_video_to_webm(video_bytes: bytes) -> Optional[bytes]:
+    """Converts video bytes to webm format using FFmpeg."""
+    if not is_ffmpeg_installed():
+        return None
+
+    try:
+        # FFmpeg command to convert video to webm with VP9 codec
+        # -i - : read from stdin
+        # -f webm -c:v libvpx-vp9 -b:v 500k -crf 30 : output format and settings
+        # - : output to stdout
+        process = subprocess.Popen(
+            ['ffmpeg', '-i', '-', '-f', 'webm', '-c:v', 'libvpx-vp9', '-b:v', '500k', '-crf', '30', '-'],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        stdout, stderr = process.communicate(input=video_bytes)
+
+        if process.returncode != 0:
+            print(f"FFmpeg error: {stderr.decode()}")
+            return None
+        
+        return stdout
+    except Exception as e:
+        print(f"Error during video processing: {e}")
+        return None
 
 # ============ کیبوردهای شیشه‌ای ============
 def main_menu_kb(is_admin: bool = False):
@@ -287,6 +322,29 @@ def rate_kb():
     kb.adjust(2, 1)
     return kb.as_markup()
 
+def ai_type_kb():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="استیکر تصویری 🖼️", callback_data="ai:type:image")
+    kb.button(text="استیکر ویدیویی 🎬", callback_data="ai:type:video")
+    kb.adjust(2)
+    return kb.as_markup()
+
+def ai_vpos_kb():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="بالا ⬆️", callback_data="ai:vpos:top")
+    kb.button(text="وسط ⚪️", callback_data="ai:vpos:center")
+    kb.button(text="پایین ⬇️", callback_data="ai:vpos:bottom")
+    kb.adjust(3)
+    return kb.as_markup()
+
+def ai_hpos_kb():
+    kb = InlineKeyboardBuilder()
+    kb.button(text="چپ ⬅️", callback_data="ai:hpos:left")
+    kb.button(text="وسط ⚪️", callback_data="ai:hpos:center")
+    kb.button(text="راست ➡️", callback_data="ai:hpos:right")
+    kb.adjust(3)
+    return kb.as_markup()
+
 # ============ ربات و روتر ============
 router = Router()
 
@@ -307,7 +365,7 @@ async def on_home(cb: CallbackQuery):
 async def on_help(cb: CallbackQuery):
     help_text = ("راهنما ℹ️\n\n"
                  "• استیکر ساده 🎄: متن بدون تنظیمات پیشرفته (موقعیت وسط)\n"
-                 "• استیکر هوش مصنوعی 🤖: تنظیمات پیشرفته شامل موقعیت، رنگ، فونت و اندازه\n"
+                 "• استیکر هوش مصنوعی 🤖: تنظیمات پیشرفته شامل موقعیت، رنگ، فونت و اندازه (برای تصویر و ویدیو)\n"
                  "• سهمیه امروز ⏳: مشاهده محدودیت استفاده از هوش مصنوعی\n"
                  "• پشتیبانی 🛟: ارتباط با پشتیبانی\n\n"
                  "برای ساخت استیکر کافیه متن مورد نظرت رو ارسال کنی!")
@@ -342,7 +400,7 @@ async def on_simple_transparent(cb: CallbackQuery):
     s = sess(cb.from_user.id)["simple"]
     s["bg_mode"] = "transparent"
     if s.get("text"):
-        img = render_image(text=s["text"], position="center", font_key="Default", color_hex="#FFFFFF", size_key="medium", bg_mode="transparent", as_webp=False)
+        img = render_image(text=s["text"], v_pos="center", h_pos="center", font_key="Default", color_hex="#FFFFFF", size_key="medium", bg_mode="transparent", as_webp=False)
         file_obj = BufferedInputFile(img, filename="preview.png")
         await cb.message.answer_photo(file_obj, caption="پیش‌نمایش آماده است", reply_markup=after_preview_kb("simple"))
     await cb.answer()
@@ -352,7 +410,7 @@ async def on_simple_default(cb: CallbackQuery):
     s = sess(cb.from_user.id)["simple"]
     s["bg_mode"] = "default"
     if s.get("text"):
-        img = render_image(text=s["text"], position="center", font_key="Default", color_hex="#FFFFFF", size_key="medium", bg_mode="default", as_webp=False)
+        img = render_image(text=s["text"], v_pos="center", h_pos="center", font_key="Default", color_hex="#FFFFFF", size_key="medium", bg_mode="default", as_webp=False)
         file_obj = BufferedInputFile(img, filename="preview.png")
         await cb.message.answer_photo(file_obj, caption="پیش‌نمایش آماده است", reply_markup=after_preview_kb("simple"))
     await cb.answer()
@@ -360,7 +418,7 @@ async def on_simple_default(cb: CallbackQuery):
 @router.callback_query(F.data == "simple:confirm")
 async def on_simple_confirm(cb: CallbackQuery):
     s = sess(cb.from_user.id)["simple"]
-    img = render_image(text=s["text"] or "سلام", position="center", font_key="Default", color_hex="#FFFFFF", size_key="medium", bg_mode=s.get("bg_mode") or "transparent", as_webp=True)
+    img = render_image(text=s["text"] or "سلام", v_pos="center", h_pos="center", font_key="Default", color_hex="#FFFFFF", size_key="medium", bg_mode=s.get("bg_mode") or "transparent", as_webp=True)
     sess(cb.from_user.id)["last_sticker"] = img
     await cb.message.answer_sticker(BufferedInputFile(img, filename="sticker.webp"))
     await cb.message.answer("از این استیکر راضی بودی؟", reply_markup=rate_kb())
@@ -383,19 +441,40 @@ async def on_ai(cb: CallbackQuery):
         return
     s = sess(cb.from_user.id)
     s["mode"] = "ai"
-    s["ai"] = {"text": None, "position": "center", "font": "Default", "color": "#FFFFFF", "size": "large"}
-    kb = InlineKeyboardBuilder()
-    kb.button(text="بالا ⬆️", callback_data="ai:pos:top")
-    kb.button(text="وسط ⚪️", callback_data="ai:pos:center")
-    kb.button(text="پایین ⬇️", callback_data="ai:pos:bottom")
-    kb.adjust(3)
-    await cb.message.answer(f"متن استیکر هوش مصنوعی رو بفرست:\n(سهمیه: {'نامحدود' if is_admin else f'{left} از {DAILY_LIMIT}'})", reply_markup=kb.as_markup())
+    s["ai"] = {"text": None, "v_pos": "center", "h_pos": "center", "font": "Default", "color": "#FFFFFF", "size": "large", "sticker_type": None}
+    await cb.message.answer("نوع استیکر هوش مصنوعی را انتخاب کنید:", reply_markup=ai_type_kb())
     await cb.answer()
 
-@router.callback_query(F.data.func(lambda d: d and d.startswith("ai:pos:")))
-async def on_ai_pos(cb: CallbackQuery):
-    pos = cb.data.split(":")[-1]
-    sess(cb.from_user.id)["ai"]["position"] = pos
+@router.callback_query(F.data.startswith("ai:type:"))
+async def on_ai_type(cb: CallbackQuery):
+    sticker_type = cb.data.split(":")[-1]
+    s = sess(cb.from_user.id)
+    s["ai"]["sticker_type"] = sticker_type
+    if sticker_type == "image":
+        await cb.message.answer("متن استیکر تصویری را بفرست:", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+    elif sticker_type == "video":
+        if not is_ffmpeg_installed():
+            await cb.message.answer(
+                "⚠️ قابلیت پردازش ویدیو در این سرور فعال نیست.\n"
+                "برای فعال‌سازی، مدیر سرور باید FFmpeg را نصب کند.",
+                reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID)
+            )
+            await cb.answer()
+            return
+        await cb.message.answer("یک فایل ویدیو (حداکثر 1 دقیقه) ارسال کنید:", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+    await cb.answer()
+
+@router.callback_query(F.data.startswith("ai:vpos:"))
+async def on_ai_vpos(cb: CallbackQuery):
+    v_pos = cb.data.split(":")[-1]
+    sess(cb.from_user.id)["ai"]["v_pos"] = v_pos
+    await cb.message.answer("موقعیت افقی متن را انتخاب کنید:", reply_markup=ai_hpos_kb())
+    await cb.answer()
+
+@router.callback_query(F.data.startswith("ai:hpos:"))
+async def on_ai_hpos(cb: CallbackQuery):
+    h_pos = cb.data.split(":")[-1]
+    sess(cb.from_user.id)["ai"]["h_pos"] = h_pos
     kb = InlineKeyboardBuilder()
     for name, hx in DEFAULT_PALETTE:
         kb.button(text=name, callback_data=f"ai:color:{hx}")
@@ -419,7 +498,7 @@ async def on_ai_size(cb: CallbackQuery):
     size = cb.data.split(":")[-1]
     sess(cb.from_user.id)["ai"]["size"] = size
     ai_data = sess(cb.from_user.id)["ai"]
-    img = render_image(text=ai_data.get("text") or "نمونه", position=ai_data["position"], font_key="Default", color_hex=ai_data["color"], size_key=size, bg_mode="transparent", as_webp=False)
+    img = render_image(text=ai_data.get("text") or "نمونه", v_pos=ai_data["v_pos"], h_pos=ai_data["h_pos"], font_key="Default", color_hex=ai_data["color"], size_key=size, bg_mode="transparent", as_webp=False)
     file_obj = BufferedInputFile(img, filename="preview.png")
     await cb.message.answer_photo(file_obj, caption="پیش‌نمایش آماده است", reply_markup=after_preview_kb("ai"))
     await cb.answer()
@@ -433,7 +512,7 @@ async def on_ai_confirm(cb: CallbackQuery):
         await cb.answer("سهمیه تمام شد!", show_alert=True)
         return
     ai_data = sess(cb.from_user.id)["ai"]
-    img = render_image(text=ai_data.get("text") or "سلام", position=ai_data["position"], font_key="Default", color_hex=ai_data["color"], size_key=ai_data["size"], bg_mode="transparent", as_webp=True)
+    img = render_image(text=ai_data.get("text") or "سلام", v_pos=ai_data["v_pos"], h_pos=ai_data["h_pos"], font_key="Default", color_hex=ai_data["color"], size_key=ai_data["size"], bg_mode="transparent", as_webp=True)
     sess(cb.from_user.id)["last_sticker"] = img
     if not is_admin:
         u["ai_used"] = int(u.get("ai_used", 0)) + 1
@@ -443,12 +522,7 @@ async def on_ai_confirm(cb: CallbackQuery):
 
 @router.callback_query(F.data == "ai:edit")
 async def on_ai_edit(cb: CallbackQuery):
-    kb = InlineKeyboardBuilder()
-    kb.button(text="بالا ⬆️", callback_data="ai:pos:top")
-    kb.button(text="وسط ⚪️", callback_data="ai:pos:center")
-    kb.button(text="پایین ⬇️", callback_data="ai:pos:bottom")
-    kb.adjust(3)
-    await cb.message.answer("موقعیت متن:", reply_markup=kb.as_markup())
+    await cb.message.answer("موقعیت عمودی متن:", reply_markup=ai_vpos_kb())
     await cb.answer()
 
 # ----- بازخورد و ساخت پک (اصلاح شده) -----
@@ -479,35 +553,42 @@ async def on_pack_skip(cb: CallbackQuery):
 async def on_pack_start_creation(cb: CallbackQuery):
     s = sess(cb.from_user.id)
     s["pack_creation_wizard"] = {"step": "awaiting_pack_name"}
-    rules_text = (
-        "برای ساخت پک استیکر، لطفاً یک نام انگلیسی برای آن انتخاب کنید.\n\n"
-        "قوانین نام پک در تلگرام:\n"
-        "• نام پک باید فقط حروف انگلیسی، اعداد و خط زیرین (_) باشد.\n"
-        "• نباید فاصله (space) داشته باشد.\n"
-        "• نام پک باید با حرف انگلیسی شروع شود.\n\n"
-        "مثال‌های خوب:\n"
-        "MySuperPack\n"
-        "Farsi_Stickers_By_Bot\n"
-        "AwesomePack2023\n\n"
-        "حالا نام مورد نظر خود را ارسال کنید:"
-    )
+    rules_text = ("برای ساخت پک استیکر، لطفاً یک نام انگلیسی برای آن انتخاب کنید.\n\n"
+                  "قوانین نام پک در تلگرام:\n"
+                  "• نام پک باید فقط حروف انگلیسی، اعداد و خط زیرین (_) باشد.\n"
+                  "• نباید فاصله (space) داشته باشد.\n"
+                  "• نام پک باید با حرف انگلیسی شروع شود.\n\n"
+                  "مثال‌های خوب:\n"
+                  "MySuperPack\n"
+                  "Farsi_Stickers_By_Bot\n"
+                  "AwesomePack2023\n\n"
+                  "حالا نام مورد نظر خود را ارسال کنید:")
     await cb.message.answer(rules_text, reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
     await cb.answer()
 
-async def _create_pack_and_add_sticker(user_id: int, pack_short_name: str, pack_title: str, sticker_bytes: bytes, bot: Bot, message_to_reply: Message):
+async def _create_pack_and_add_sticker(user_id: int, pack_short_name: str, pack_title: str, sticker_bytes: bytes, bot: Bot, message_to_reply: Message, is_video: bool = False):
     try:
+        sticker_emoji = "😀"
+        sticker_format = 'static'
+        sticker_type = 'regular'
+        
+        if is_video:
+            sticker_format = 'video'
+            sticker_type = 'video'
+            sticker_emoji = "👍"
+
         await bot.create_new_sticker_set(
             user_id=user_id,
             name=pack_short_name,
             title=pack_title,
             stickers=[],
-            sticker_type='regular',
-            sticker_format='static'  # رفع خطا
+            sticker_type=sticker_type,
+            sticker_format=sticker_format
         )
         await bot.add_sticker_to_set(
             user_id=user_id,
             name=pack_short_name,
-            sticker=InputSticker(sticker=BufferedInputFile(sticker_bytes, filename="sticker.webp"), emoji="😀")
+            sticker=InputSticker(sticker=BufferedInputFile(sticker_bytes, filename="sticker.webm" if is_video else "sticker.webp"), emoji=sticker_emoji)
         )
         await message_to_reply.answer(f"✅ پک استیکر «{pack_title}» با موفقیت ساخته شد و استیکر به آن اضافه گردید!", reply_markup=back_to_menu_kb(user_id == ADMIN_ID))
         sess(user_id)["pack_creation_wizard"] = {}
@@ -518,11 +599,9 @@ async def _create_pack_and_add_sticker(user_id: int, pack_short_name: str, pack_
              await message_to_reply.answer("❌ برای ساخت پک، باید ربات را ادمین کانال خود کنید (اگر پک عمومی است) یا از طریق تنظیمات حریم خصوصی، اجازه ساخت پک به ربات را بدهید.")
         else:
             await message_to_reply.answer(f"خطایی در ساخت پک رخ داد: {e.message}")
-        # ویزارد فعال می‌ماند تا کاربر نام جدید بدهد
     except Exception as e:
         await message_to_reply.answer(f"یک خطای غیرمنتظره رخ داد: {e}")
         sess(user_id)["pack_creation_wizard"] = {}
-
 
 # ----- پردازش پیام‌ها (اصلاح شده) -----
 @router.message()
@@ -540,17 +619,14 @@ async def on_message(message: Message):
     wizard = s.get("pack_creation_wizard", {})
     if wizard.get("step") == "awaiting_pack_name" and message.text:
         pack_name = message.text.strip()
-        # ایجاد نام کوتاه و منحصر به فرد
         pack_short_name = re.sub(r'[^a-zA-Z0-9_]', '', pack_name).lower()
         if not pack_short_name or not pack_short_name[0].isalpha():
             await message.answer("❌ نام پک نامعتبر است. لطفاً طبق قوانین یک نام جدید (فقط انگلیسی و بدون فاصله) ارسال کنید:")
             return
-        
         pack_short_name += f"_by_{uid}_bot"
         s["pack_creation_wizard"]["pack_short_name"] = pack_short_name
         s["pack_creation_wizard"]["pack_title"] = pack_name
         s["pack_creation_wizard"]["step"] = "awaiting_sticker_text"
-        
         await message.answer(f"عالی! نام پک «{pack_name}» انتخاب شد.\n\nحالا متن اولین استیکر این پک را ارسال کنید:")
         return
 
@@ -558,44 +634,44 @@ async def on_message(message: Message):
         sticker_text = message.text.strip()
         pack_short_name = wizard["pack_short_name"]
         pack_title = wizard["pack_title"]
-        
-        img = render_image(text=sticker_text, position="center", font_key="Default", color_hex="#FFFFFF", size_key="medium", bg_mode="transparent", as_webp=True)
-        
+        img = render_image(text=sticker_text, v_pos="center", h_pos="center", font_key="Default", color_hex="#FFFFFF", size_key="medium", bg_mode="transparent", as_webp=True)
         await message.answer_sticker(BufferedInputFile(img, filename="sticker.webp"))
         await message.answer("در حال ساخت پک و افزودن استیکر... لطفاً صبر کنید.")
-        
-        await _create_pack_and_add_sticker(uid, pack_short_name, pack_title, img, message.bot, message)
+        await _create_pack_and_add_sticker(uid, pack_short_name, pack_title, img, message.bot, message, is_video=False)
         return
-
-    # اگر ویدیو ارسال شد و FFmpeg نصب نیست
-    if message.video or message.animation:
-        if not is_ffmpeg_installed():
-            await message.answer(
-                "⚠️ قابلیت پردازش ویدیو در این سرور فعال نیست.\n"
-                "برای فعال‌سازی، مدیر سرور باید FFmpeg را نصب کند.\n"
-                "دستور نصب برای اوبونتو: `sudo apt update && sudo apt install ffmpeg`"
-            )
-            return
 
     # پردازش بر اساس حالت
     mode = s.get("mode", "menu")
     if mode == "simple":
-        s["simple"]["text"] = message.text.strip()
-        await message.answer("پس‌زمینه رو انتخاب کن:", reply_markup=simple_bg_kb())
+        if message.text:
+            s["simple"]["text"] = message.text.strip()
+            await message.answer("پس‌زمینه رو انتخاب کن:", reply_markup=simple_bg_kb())
     elif mode == "ai":
-        u = user(uid)
-        is_admin = (uid == ADMIN_ID)
-        left = _quota_left(u, is_admin)
-        if left <= 0 and not is_admin:
-            await message.answer("سهمیه امروز تمام شد! فردا دوباره امتحان کن", reply_markup=back_to_menu_kb(is_admin))
-            return
-        s["ai"]["text"] = message.text.strip()
-        kb = InlineKeyboardBuilder()
-        kb.button(text="بالا ⬆️", callback_data="ai:pos:top")
-        kb.button(text="وسط ⚪️", callback_data="ai:pos:center")
-        kb.button(text="پایین ⬇️", callback_data="ai:pos:bottom")
-        kb.adjust(3)
-        await message.answer("موقعیت متن:", reply_markup=kb.as_markup())
+        ai_data = s.get("ai", {})
+        sticker_type = ai_data.get("sticker_type")
+        
+        if sticker_type == "image" and message.text:
+            u = user(uid)
+            is_admin = (uid == ADMIN_ID)
+            left = _quota_left(u, is_admin)
+            if left <= 0 and not is_admin:
+                await message.answer("سهمیه امروز تمام شد! فردا دوباره امتحان کن", reply_markup=back_to_menu_kb(is_admin))
+                return
+            s["ai"]["text"] = message.text.strip()
+            await message.answer("موقعیت عمودی متن:", reply_markup=ai_vpos_kb())
+        
+        elif sticker_type == "video" and (message.video or message.animation):
+            await message.answer("در حال پردازش ویدیو، لطفاً صبر کنید...")
+            file_info = message.video or message.animation
+            file = await message.bot.download(file_info.file_id)
+            webm_bytes = await process_video_to_webm(file.read())
+            
+            if webm_bytes:
+                sess(uid)["last_video_sticker"] = webm_bytes
+                await message.answer_sticker(BufferedInputFile(webm_bytes, filename="sticker.webm"))
+                await message.answer("از این استیکر راضی بودی؟", reply_markup=rate_kb())
+            else:
+                await message.answer("پردازش ویدیو با خطا مواجه شد. لطفاً از کیفیت و حجم مناسب (زیر 20 مگابایت) مطمئن شوید.", reply_markup=back_to_menu_kb(uid == ADMIN_ID))
     else:
         is_admin = (uid == ADMIN_ID)
         await message.answer("از منوی زیر انتخاب کن:", reply_markup=main_menu_kb(is_admin))
