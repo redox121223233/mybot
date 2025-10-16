@@ -607,7 +607,8 @@ async def on_ai_color(cb: CallbackQuery):
     sess(cb.from_user.id)["ai"]["color"] = color
 
     kb = InlineKeyboardBuilder()
-    for label, val in [("کوچک", "small"), ("متوسط", "medium"), ("بزرگ", "large")):
+    # This is the line that was corrected
+    for label, val in [("کوچک", "small"), ("متوسط", "medium"), ("بزرگ", "large")]:
         kb.button(text=label, callback_data=f"ai:size:{val}")
     kb.adjust(3)
 
