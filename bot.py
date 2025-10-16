@@ -1,7 +1,6 @@
 import asyncio
 import os
 import re
-import json
 from io import BytesIO
 from typing import Dict, Any, Optional, Tuple, List
 from datetime import datetime, timezone
@@ -32,50 +31,51 @@ MAINTENANCE = False
 DAILY_LIMIT = 5
 BOT_USERNAME = ""
 
-# ============ مدیریت کاربران با فایل JSON ============
-USERS_FILE = os.path.join(os.path.dirname(__file__), "users.json")
-
-def load_users() -> Dict[int, Dict[str, Any]]:
-    """اطلاعات کاربران را از فایل JSON می‌خواند"""
-    try:
-        with open(USERS_FILE, "r", encoding="utf-8") as f:
-            return {int(k): v for k, v in json.load(f).items()}
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
-
-def save_users(users_data: Dict[int, Dict[str, Any]]):
-    """اطلاعات کاربران را در فایل JSON ذخیره می‌کند"""
-    with open(USERS_FILE, "w", encoding="utf-8") as f:
-        json.dump(users_data, f, ensure_ascii=False, indent=2)
-
-def get_user(uid: int) -> Dict[str, Any]:
-    """اطلاعات یک کاربر خاص را گرفته و در صورت نیاز آپدیت می‌کند"""
-    users = load_users()
-    # --- خطای اصلاح شده ---
-    now_dt = datetime.now(timezone.utc)
-    today_start_ts = int(datetime(now_dt.year, now_dt.month, now_dt.day, tzinfo=timezone.utc).timestamp())
-    # --- پایان خطای اصلاح شده ---
-
-    if uid not in users:
-        users[uid] = {"ai_used": 0, "day_start_ts": today_start_ts}
-    
-    # ریست سهمیه روزانه
-    if users[uid].get("day_start_ts", 0) < today_start_ts:
-        users[uid]["ai_used"] = 0
-        users[uid]["day_start_ts"] = today_start_ts
-    
-    save_users(users)
-    return users[uid]
-
-def increment_ai_usage(uid: int):
-    """یک واحد به استفاده هوش مصنوعی کاربر اضافه می‌کند"""
-    users = load_users()
-    if uid in users:
-        users[uid]["ai_used"] += 1
-        save_users(users)
-
-# ============ حافظه موقت (session) ============
+# ============ حافظه ساده (in-memory) ============
+USERS: Dict[int, Dict[str, Any]] = {}
 SESSIONS: Dict[int, Dict[str, Any]] = {}
+ADMIN_PENDING: Dict[int, Dict[str, Any]] = {}
+
+def _today_start_ts() -> int:
+    now = datetime.now(timezone.utc)
+    midnight = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
+    return int(midnight.timestamp())
+
+def _reset_daily_if_needed(u: Dict[str, Any]):
+    day_start = u.get("day_start")
+    today = _today_start_ts()
+    if day_start is None or day_start < today:
+        u["day_start"] = today
+        u["ai_used"] = 0
+
+def _quota_left(u: Dict[str, Any], is_admin: bool) -> int:
+    if is_admin:
+        return 999999
+    _reset_daily_if_needed(u)
+    return max(0, DAILY_LIMIT - int(u.get("ai_used", 0)))
+
+def _seconds_to_reset(u: Dict[str, Any]) -> int:
+    _reset_daily_if_needed(u)
+    now = int(datetime.now(timezone.utc).timestamp())
+    end = int(u["day_start"]) + 86400
+    return max(0, end - now)
+
+def _fmt_eta(secs: int) -> str:
+    h = secs // 3600
+    m = (secs % 3600) // 60
+    if h <= 0 and m <= 0:
+        return "کمتر از ۱ دقیقه"
+    if h <= 0:
+        return f"{m} دقیقه"
+    if m == 0:
+        return f"{h} ساعت"
+    return f"{h} ساعت و {m} دقیقه"
+
+def user(uid: int) -> Dict[str, Any]:
+    if uid not in USERS:
+        USERS[uid] = {"ai_used": 0, "vote": None, "day_start": _today_start_ts(), "pack": None}
+    _reset_daily_if_needed(USERS[uid])
+    return USERS[uid]
 
 def sess(uid: int) -> Dict[str, Any]:
     if uid not in SESSIONS:
@@ -91,6 +91,7 @@ def sess(uid: int) -> Dict[str, Any]:
     return SESSIONS[uid]
 
 def reset_mode(uid: int):
+    """این تابع حالت کاربر را ریست می‌کند و اطلاعات او را از حافظه پاک می‌کند."""
     s = sess(uid)
     s["mode"] = "menu"
     s["ai"] = {}
@@ -99,6 +100,9 @@ def reset_mode(uid: int):
     s["last_sticker"] = None
     s["last_video_sticker"] = None
     s["pack_wizard"] = {}
+    # پاک کردن اطلاعات کاربر برای ریست سهمیه
+    if uid in USERS:
+        del USERS[uid]
 
 # ============ داده‌ها و NLU ساده ============
 DEFAULT_PALETTE = [
@@ -446,11 +450,12 @@ async def on_support(cb: CallbackQuery):
 
 @router.callback_query(F.data == "menu:quota")
 async def on_quota(cb: CallbackQuery):
-    u = get_user(cb.from_user.id)
+    u = user(cb.from_user.id)
     is_admin = (cb.from_user.id == ADMIN_ID)
-    left = DAILY_LIMIT - u.get("ai_used", 0) if not is_admin else 999
+    left = _quota_left(u, is_admin)
+    quota_txt = "نامحدود" if is_admin else f"{left} از {DAILY_LIMIT}"
     await cb.message.answer(
-        f"سهمیه امروز: {left} از {DAILY_LIMIT}",
+        f"سهمیه امروز: {quota_txt}",
         reply_markup=back_to_menu_kb(is_admin)
     )
     await cb.answer()
@@ -528,9 +533,9 @@ async def on_simple_edit(cb: CallbackQuery):
 # ----- استیکر هوش مصنوعی -----
 @router.callback_query(F.data == "menu:ai")
 async def on_ai(cb: CallbackQuery):
-    u = get_user(cb.from_user.id)
+    u = user(cb.from_user.id)
     is_admin = (cb.from_user.id == ADMIN_ID)
-    left = DAILY_LIMIT - u.get("ai_used", 0) if not is_admin else 999
+    left = _quota_left(u, is_admin)
     
     if left <= 0 and not is_admin:
         await cb.message.answer(
@@ -635,9 +640,9 @@ async def on_ai_size(cb: CallbackQuery):
 
 @router.callback_query(F.data == "ai:confirm")
 async def on_ai_confirm(cb: CallbackQuery):
-    u = get_user(cb.from_user.id)
+    u = user(cb.from_user.id)
     is_admin = (cb.from_user.id == ADMIN_ID)
-    left = DAILY_LIMIT - u.get("ai_used", 0) if not is_admin else 999
+    left = _quota_left(u, is_admin)
     
     if left <= 0 and not is_admin:
         await cb.answer("سهمیه تمام شد!", show_alert=True)
@@ -657,7 +662,7 @@ async def on_ai_confirm(cb: CallbackQuery):
     
     sess(cb.from_user.id)["last_sticker"] = img
     if not is_admin:
-        increment_ai_usage(cb.from_user.id)
+        u["ai_used"] = int(u.get("ai_used", 0)) + 1
     
     await cb.message.answer_sticker(BufferedInputFile(img, filename="sticker.webp"))
     await cb.message.answer(
@@ -860,9 +865,9 @@ async def on_message(message: Message):
             await message.answer("پس‌زمینه رو انتخاب کن:", reply_markup=simple_bg_kb())
     elif mode == "ai":
         if message.text and s["ai"].get("sticker_type") == "image":
-            u = get_user(uid)
+            u = user(uid)
             is_admin = (uid == ADMIN_ID)
-            left = DAILY_LIMIT - u.get("ai_used", 0) if not is_admin else 999
+            left = _quota_left(u, is_admin)
             
             if left <= 0 and not is_admin:
                 await message.answer("سهمیه امروز تمام شد! فردا دوباره امتحان کن", reply_markup=back_to_menu_kb(is_admin))
