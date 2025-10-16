@@ -761,7 +761,7 @@ async def on_message(message: Message):
         return
 
     pack_wizard = s.get("pack_wizard", {})
-    if pack_wizard.get("step") == "awaiting_name") and message.text:
+    if pack_wizard.get("step") == "awaiting_name" and message.text:
         pack_name = message.text.strip()
         s["pack_wizard"]["name"] = pack_name
         await _handle_pack_creation(uid, pack_name, message.bot, message)
@@ -825,3 +825,13 @@ async def on_message(message: Message):
     else:
         is_admin = (uid == ADMIN_ID)
         await message.answer("از منوی زیر انتخاب کن:", reply_markup=main_menu_kb(is_admin))
+
+# You need to add the main execution block to run the bot
+async def main():
+    dp = Dispatcher()
+    dp.include_router(router)
+    bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+    await dp.start_polling(bot)
+
+if __name__ == "__main__":
+    asyncio.run(main())
