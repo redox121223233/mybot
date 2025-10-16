@@ -400,11 +400,8 @@ async def check_pack_exists(bot: Bot, short_name: str) -> bool:
         await bot.get_sticker_set(name=short_name)
         return True
     except TelegramBadRequest as e:
-        # This error means the name format is wrong OR the set doesn't exist.
-        # We'll treat it as "does not exist" for our purposes.
         if "STICKERSET_INVALID" in e.message or "invalid sticker set name specified" in e.message:
             return False
-        # Re-raise other potential errors
         raise
 
 # ============ روتر ============
@@ -727,9 +724,11 @@ async def on_rate_yes(cb: CallbackQuery):
         return
 
     try:
+        # FIX 1: Updated InputSticker for new aiogram version
         sticker_to_add = InputSticker(
             sticker=BufferedInputFile(sticker_bytes, filename="sticker.webp"),
-            emoji="😀"
+            emoji_list=["😀"],
+            emoji_format="text"
         )
         await cb.bot.add_sticker_to_set(
             user_id=cb.from_user.id,
@@ -739,8 +738,9 @@ async def on_rate_yes(cb: CallbackQuery):
         await cb.message.answer(f"استیکر با موفقیت به پک «{pack_title}» اضافه شد.", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
     except TelegramBadRequest as e:
         await cb.message.answer(f"خطا در افزودن استیکر به پک: {e.message}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+    # FIX 2: Safely convert exception to string
     except Exception as e:
-        await cb.message.answer(f"خطای غیرمنتظره: {e}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+        await cb.message.answer(f"خطای غیرمنتظره: {str(e)}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
 
     await cb.answer()
 
@@ -931,9 +931,11 @@ async def on_pack_confirm_name(cb: CallbackQuery):
             await cb.message.answer(f"استیکرها به پک موجود «{original_name}» اضافه خواهند شد.")
         else:
             dummy_img = render_image("First Sticker", "center", "center", "Default", "#FFFFFF", "medium", as_webp=True)
+            # FIX 1: Updated InputSticker for new aiogram version
             sticker_to_add = InputSticker(
                 sticker=BufferedInputFile(dummy_img, filename="sticker.webp"),
-                emoji="🎉"
+                emoji_list=["🎉"],
+                emoji_format="text"
             )
             await cb.bot.create_new_sticker_set(
                 user_id=cb.from_user.id,
@@ -962,12 +964,11 @@ async def on_pack_confirm_name(cb: CallbackQuery):
             await cb.message.answer("نوع استیکر هوش مصنوعی را انتخاب کنید:", reply_markup=ai_type_kb())
 
     except TelegramBadRequest as e:
-        # This will catch errors from check_pack_exists (e.g., STICKERSET_INVALID)
-        # or from create_new_sticker_set if the name is still somehow invalid.
         await cb.message.answer(f"خطا: نام پک «{short_name}» توسط تلگرام تایید نشد.\n\nلطفا با نام ساده‌تر و انگلیسی دیگری تلاش کنید.", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
         s["pack_wizard"] = {}
+    # FIX 2: Safely convert exception to string
     except Exception as e:
-        await cb.message.answer(f"خطای غیرمنتظره در ساخت پک: {e}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+        await cb.message.answer(f"خطای غیرمنتظره در ساخت پک: {str(e)}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
         s["pack_wizard"] = {}
     
     await cb.answer()
