@@ -1005,7 +1005,7 @@ async def on_ai_edit(cb: CallbackQuery, bot: Bot):
     )
     await cb.answer()
 
-# --- تابع اصلاح شده با کدهای اشکال‌زدایی ---
+# --- تابع اصلاح شده با راه حل نهایی ---
 @router.callback_query(F.data == "rate:yes")
 async def on_rate_yes(cb: CallbackQuery, bot: Bot):
     if not await check_channel_membership(bot, cb.from_user.id):
@@ -1022,27 +1022,40 @@ async def on_rate_yes(cb: CallbackQuery, bot: Bot):
         await cb.answer()
         return
 
-    # --- شروع کدهای اشکال‌زدایی ---
+    # --- شروع کدهای اشکال‌زدایی و راه حل ---
     print(f"DEBUG: Attempting to add sticker to pack '{pack_short_name}' for user {cb.from_user.id}")
     print(f"DEBUG: Sticker size: {len(sticker_bytes)} bytes")
+    
+    # ذخیره فایل استیکر روی کامپیوتر برای بررسی دستی (اختیاری)
+    try:
+        with open(f"debug_sticker_{cb.from_user.id}.webp", "wb") as f:
+            f.write(sticker_bytes)
+        print(f"DEBUG: Saved sticker to debug_sticker_{cb.from_user.id}.webp for manual inspection.")
+    except Exception as e:
+        print(f"DEBUG: Could not save debug file: {e}")
+
     if len(sticker_bytes) > 64 * 1024: # 64 KB limit for static stickers
         print("DEBUG: Sticker is too large!")
         await cb.message.answer("فایل استیکر خیلی بزرگ است. لطفا با متن کوتاه‌تر یا ساده‌تر دوباره تلاش کنید.", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
         await cb.answer()
         return
-    # --- پایان کدهای اشکال‌زدایی ---
+    
+    # --- راه حل اصلی: اضافه کردن تاخیر و تغییر ایموجی ---
+    await cb.message.answer("در حال افزودن استیکر به پک، لطفا چند لحظه صبر کنید...")
+    await asyncio.sleep(1.5)  # تاخیر 1.5 ثانیه‌ای برای جلوگیری از محدودیت سرعت تلگرام
+    # --- پایان راه حل ---
 
     try:
         sticker_to_add = InputSticker(
             sticker=BufferedInputFile(sticker_bytes, filename="sticker.webp"),
-            emoji_list=["😀"]
+            emoji_list=["😂"]  # تغییر ایموجی به یک گزینه رایج‌تر
         )
         response = await cb.bot.add_sticker_to_set(
             user_id=cb.from_user.id,
             name=pack_short_name,
             sticker=sticker_to_add
         )
-        print(f"DEBUG: API response from add_sticker_to_set: {response}") # چاپ پاسخ API
+        print(f"DEBUG: API response from add_sticker_to_set: {response}")
         
         pack_link = f"https://t.me/addstickers/{pack_short_name}"
         await cb.message.answer(f"استیکر با موفقیت به پک «{pack_title}» اضافه شد.\n\n{pack_link}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
@@ -1052,7 +1065,7 @@ async def on_rate_yes(cb: CallbackQuery, bot: Bot):
         await cb.message.answer(f"خطا در افزودن استیکر به پک: {e.message}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
     except Exception as e:
         print(f"DEBUG: Unexpected error on add_sticker_to_set: {e}")
-        traceback.print_exc() # چاپ کامل خطا در کنسول
+        traceback.print_exc()
         await cb.message.answer(f"خطای غیرمنتظره‌ای رخ داد. لطفا به ادمین اطلاع دهید.\nخطا: {str(e)}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
 
     await cb.answer()
