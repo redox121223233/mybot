@@ -29,7 +29,7 @@ ADMIN_ID = 6053579919
 
 MAINTENANCE = False
 DAILY_LIMIT = 5
-BOT_USERNAME = "matnstickerbot" # نام کاربری ربات شما بدون @
+# BOT_USERNAME دیگر نیازی به این متغیر نیست
 
 # ============ حافظه ساده (in-memory) ============
 USERS: Dict[int, Dict[str, Any]] = {}
@@ -403,9 +403,10 @@ async def check_pack_exists(bot: Bot, short_name: str) -> bool:
             return False
         raise
 
-def is_valid_pack_name(name: str, max_len: int) -> bool:
+def is_valid_pack_name(name: str) -> bool:
     """Validates pack name according to all Telegram rules."""
-    if not (1 <= len(name) <= max_len):
+    # FIX: Max length is now a fixed 64
+    if not (1 <= len(name) <= 64):
         return False
     if not name[0].isalpha() or not name[0].islower():
         return False
@@ -507,16 +508,14 @@ async def on_simple(cb: CallbackQuery):
     s = sess(cb.from_user.id)
     s["pack_wizard"] = {"step": "awaiting_name", "mode": "simple"}
     
-    suffix = f"_by_{BOT_USERNAME}"
-    max_len = 64 - len(suffix)
-    
+    # FIX: Removed suffix calculation, max length is now 64
     rules_text = (
-        f"نام پک را بنویس (مثال: my_stickers):\n\n"
-        f"• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
-        f"• باید با حرف شروع شود\n"
-        f"• نباید با زیرخط تمام شود\n"
-        f"• نباید دو زیرخط پشت سر هم داشته باشد\n"
-        f"• حداکثر {max_len} کاراکتر"
+        "نام پک را بنویس (مثال: my_stickers):\n\n"
+        "• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
+        "• باید با حرف شروع شود\n"
+        "• نباید با زیرخط تمام شود\n"
+        "• نباید دو زیرخط پشت سر هم داشته باشد\n"
+        "• حداکثر ۶۴ کاراکتر"
     )
     await cb.message.answer(rules_text, reply_markup=pack_name_kb(cb.from_user.id == ADMIN_ID))
     await cb.answer()
@@ -538,16 +537,14 @@ async def on_ai(cb: CallbackQuery):
     s = sess(cb.from_user.id)
     s["pack_wizard"] = {"step": "awaiting_name", "mode": "ai"}
 
-    suffix = f"_by_{BOT_USERNAME}"
-    max_len = 64 - len(suffix)
-
+    # FIX: Removed suffix calculation, max length is now 64
     rules_text = (
-        f"نام پک را بنویس (مثال: my_stickers):\n\n"
-        f"• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
-        f"• باید با حرف شروع شود\n"
-        f"• نباید با زیرخط تمام شود\n"
-        f"• نباید دو زیرخط پشت سر هم داشته باشد\n"
-        f"• حداکثر {max_len} کاراکتر"
+        "نام پک را بنویس (مثال: my_stickers):\n\n"
+        "• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
+        "• باید با حرف شروع شود\n"
+        "• نباید با زیرخط تمام شود\n"
+        "• نباید دو زیرخط پشت سر هم داشته باشد\n"
+        "• حداکثر ۶۴ کاراکتر"
     )
     await cb.message.answer(rules_text, reply_markup=pack_name_kb(cb.from_user.id == ADMIN_ID))
     await cb.answer()
@@ -863,23 +860,22 @@ async def on_message(message: Message):
     if pack_wizard.get("step") == "awaiting_name" and message.text:
         pack_name = message.text.strip()
         
-        suffix = f"_by_{BOT_USERNAME}"
-        max_len = 64 - len(suffix)
-        
-        if not is_valid_pack_name(pack_name, max_len):
+        # FIX: Use the simplified validation function
+        if not is_valid_pack_name(pack_name):
             await message.answer(
-                f"نام پک نامعتبر است. لطفا طبق قوانین یک نام جدید انتخاب کنید:\n\n"
-                f"• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
-                f"• باید با حرف شروع شود\n"
-                f"• نباید با زیرخط تمام شود\n"
-                f"• نباید دو زیرخط پشت سر هم داشته باشد\n"
-                f"• حداکثر {max_len} کاراکتر",
+                "نام پک نامعتبر است. لطفا طبق قوانین یک نام جدید انتخاب کنید:\n\n"
+                "• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
+                "• باید با حرف شروع شود\n"
+                "• نباید با زیرخط تمام شود\n"
+                "• نباید دو زیرخط پشت سر هم داشته باشد\n"
+                "• حداکثر ۶۴ کاراکتر",
                 reply_markup=pack_name_kb(is_admin)
             )
             return
 
         # Name is valid, proceed to create/check pack
-        short_name = f"{pack_name}_by_{BOT_USERNAME}"
+        # FIX: short_name is now just pack_name
+        short_name = pack_name
         mode = pack_wizard.get("mode")
         
         try:
