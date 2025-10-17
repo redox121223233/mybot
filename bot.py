@@ -74,7 +74,13 @@ def _fmt_eta(secs: int) -> str:
 
 def user(uid: int) -> Dict[str, Any]:
     if uid not in USERS:
-        USERS[uid] = {"ai_used": 0, "vote": None, "day_start": _today_start_ts(), "pack": None}
+        USERS[uid] = {
+            "ai_used": 0, 
+            "vote": None, 
+            "day_start": _today_start_ts(), 
+            "packs": [],  # لیست پک‌های کاربر
+            "current_pack": None  # پک فعلی انتخاب شده
+        }
     _reset_daily_if_needed(USERS[uid])
     return USERS[uid]
 
@@ -106,6 +112,44 @@ def reset_mode(uid: int):
         del s["current_pack_short_name"]
     if "current_pack_title" in s:
         del s["current_pack_title"]
+
+# ============ توابع مدیریت پک‌های کاربر ============
+def get_user_packs(uid: int) -> List[Dict[str, str]]:
+    """دریافت لیست پک‌های کاربر"""
+    u = user(uid)
+    return u.get("packs", [])
+
+def add_user_pack(uid: int, pack_name: str, pack_short_name: str):
+    """افزودن پک جدید به لیست پک‌های کاربر"""
+    u = user(uid)
+    packs = u.get("packs", [])
+    
+    # بررسی اینکه پک قبلا اضافه نشده باشد
+    for pack in packs:
+        if pack["short_name"] == pack_short_name:
+            return
+    
+    packs.append({
+        "name": pack_name,
+        "short_name": pack_short_name
+    })
+    u["packs"] = packs
+    u["current_pack"] = pack_short_name
+
+def set_current_pack(uid: int, pack_short_name: str):
+    """تنظیم پک فعلی کاربر"""
+    u = user(uid)
+    u["current_pack"] = pack_short_name
+
+def get_current_pack(uid: int) -> Optional[Dict[str, str]]:
+    """دریافت پک فعلی کاربر"""
+    u = user(uid)
+    current_pack_short_name = u.get("current_pack")
+    if current_pack_short_name:
+        for pack in u.get("packs", []):
+            if pack["short_name"] == current_pack_short_name:
+                return pack
+    return None
 
 # ============ داده‌ها و NLU ساده ============
 DEFAULT_PALETTE = [
@@ -374,10 +418,33 @@ def rate_kb():
     kb.adjust(2, 1)
     return kb.as_markup()
 
+def pack_selection_kb(uid: int, mode: str):
+    """ساخت کیبورد انتخاب پک برای کاربر"""
+    kb = InlineKeyboardBuilder()
+    user_packs = get_user_packs(uid)
+    
+    # اگر پک قبلی وجود دارد، آن را به عنوان گزینه اول نمایش می‌دهیم
+    current_pack = get_current_pack(uid)
+    if current_pack:
+        kb.button(text=f"📦 {current_pack['name']} (فعلی)", callback_data=f"pack:select:{current_pack['short_name']}")
+    
+    # بقیه پک‌ها را نمایش می‌دهیم
+    for pack in user_packs:
+        if current_pack and pack["short_name"] == current_pack["short_name"]:
+            continue  # از تکرار پک فعلی جلوگیری می‌کنیم
+        kb.button(text=f"📦 {pack['name']}", callback_data=f"pack:select:{pack['short_name']}")
+    
+    # گزینه ساخت پک جدید
+    kb.button(text="➕ ساخت پک جدید", callback_data=f"pack:new:{mode}")
+    
+    # تنظیم تعداد ستون‌ها
+    kb.adjust(1)
+    return kb.as_markup()
+
 def add_to_pack_kb():
     kb = InlineKeyboardBuilder()
     kb.button(text="افزودن به پک جدید", callback_data="pack:start_creation")
-    kb.button(text="افزودن به پک قبلی", callback_data="pack:add_to_existing")
+    kb.button(text="انتخاب از پک‌های قبلی", callback_data="pack:select_existing")
     kb.button(text="نه، لازم نیست", callback_data="pack:skip")
     kb.adjust(3)
     return kb.as_markup()
@@ -573,12 +640,15 @@ async def on_simple(cb: CallbackQuery, bot: Bot):
         return
         
     s = sess(cb.from_user.id)
+    uid = cb.from_user.id
     
     # بررسی اینکه آیا کاربر پک قبلی دارد
-    if s.get("current_pack_short_name"):
+    user_packs = get_user_packs(uid)
+    if user_packs:
+        s["pack_wizard"] = {"mode": "simple"}
         await cb.message.answer(
-            "می‌خواهید استیکر جدید را به پک قبلی اضافه کنید یا پک جدید بسازید؟",
-            reply_markup=add_to_pack_kb()
+            "می‌خواهید استیکر جدید را به کدام پک اضافه کنید؟",
+            reply_markup=pack_selection_kb(uid, "simple")
         )
     else:
         s["pack_wizard"] = {"step": "awaiting_name", "mode": "simple"}
@@ -611,12 +681,15 @@ async def on_ai(cb: CallbackQuery, bot: Bot):
         return
 
     s = sess(cb.from_user.id)
+    uid = cb.from_user.id
     
     # بررسی اینکه آیا کاربر پک قبلی دارد
-    if s.get("current_pack_short_name"):
+    user_packs = get_user_packs(uid)
+    if user_packs:
+        s["pack_wizard"] = {"mode": "ai"}
         await cb.message.answer(
-            "می‌خواهید استیکر جدید را به پک قبلی اضافه کنید یا پک جدید بسازید؟",
-            reply_markup=add_to_pack_kb()
+            "می‌خواهید استیکر جدید را به کدام پک اضافه کنید؟",
+            reply_markup=pack_selection_kb(uid, "ai")
         )
     else:
         s["pack_wizard"] = {"step": "awaiting_name", "mode": "ai"}
@@ -631,27 +704,78 @@ async def on_ai(cb: CallbackQuery, bot: Bot):
         await cb.message.answer(rules_text, reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
     await cb.answer()
 
-@router.callback_query(F.data == "pack:add_to_existing")
-async def on_pack_add_to_existing(cb: CallbackQuery, bot: Bot):
+@router.callback_query(F.data.startswith("pack:select:"))
+async def on_pack_select(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
+    pack_short_name = cb.data.split(":")[-1]
+    uid = cb.from_user.id
+    s = sess(uid)
+    
+    # پیدا کردن اطلاعات پک
+    selected_pack = None
+    for pack in get_user_packs(uid):
+        if pack["short_name"] == pack_short_name:
+            selected_pack = pack
+            break
+    
+    if selected_pack:
+        set_current_pack(uid, pack_short_name)
+        s["current_pack_short_name"] = pack_short_name
+        s["current_pack_title"] = selected_pack["name"]
+        s["pack_wizard"] = {}
+        
+        mode = s.get("pack_wizard", {}).get("mode", "simple")
+        
+        if mode == "simple":
+            s["mode"] = "simple"
+            s["simple"] = {"text": None, "bg_mode": "transparent", "bg_photo_bytes": None}
+            await cb.message.answer(
+                f"پک «{selected_pack['name']}» انتخاب شد.\n\nمتن استیکر ساده رو بفرست:",
+                reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID)
+            )
+        elif mode == "ai":
+            s["mode"] = "ai"
+            s["ai"] = {
+                "text": None, "v_pos": "center", "h_pos": "center", "font": "Default",
+                "color": "#FFFFFF", "size": "large", "bg_photo_bytes": None
+            }
+            await cb.message.answer(
+                f"پک «{selected_pack['name']}» انتخاب شد.\n\nنوع استیکر پیشرفته را انتخاب کنید:",
+                reply_markup=ai_type_kb()
+            )
+    
+    await cb.answer()
+
+@router.callback_query(F.data.startswith("pack:new:"))
+async def on_pack_new(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
+    mode = cb.data.split(":")[-1]
+    s = sess(cb.from_user.id)
+    s["pack_wizard"] = {"step": "awaiting_name", "mode": mode}
+    rules_text = (
+        "برای ایجاد پک جدید، یک نام انگلیسی ارسال کنید.\n\n"
+        "• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
+        "• حداکثر ۵۰ کاراکتر"
+    )
+    await cb.message.answer(rules_text, reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+    await cb.answer()
+
+@router.callback_query(F.data == "pack:select_existing")
+async def on_pack_select_existing(cb: CallbackQuery, bot: Bot):
     if not await check_channel_membership(bot, cb.from_user.id):
         return
         
     s = sess(cb.from_user.id)
     mode = s.get("pack_wizard", {}).get("mode", "simple")
     
-    if mode == "simple":
-        s["mode"] = "simple"
-        s["simple"] = {"text": None, "bg_mode": "transparent", "bg_photo_bytes": None}
-        await cb.message.answer("متن استیکر ساده رو بفرست:", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
-    elif mode == "ai":
-        s["mode"] = "ai"
-        s["ai"] = {
-            "text": None, "v_pos": "center", "h_pos": "center", "font": "Default",
-            "color": "#FFFFFF", "size": "large", "bg_photo_bytes": None
-        }
-        await cb.message.answer("نوع استیکر پیشرفته را انتخاب کنید:", reply_markup=ai_type_kb())
-    
-    s["pack_wizard"] = {}
+    await cb.message.answer(
+        "کدام پک را انتخاب می‌کنید؟",
+        reply_markup=pack_selection_kb(cb.from_user.id, mode)
+    )
     await cb.answer()
 
 @router.callback_query(F.data.startswith("simple:bg:"))
@@ -1067,6 +1191,8 @@ async def on_message(message: Message, bot: Bot):
                 s["current_pack_short_name"] = short_name
                 s["current_pack_title"] = pack_name
                 s["pack_wizard"] = {}
+                # افزودن پک به لیست پک‌های کاربر
+                add_user_pack(uid, pack_name, short_name)
                 await message.answer(f"استیکرها به پک موجود «{pack_name}» اضافه خواهند شد.")
             else:
                 dummy_img = render_image("First", "center", "center", "Default", "#FFFFFF", "medium", as_webp=True)
@@ -1085,6 +1211,8 @@ async def on_message(message: Message, bot: Bot):
                 s["current_pack_short_name"] = short_name
                 s["current_pack_title"] = pack_name
                 s["pack_wizard"] = {}
+                # افزودن پک به لیست پک‌های کاربر
+                add_user_pack(uid, pack_name, short_name)
                 pack_link = f"https://t.me/addstickers/{short_name}"
                 await message.answer(f"پک استیکر «{pack_name}» با موفقیت ساخته شد!\n\n{pack_link}\n\nحالا استیکر بعدی خود را بسازید.")
 
