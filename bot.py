@@ -325,6 +325,12 @@ def back_to_menu_kb(is_admin: bool = False):
     kb.adjust(1)
     return kb.as_markup()
 
+def pack_name_kb(is_admin: bool = False):
+    kb = InlineKeyboardBuilder()
+    kb.button(text="انصراف", callback_data="pack:cancel")
+    kb.adjust(1)
+    return kb.as_markup()
+
 def simple_bg_kb():
     kb = InlineKeyboardBuilder()
     kb.button(text="شفاف", callback_data="simple:bg:transparent")
@@ -512,7 +518,7 @@ async def on_simple(cb: CallbackQuery):
         f"• نباید دو زیرخط پشت سر هم داشته باشد\n"
         f"• حداکثر {max_len} کاراکتر"
     )
-    await cb.message.answer(rules_text, reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+    await cb.message.answer(rules_text, reply_markup=pack_name_kb(cb.from_user.id == ADMIN_ID))
     await cb.answer()
 
 @router.callback_query(F.data == "menu:ai")
@@ -543,7 +549,7 @@ async def on_ai(cb: CallbackQuery):
         f"• نباید دو زیرخط پشت سر هم داشته باشد\n"
         f"• حداکثر {max_len} کاراکتر"
     )
-    await cb.message.answer(rules_text, reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+    await cb.message.answer(rules_text, reply_markup=pack_name_kb(cb.from_user.id == ADMIN_ID))
     await cb.answer()
 
 @router.callback_query(F.data.startswith("simple:bg:"))
@@ -772,6 +778,13 @@ async def on_rate_no(cb: CallbackQuery):
     await cb.message.answer("چه چیزی رو دوست نداشتی؟")
     await cb.answer()
 
+@router.callback_query(F.data == "pack:cancel")
+async def on_pack_cancel(cb: CallbackQuery):
+    reset_mode(cb.from_user.id)
+    is_admin = (cb.from_user.id == ADMIN_ID)
+    await cb.message.answer("عملیات ساخت پک لغو شد.", reply_markup=main_menu_kb(is_admin))
+    await cb.answer()
+
 @router.message()
 async def on_message(message: Message):
     uid = message.from_user.id
@@ -845,7 +858,7 @@ async def on_message(message: Message):
         )
         return
 
-    # Handle pack name input with strict validation
+    # Handle pack name input with robust validation and error handling
     pack_wizard = s.get("pack_wizard", {})
     if pack_wizard.get("step") == "awaiting_name" and message.text:
         pack_name = message.text.strip()
@@ -853,7 +866,6 @@ async def on_message(message: Message):
         suffix = f"_by_{BOT_USERNAME}"
         max_len = 64 - len(suffix)
         
-        # FIX: Use the new robust validation function
         if not is_valid_pack_name(pack_name, max_len):
             await message.answer(
                 f"نام پک نامعتبر است. لطفا طبق قوانین یک نام جدید انتخاب کنید:\n\n"
@@ -862,7 +874,7 @@ async def on_message(message: Message):
                 f"• نباید با زیرخط تمام شود\n"
                 f"• نباید دو زیرخط پشت سر هم داشته باشد\n"
                 f"• حداکثر {max_len} کاراکتر",
-                reply_markup=back_to_menu_kb(is_admin)
+                reply_markup=pack_name_kb(is_admin)
             )
             return
 
@@ -876,7 +888,7 @@ async def on_message(message: Message):
             if pack_exists:
                 s["current_pack_short_name"] = short_name
                 s["current_pack_title"] = pack_name
-                s["pack_wizard"] = {}
+                s["pack_wizard"] = {} # Clear wizard on success
                 await message.answer(f"استیکرها به پک موجود «{pack_name}» اضافه خواهند شد.")
             else:
                 dummy_img = render_image("First Sticker", "center", "center", "Default", "#FFFFFF", "medium", as_webp=True)
@@ -895,7 +907,7 @@ async def on_message(message: Message):
                 )
                 s["current_pack_short_name"] = short_name
                 s["current_pack_title"] = pack_name
-                s["pack_wizard"] = {}
+                s["pack_wizard"] = {} # Clear wizard on success
                 pack_link = f"https://t.me/addstickers/{short_name}"
                 await message.answer(f"پک استیکر «{pack_name}» با موفقیت ساخته شد!\n{pack_link}\n\nحالا استیکر بعدی خود را بسازید.")
 
@@ -913,11 +925,10 @@ async def on_message(message: Message):
                 await message.answer("نوع استیکر هوش مصنوعی را انتخاب کنید:", reply_markup=ai_type_kb())
 
         except TelegramBadRequest as e:
-            await message.answer(f"خطا در ساخت پک: {e.message}", reply_markup=back_to_menu_kb(is_admin))
-            s["pack_wizard"] = {}
+            # FIX: Don't reset the wizard, just ask for a new name.
+            await message.answer("خطایی در ساخت پک رخ داد. لطفاً نام دیگری را امتحان کنید.", reply_markup=pack_name_kb(is_admin))
         except Exception as e:
-            await message.answer(f"خطای غیرمنتظره در ساخت پک: {str(e)}", reply_markup=back_to_menu_kb(is_admin))
-            s["pack_wizard"] = {}
+            await message.answer(f"خطای غیرمنتظره در ساخت پک: {str(e)}", reply_markup=pack_name_kb(is_admin))
         return
 
     if message.photo:
