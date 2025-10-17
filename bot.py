@@ -864,6 +864,12 @@ async def on_message(message: Message):
 
     pack_wizard = s.get("pack_wizard", {})
     if pack_wizard.get("step") == "awaiting_name" and message.text:
+        global BOT_USERNAME
+
+        if not BOT_USERNAME:
+            bot_info = await message.bot.get_me()
+            BOT_USERNAME = bot_info.username
+
         pack_name = message.text.strip()
 
         if not is_valid_pack_name(pack_name):
@@ -880,6 +886,8 @@ async def on_message(message: Message):
 
         short_name = f"{pack_name}_by_{BOT_USERNAME}"
         mode = pack_wizard.get("mode")
+
+        print(f"DEBUG: pack_name='{pack_name}', BOT_USERNAME='{BOT_USERNAME}', short_name='{short_name}'")
 
         if len(short_name) > 64:
             await message.answer(
