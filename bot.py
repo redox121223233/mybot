@@ -397,6 +397,21 @@ async def check_pack_exists(bot: Bot, short_name: str) -> bool:
             return False
         raise
 
+def is_valid_pack_name(name: str, max_len: int) -> bool:
+    """Validates pack name according to all Telegram rules."""
+    if not (1 <= len(name) <= max_len):
+        return False
+    if not name[0].isalpha() or not name[0].islower():
+        return False
+    if name.endswith('_'):
+        return False
+    if '__' in name:
+        return False
+    for char in name:
+        if not (char.islower() or char.isdigit() or char == '_'):
+            return False
+    return True
+
 # ============ روتر ============
 router = Router()
 
@@ -486,7 +501,6 @@ async def on_simple(cb: CallbackQuery):
     s = sess(cb.from_user.id)
     s["pack_wizard"] = {"step": "awaiting_name", "mode": "simple"}
     
-    # FIX: Calculate dynamic max length
     suffix = f"_by_{BOT_USERNAME}"
     max_len = 64 - len(suffix)
     
@@ -494,6 +508,8 @@ async def on_simple(cb: CallbackQuery):
         f"نام پک را بنویس (مثال: my_stickers):\n\n"
         f"• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
         f"• باید با حرف شروع شود\n"
+        f"• نباید با زیرخط تمام شود\n"
+        f"• نباید دو زیرخط پشت سر هم داشته باشد\n"
         f"• حداکثر {max_len} کاراکتر"
     )
     await cb.message.answer(rules_text, reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
@@ -516,7 +532,6 @@ async def on_ai(cb: CallbackQuery):
     s = sess(cb.from_user.id)
     s["pack_wizard"] = {"step": "awaiting_name", "mode": "ai"}
 
-    # FIX: Calculate dynamic max length
     suffix = f"_by_{BOT_USERNAME}"
     max_len = 64 - len(suffix)
 
@@ -524,6 +539,8 @@ async def on_ai(cb: CallbackQuery):
         f"نام پک را بنویس (مثال: my_stickers):\n\n"
         f"• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
         f"• باید با حرف شروع شود\n"
+        f"• نباید با زیرخط تمام شود\n"
+        f"• نباید دو زیرخط پشت سر هم داشته باشد\n"
         f"• حداکثر {max_len} کاراکتر"
     )
     await cb.message.answer(rules_text, reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
@@ -833,15 +850,17 @@ async def on_message(message: Message):
     if pack_wizard.get("step") == "awaiting_name" and message.text:
         pack_name = message.text.strip()
         
-        # FIX: Calculate dynamic max length and regex
         suffix = f"_by_{BOT_USERNAME}"
         max_len = 64 - len(suffix)
-        # Regex for strict validation with dynamic length
-        if not re.fullmatch(rf"^[a-z][a-z0-9_]{{0,{max_len - 1}}}$", pack_name):
+        
+        # FIX: Use the new robust validation function
+        if not is_valid_pack_name(pack_name, max_len):
             await message.answer(
                 f"نام پک نامعتبر است. لطفا طبق قوانین یک نام جدید انتخاب کنید:\n\n"
                 f"• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
                 f"• باید با حرف شروع شود\n"
+                f"• نباید با زیرخط تمام شود\n"
+                f"• نباید دو زیرخط پشت سر هم داشته باشد\n"
                 f"• حداکثر {max_len} کاراکتر",
                 reply_markup=back_to_menu_kb(is_admin)
             )
