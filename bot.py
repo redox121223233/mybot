@@ -5,6 +5,7 @@ from io import BytesIO
 from typing import Dict, Any, Optional, Tuple, List
 from datetime import datetime, timezone
 import subprocess
+import pydantic_core  # برای مدیریت خطای اعتبارسنجی
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.types import Message, CallbackQuery, BotCommand, BufferedInputFile, InputSticker
@@ -1200,14 +1201,25 @@ async def on_message(message: Message, bot: Bot):
                     sticker=BufferedInputFile(dummy_img, filename="sticker.webp"),
                     emoji_list=["🎉"]
                 )
-                await message.bot.create_new_sticker_set(
-                    user_id=uid,
-                    name=short_name,
-                    title=pack_name,
-                    stickers=[sticker_to_add],
-                    sticker_type='regular',
-                    sticker_format='static'
-                )
+                # --- شروع بخش اصلاح شده ---
+                try:
+                    await message.bot.create_new_sticker_set(
+                        user_id=uid,
+                        name=short_name,
+                        title=pack_name,
+                        stickers=[sticker_to_add],
+                        sticker_type='regular',
+                        sticker_format='static'
+                    )
+                except pydantic_core.ValidationError as e:
+                    # نادیده گرفتن خطای شناخته شده در نسخه‌های جدید aiogram
+                    if "result.is_animated" in str(e) and "result.is_video" in str(e):
+                        print(f"Ignoring known aiogram validation error for pack {short_name}")
+                    else:
+                        # اگر خطای دیگری بود، آن را دوباره ارسال کن
+                        raise e
+                # --- پایان بخش اصلاح شده ---
+                
                 s["current_pack_short_name"] = short_name
                 s["current_pack_title"] = pack_name
                 s["pack_wizard"] = {}
