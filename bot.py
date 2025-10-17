@@ -304,11 +304,36 @@ async def process_video_to_webm(video_bytes: bytes) -> Optional[bytes]:
         print(f"Error during video processing: {e}")
         return None
 
+# ============ توابع بررسی عضویت در کانال ============
+async def check_channel_membership(bot: Bot, user_id: int) -> bool:
+    try:
+        member = await bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
+        return member.status in ["member", "administrator", "creator"]
+    except Exception as e:
+        print(f"Error checking channel membership: {e}")
+        return False
+
+async def require_channel_membership(message: Message, bot: Bot) -> bool:
+    is_member = await check_channel_membership(bot, message.from_user.id)
+    if not is_member:
+        kb = InlineKeyboardBuilder()
+        kb.button(text="عضویت در کانال", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}")
+        kb.button(text="بررسی عضویت", callback_data="check_membership")
+        kb.adjust(1)
+        
+        await message.answer(
+            f"برای استفاده از ربات، باید در کانال {CHANNEL_USERNAME} عضو شوید.\n\n"
+            "پس از عضویت، روی دکمه «بررسی عضویت» کلیک کنید.",
+            reply_markup=kb.as_markup()
+        )
+        return False
+    return True
+
 # ============ کیبوردها ============
 def main_menu_kb(is_admin: bool = False):
     kb = InlineKeyboardBuilder()
     kb.button(text="استیکر ساده", callback_data="menu:simple")
-    kb.button(text="استیکر هوش مصنوعی", callback_data="menu:ai")
+    kb.button(text="استیکر ساز پیشرفته", callback_data="menu:ai")
     kb.button(text="سهمیه امروز", callback_data="menu:quota")
     kb.button(text="راهنما", callback_data="menu:help")
     kb.button(text="پشتیبانی", callback_data="menu:support")
@@ -352,8 +377,9 @@ def rate_kb():
 def add_to_pack_kb():
     kb = InlineKeyboardBuilder()
     kb.button(text="افزودن به پک جدید", callback_data="pack:start_creation")
+    kb.button(text="افزودن به پک قبلی", callback_data="pack:add_to_existing")
     kb.button(text="نه، لازم نیست", callback_data="pack:skip")
-    kb.adjust(2)
+    kb.adjust(3)
     return kb.as_markup()
 
 def ai_type_kb():
@@ -422,7 +448,10 @@ def is_valid_pack_name(name: str) -> bool:
 router = Router()
 
 @router.message(CommandStart())
-async def on_start(message: Message):
+async def on_start(message: Message, bot: Bot):
+    if not await require_channel_membership(message, bot):
+        return
+        
     reset_mode(message.from_user.id)
     is_admin = (message.from_user.id == ADMIN_ID)
     await message.answer(
@@ -431,8 +460,23 @@ async def on_start(message: Message):
         reply_markup=main_menu_kb(is_admin)
     )
 
+@router.callback_query(F.data == "check_membership")
+async def on_check_membership(cb: CallbackQuery, bot: Bot):
+    is_member = await check_channel_membership(bot, cb.from_user.id)
+    if is_member:
+        await cb.message.answer(
+            "عضویت شما تایید شد! حالا می‌توانید از ربات استفاده کنید.",
+            reply_markup=main_menu_kb(cb.from_user.id == ADMIN_ID)
+        )
+    else:
+        await cb.answer("شما هنوز در کانال عضو نشده‌اید! لطفا ابتدا عضو شوید.", show_alert=True)
+    await cb.answer()
+
 @router.callback_query(F.data == "menu:home")
-async def on_home(cb: CallbackQuery):
+async def on_home(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
     reset_mode(cb.from_user.id)
     is_admin = (cb.from_user.id == ADMIN_ID)
     await cb.message.answer(
@@ -442,7 +486,10 @@ async def on_home(cb: CallbackQuery):
     await cb.answer()
 
 @router.callback_query(F.data == "menu:admin")
-async def on_admin_panel(cb: CallbackQuery):
+async def on_admin_panel(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
     if cb.from_user.id != ADMIN_ID:
         await cb.answer("شما دسترسی به این بخش را ندارید.", show_alert=True)
         return
@@ -450,32 +497,44 @@ async def on_admin_panel(cb: CallbackQuery):
     await cb.answer()
 
 @router.callback_query(F.data == "admin:broadcast")
-async def on_admin_broadcast(cb: CallbackQuery):
+async def on_admin_broadcast(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
     s = sess(cb.from_user.id)
     s["admin"]["action"] = "broadcast"
     await cb.message.answer("پیام همگانی خود را ارسال کنید. برای انصراف /cancel را بفرستید.")
     await cb.answer()
 
 @router.callback_query(F.data == "admin:dm_prompt")
-async def on_admin_dm_prompt(cb: CallbackQuery):
+async def on_admin_dm_prompt(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
     s = sess(cb.from_user.id)
     s["admin"]["action"] = "dm_get_user"
     await cb.message.answer("آیدی عددی کاربر مورد نظر را ارسال کنید. برای انصراف /cancel را بفرستید.")
     await cb.answer()
 
 @router.callback_query(F.data == "admin:quota_prompt")
-async def on_admin_quota_prompt(cb: CallbackQuery):
+async def on_admin_quota_prompt(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
     s = sess(cb.from_user.id)
     s["admin"]["action"] = "quota_get_user"
     await cb.message.answer("آیدی عددی کاربر مورد نظر را برای تغییر سهمیه ارسال کنید. برای انصراف /cancel را بفرستید.")
     await cb.answer()
 
 @router.callback_query(F.data == "menu:help")
-async def on_help(cb: CallbackQuery):
+async def on_help(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
     help_text = (
         "راهنما\n\n"
         "• استیکر ساده: ساخت استیکر با تنظیمات سریع\n"
-        "• استیکر هوش مصنوعی: ساخت استیکر با تنظیمات پیشرفته\n"
+        "• استیکر ساز پیشرفته: ساخت استیکر با تنظیمات پیشرفته\n"
         "• سهمیه امروز: محدودیت استفاده روزانه\n"
         "• پشتیبانی: ارتباط با ادمین"
     )
@@ -483,7 +542,10 @@ async def on_help(cb: CallbackQuery):
     await cb.answer()
 
 @router.callback_query(F.data == "menu:support")
-async def on_support(cb: CallbackQuery):
+async def on_support(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
     await cb.message.answer(
         f"پشتیبانی: {SUPPORT_USERNAME}",
         reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID)
@@ -491,7 +553,10 @@ async def on_support(cb: CallbackQuery):
     await cb.answer()
 
 @router.callback_query(F.data == "menu:quota")
-async def on_quota(cb: CallbackQuery):
+async def on_quota(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
     u = user(cb.from_user.id)
     is_admin = (cb.from_user.id == ADMIN_ID)
     left = _quota_left(u, is_admin)
@@ -503,22 +568,36 @@ async def on_quota(cb: CallbackQuery):
     await cb.answer()
 
 @router.callback_query(F.data == "menu:simple")
-async def on_simple(cb: CallbackQuery):
+async def on_simple(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
     s = sess(cb.from_user.id)
-    s["pack_wizard"] = {"step": "awaiting_name", "mode": "simple"}
-    rules_text = (
-        "نام پک را بنویس (مثال: my_stickers):\n\n"
-        "• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
-        "• باید با حرف شروع شود\n"
-        "• نباید با زیرخط تمام شود\n"
-        "• نباید دو زیرخط پشت سر هم داشته باشد\n"
-        "• حداکثر ۵۰ کاراکتر (به خاطر اضافه شدن نام ربات)"
-    )
-    await cb.message.answer(rules_text, reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+    
+    # بررسی اینکه آیا کاربر پک قبلی دارد
+    if s.get("current_pack_short_name"):
+        await cb.message.answer(
+            "می‌خواهید استیکر جدید را به پک قبلی اضافه کنید یا پک جدید بسازید؟",
+            reply_markup=add_to_pack_kb()
+        )
+    else:
+        s["pack_wizard"] = {"step": "awaiting_name", "mode": "simple"}
+        rules_text = (
+            "نام پک را بنویس (مثال: my_stickers):\n\n"
+            "• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
+            "• باید با حرف شروع شود\n"
+            "• نباید با زیرخط تمام شود\n"
+            "• نباید دو زیرخط پشت سر هم داشته باشد\n"
+            "• حداکثر ۵۰ کاراکتر (به خاطر اضافه شدن نام ربات)"
+        )
+        await cb.message.answer(rules_text, reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
     await cb.answer()
 
 @router.callback_query(F.data == "menu:ai")
-async def on_ai(cb: CallbackQuery):
+async def on_ai(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
     u = user(cb.from_user.id)
     is_admin = (cb.from_user.id == ADMIN_ID)
     left = _quota_left(u, is_admin)
@@ -532,20 +611,54 @@ async def on_ai(cb: CallbackQuery):
         return
 
     s = sess(cb.from_user.id)
-    s["pack_wizard"] = {"step": "awaiting_name", "mode": "ai"}
-    rules_text = (
-        "نام پک را بنویس (مثال: my_stickers):\n\n"
-        "• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
-        "• باید با حرف شروع شود\n"
-        "• نباید با زیرخط تمام شود\n"
-        "• نباید دو زیرخط پشت سر هم داشته باشد\n"
-        "• حداکثر ۵۰ کاراکتر (به خاطر اضافه شدن نام ربات)"
-    )
-    await cb.message.answer(rules_text, reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+    
+    # بررسی اینکه آیا کاربر پک قبلی دارد
+    if s.get("current_pack_short_name"):
+        await cb.message.answer(
+            "می‌خواهید استیکر جدید را به پک قبلی اضافه کنید یا پک جدید بسازید؟",
+            reply_markup=add_to_pack_kb()
+        )
+    else:
+        s["pack_wizard"] = {"step": "awaiting_name", "mode": "ai"}
+        rules_text = (
+            "نام پک را بنویس (مثال: my_stickers):\n\n"
+            "• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
+            "• باید با حرف شروع شود\n"
+            "• نباید با زیرخط تمام شود\n"
+            "• نباید دو زیرخط پشت سر هم داشته باشد\n"
+            "• حداکثر ۵۰ کاراکتر (به خاطر اضافه شدن نام ربات)"
+        )
+        await cb.message.answer(rules_text, reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+    await cb.answer()
+
+@router.callback_query(F.data == "pack:add_to_existing")
+async def on_pack_add_to_existing(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
+    s = sess(cb.from_user.id)
+    mode = s.get("pack_wizard", {}).get("mode", "simple")
+    
+    if mode == "simple":
+        s["mode"] = "simple"
+        s["simple"] = {"text": None, "bg_mode": "transparent", "bg_photo_bytes": None}
+        await cb.message.answer("متن استیکر ساده رو بفرست:", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+    elif mode == "ai":
+        s["mode"] = "ai"
+        s["ai"] = {
+            "text": None, "v_pos": "center", "h_pos": "center", "font": "Default",
+            "color": "#FFFFFF", "size": "large", "bg_photo_bytes": None
+        }
+        await cb.message.answer("نوع استیکر پیشرفته را انتخاب کنید:", reply_markup=ai_type_kb())
+    
+    s["pack_wizard"] = {}
     await cb.answer()
 
 @router.callback_query(F.data.startswith("simple:bg:"))
-async def on_simple_bg(cb: CallbackQuery):
+async def on_simple_bg(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
     s = sess(cb.from_user.id)["simple"]
     mode = cb.data.split(":")[-1]
     if mode == "photo_prompt":
@@ -574,7 +687,10 @@ async def on_simple_bg(cb: CallbackQuery):
     await cb.answer()
 
 @router.callback_query(F.data == "simple:confirm")
-async def on_simple_confirm(cb: CallbackQuery):
+async def on_simple_confirm(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
     s = sess(cb.from_user.id)
     simple_data = s["simple"]
     img = render_image(
@@ -596,7 +712,10 @@ async def on_simple_confirm(cb: CallbackQuery):
     await cb.answer()
 
 @router.callback_query(F.data == "simple:edit")
-async def on_simple_edit(cb: CallbackQuery):
+async def on_simple_edit(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
     await cb.message.answer(
         "پس‌زمینه رو انتخاب کن:",
         reply_markup=simple_bg_kb()
@@ -604,7 +723,10 @@ async def on_simple_edit(cb: CallbackQuery):
     await cb.answer()
 
 @router.callback_query(F.data.startswith("ai:type:"))
-async def on_ai_type(cb: CallbackQuery):
+async def on_ai_type(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
     sticker_type = cb.data.split(":")[-1]
     s = sess(cb.from_user.id)
     s["ai"]["sticker_type"] = sticker_type
@@ -622,25 +744,37 @@ async def on_ai_type(cb: CallbackQuery):
     await cb.answer()
 
 @router.callback_query(F.data == "ai:source:text")
-async def on_ai_source_text(cb: CallbackQuery):
+async def on_ai_source_text(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
     await cb.message.answer("متن استیکر را بفرست:", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
     await cb.answer()
 
 @router.callback_query(F.data == "ai:source:photo")
-async def on_ai_source_photo(cb: CallbackQuery):
+async def on_ai_source_photo(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
     sess(cb.from_user.id)["ai"]["awaiting_bg_photo"] = True
     await cb.message.answer("عکس را ارسال کنید:", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
     await cb.answer()
 
 @router.callback_query(F.data.startswith("ai:vpos:"))
-async def on_ai_vpos(cb: CallbackQuery):
+async def on_ai_vpos(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
     v_pos = cb.data.split(":")[-1]
     sess(cb.from_user.id)["ai"]["v_pos"] = v_pos
     await cb.message.answer("موقعیت افقی متن:", reply_markup=ai_hpos_kb())
     await cb.answer()
 
 @router.callback_query(F.data.startswith("ai:hpos:"))
-async def on_ai_hpos(cb: CallbackQuery):
+async def on_ai_hpos(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
     h_pos = cb.data.split(":")[-1]
     sess(cb.from_user.id)["ai"]["h_pos"] = h_pos
 
@@ -653,7 +787,10 @@ async def on_ai_hpos(cb: CallbackQuery):
     await cb.answer()
 
 @router.callback_query(F.data.func(lambda d: d and d.startswith("ai:color:")))
-async def on_ai_color(cb: CallbackQuery):
+async def on_ai_color(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
     color = cb.data.split(":")[-1]
     sess(cb.from_user.id)["ai"]["color"] = color
 
@@ -666,7 +803,10 @@ async def on_ai_color(cb: CallbackQuery):
     await cb.answer()
 
 @router.callback_query(F.data.func(lambda d: d and d.startswith("ai:size:")))
-async def on_ai_size(cb: CallbackQuery):
+async def on_ai_size(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
     size = cb.data.split(":")[-1]
     sess(cb.from_user.id)["ai"]["size"] = size
 
@@ -692,7 +832,10 @@ async def on_ai_size(cb: CallbackQuery):
     await cb.answer()
 
 @router.callback_query(F.data == "ai:confirm")
-async def on_ai_confirm(cb: CallbackQuery):
+async def on_ai_confirm(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
     u = user(cb.from_user.id)
     is_admin = (cb.from_user.id == ADMIN_ID)
     left = _quota_left(u, is_admin)
@@ -726,7 +869,10 @@ async def on_ai_confirm(cb: CallbackQuery):
     await cb.answer()
 
 @router.callback_query(F.data == "ai:edit")
-async def on_ai_edit(cb: CallbackQuery):
+async def on_ai_edit(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
     await cb.message.answer(
         "موقعیت عمودی متن:",
         reply_markup=ai_vpos_kb()
@@ -734,7 +880,10 @@ async def on_ai_edit(cb: CallbackQuery):
     await cb.answer()
 
 @router.callback_query(F.data == "rate:yes")
-async def on_rate_yes(cb: CallbackQuery):
+async def on_rate_yes(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
     s = sess(cb.from_user.id)
     sticker_bytes = s.get("last_sticker")
     pack_short_name = s.get("current_pack_short_name")
@@ -765,13 +914,19 @@ async def on_rate_yes(cb: CallbackQuery):
     await cb.answer()
 
 @router.callback_query(F.data == "rate:no")
-async def on_rate_no(cb: CallbackQuery):
+async def on_rate_no(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
     sess(cb.from_user.id)["await_feedback"] = True
     await cb.message.answer("چه چیزی رو دوست نداشتی؟")
     await cb.answer()
 
 @router.callback_query(F.data == "pack:skip")
-async def on_pack_skip(cb: CallbackQuery):
+async def on_pack_skip(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
     await cb.message.answer(
         "باشه، اضافه نکردم.",
         reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID)
@@ -779,9 +934,13 @@ async def on_pack_skip(cb: CallbackQuery):
     await cb.answer()
 
 @router.callback_query(F.data == "pack:start_creation")
-async def on_pack_start_creation(cb: CallbackQuery):
+async def on_pack_start_creation(cb: CallbackQuery, bot: Bot):
+    if not await check_channel_membership(bot, cb.from_user.id):
+        return
+        
     s = sess(cb.from_user.id)
-    s["pack_wizard"] = {"step": "awaiting_name"}
+    mode = s.get("pack_wizard", {}).get("mode", "simple")
+    s["pack_wizard"] = {"step": "awaiting_name", "mode": mode}
     rules_text = (
         "برای ایجاد پک جدید، یک نام انگلیسی ارسال کنید.\n\n"
         "• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
@@ -791,10 +950,14 @@ async def on_pack_start_creation(cb: CallbackQuery):
     await cb.answer()
 
 @router.message()
-async def on_message(message: Message):
+async def on_message(message: Message, bot: Bot):
     uid = message.from_user.id
     s = sess(uid)
     is_admin = (uid == ADMIN_ID)
+    
+    # بررسی عضویت در کانال برای تمام پیام‌ها
+    if not await require_channel_membership(message, bot):
+        return
 
     if is_admin and s["admin"].get("action"):
         action = s["admin"]["action"]
@@ -935,7 +1098,7 @@ async def on_message(message: Message):
                     "text": None, "v_pos": "center", "h_pos": "center", "font": "Default",
                     "color": "#FFFFFF", "size": "large", "bg_photo_bytes": None
                 }
-                await message.answer("نوع استیکر هوش مصنوعی را انتخاب کنید:", reply_markup=ai_type_kb())
+                await message.answer("نوع استیکر پیشرفته را انتخاب کنید:", reply_markup=ai_type_kb())
 
         except TelegramBadRequest as e:
             error_msg = e.message.lower()
