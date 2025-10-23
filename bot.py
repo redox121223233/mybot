@@ -33,6 +33,9 @@ MAINTENANCE = False
 DAILY_LIMIT = 5
 BOT_USERNAME = ""
 
+# ============ فیلتر کلمات نامناسب ============
+FORBIDDEN_WORDS = ["kos", "kir", "kon", "koss", "kiri", "koon"] # می‌توانید این لیست را گسترش دهید
+
 # ============ حافظه ساده (in-memory) ============
 USERS: Dict[int, Dict[str, Any]] = {}
 SESSIONS: Dict[int, Dict[str, Any]] = {}
@@ -1192,6 +1195,16 @@ async def on_message(message: Message, bot: Bot):
 
         pack_name = message.text.strip()
 
+        # --- شروع فیلتر کلمات نامناسب ---
+        pack_name_lower = pack_name.lower()
+        if any(word in pack_name_lower for word in FORBIDDEN_WORDS):
+            await message.answer(
+                "نام پک انتخاب شده نامناسب است. لطفاً از کلمات مناسب و بدون کاراکترهای خاص استفاده کنید.",
+                reply_markup=back_to_menu_kb(is_admin)
+            )
+            return
+        # --- پایان فیلتر ---
+
         if not is_valid_pack_name(pack_name):
             await message.answer(
                 "نام پک نامعتبر است. لطفا طبق قوانین یک نام جدید انتخاب کنید:\n\n"
@@ -1233,7 +1246,7 @@ async def on_message(message: Message, bot: Bot):
                     sticker=BufferedInputFile(dummy_img, filename="sticker.webp"),
                     emoji_list=["🎉"]
                 )
-                # --- شروع بخش اصلاح شده ---
+                # --- شروع بخش اصلاح شده برای مدیریت خطای pydantic ---
                 try:
                     await message.bot.create_new_sticker_set(
                         user_id=uid,
