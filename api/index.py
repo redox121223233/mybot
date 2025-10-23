@@ -419,18 +419,37 @@ async def on_home(cb: CallbackQuery, bot: Bot):
 # ... (و غیره)
 
 # =============== بخش اصلی وب‌هوک ===============
+# ... تمام کدهای قبلی شما تا اینجا بدون تغییر باقی می‌ماند ...
+
+# =============== بخش اصلی وب‌هوک (اصلاح شده) ===============
 storage = MemoryStorage()
 dp = Dispatcher(storage=storage, fsm_strategy=FSMStrategy.CHAT)
 dp.include_router(router)
+
+# یک نمونه از بوت را در سطح بالا بسازید
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 
 app = FastAPI()
 
 @app.post("/webhook")
 async def bot_webhook(request: Request):
-    update_data = await request.json()
-    update = Update.model_validate(update_data, context={"bot": Bot(token=BOT_TOKEN)})
-    await dp.feed_webhook_update(update, bot=Bot(token=BOT_TOKEN))
-    return {"status": "ok"}
+    # لاگ برای اینکه بفهمیم درخواست می‌رسد یا نه
+    print("Webhook received a request!")
+    
+    try:
+        update_data = await request.json()
+        # آپدیت را از داده‌های JSON بسازید
+        update = Update.model_validate(update_data, context={"bot": bot})
+        
+        # آپدیت را به دیسپچر بفرست
+        await dp.feed_webhook_update(update, bot=bot)
+        
+        return {"status": "ok"}
+    except Exception as e:
+        # اگر خطایی رخ داد، آن را چاپ کن تا در لاگ‌ها ببینیم
+        print(f"Error processing webhook: {e}")
+        traceback.print_exc()
+        return {"status": "error", "message": str(e)}
 
 @app.get("/")
 async def read_root():
