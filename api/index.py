@@ -1,66 +1,62 @@
 import os
-import asyncio
-from fastapi import Request, FastAPI, Response
+import json
+import logging
+from fastapi import Request, FastAPI, Response, status
 from aiogram import Bot, Dispatcher, types
 from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart
 from aiogram.types import Update
 
+# --- تنظیمات لاگ برای دیدن همه چیز ---
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+
 # --- تنظیمات ---
-# توکن ربات خود را از تنظیمات Vercel می‌خواند
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
+    logging.error("BOT_TOKEN not found in environment variables!")
+    # We'll let it crash so Vercel shows an error in the log
     raise RuntimeError("BOT_TOKEN را در تنظیمات Vercel قرار دهید.")
 
-# --- ایجاد نمونه‌های بوت و دیسپچر ---
 bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()
 
-# --- تعریف هندلرها ---
+# --- هندلرها ---
 @dp.message(CommandStart())
 async def send_welcome(message: types.Message):
-    await message.answer(
-        f"سلام {message.from_user.full_name}! 👋\n"
-        f"این یک ربات تست است که روی Vercel میزبانی می‌شود.\n"
-        f"وضعیت: ✅ موفق و در حال کار!",
-        reply_markup=types.InlineKeyboardMarkup(
-            inline_keyboard=[
-                [types.InlineKeyboardButton(text="چک کردن وضعیت", callback_data="check_status")]
-            ]
-        )
-    )
+    logging.info(f"Received /start from user {message.from_user.id}")
+    await message.answer("سلام! ربات تشخیصی فعال است. هر پیامی بفرستی دوباره برایت می‌فرستم.")
 
-@dp.callback_query(lambda c: c.data == "check_status")
-async def show_status(call: types.CallbackQuery):
-    await call.message.edit_text("وضعیت ربات: ✅ عالی است!")
-    await call.answer("بررسی شد!")
+@dp.message()
+async def echo_message(message: types.Message):
+    logging.info(f"Received message from user {message.from_user.id}: {message.text}")
+    await message.answer(f"پیام شما دریافت شد: {message.text}")
 
-
-# --- ایجاد اپلیکیشن FastAPI ---
+# --- اپلیکیشن FastAPI ---
 app = FastAPI()
 
 @app.post("/webhook")
 async def bot_webhook(request: Request):
-    # لاگ برای اینکه بفهمیم درخواست می‌رسد
-    print("Webhook received a request!")
-
+    logging.info("Webhook received a request!") # این لاگ مهم است
+    
     try:
-        # خواندن داده‌های JSON از درخواست تلگرام
+        # لاگ کردن داده‌های خام برای دیباگ
+        body = await request.body()
+        logging.info(f"Raw body: {body.decode('utf-8')}")
+        
         data = await request.json()
+        logging.info(f"JSON data: {json.dumps(data, indent=2)}")
         
-        # ساختن آبجکت Update از داده‌ها
         update = Update.model_validate(data, context={"bot": bot})
+        logging.info(f"Successfully created Update object: {update}")
         
-        # ارسال آپدیت به دیسپچر برای پردازش
         await dp.feed_update(update=update, bot=bot)
+        logging.info("Update fed to dispatcher successfully.")
         
-        return Response(content="OK", status_code=200)
+        return Response(content="OK", status_code=status.HTTP_200_OK)
 
     except Exception as e:
-        # چاپ خطا برای دیباگ
-        print(f"Error processing update: {e}")
-        return Response(content="Internal Server Error", status_code=500)
-
+        logging.error(f"Error processing update: {e}", exc_info=True)
+        return Response(content="Internal Server Error", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @app.get("/")
 async def read_root():
