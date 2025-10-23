@@ -15,12 +15,17 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart
 from aiogram.exceptions import TelegramBadRequest
-from aiogram.fsm.context.memory import MemoryStorage
+
+# --- مسیرهای صحیح برای FSM در aiogram v3 ---
+from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.fsm.strategy import FSMStrategy
+# --- پایان مسیرهای صحیح ---
 
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import arabic_reshaper
 from bidi.algorithm import get_display
+
+# ... بقیه کد شما بدون تغییر باقی می‌ماند ...
 
 # =============== پیکربندی ===============
 BOT_TOKEN = os.getenv("BOT_TOKEN")
