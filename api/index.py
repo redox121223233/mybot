@@ -1,7 +1,7 @@
 import os
 import sys
 import logging
-import asyncio # برای اجرای کد همزمان در زمینه جداگانه
+import asyncio
 from fastapi import Request, FastAPI, Response, status
 import telebot
 from telebot.types import Update
@@ -42,18 +42,12 @@ async def bot_webhook(request: Request):
     به ربات تحویل می‌دهد تا از تداخل با حلقه رویداد FastAPI جلوگیری شود.
     """
     try:
-        # خواندن داده‌های JSON از بدنه درخواست
         data = await request.json()
-        
-        # تبدیل داده‌ها به یک آبجکت آپدیت تلگرام
         update = Update.de_json(data)
         
-        # --- این بخش کلیدی است ---
-        # پردازش آپدیت را در یک زمینه جداگانه (thread) اجرا می‌کنیم
-        # تا از قفل شدن حلقه رویداد FastAPI جلوگیری شود.
+        # اجرای کد همزمان ربات در یک زمینه جداگانه
         loop = asyncio.get_event_loop()
         await loop.run_in_executor(None, bot.process_new_updates, [update])
-        # -------------------------
         
         return Response(content="OK", status_code=status.HTTP_200_OK)
     except Exception as e:
@@ -62,4 +56,31 @@ async def bot_webhook(request: Request):
 
 @app.get("/")
 async def read_root():
-    return {"status": "Bot is running with async/sync separation"}
+    """
+    این مسیر برای بررسی سلامت ربات است و از خطای 404 جلوگیری می‌کند.
+    """
+    return {"status": "Bot is running with async/sync separation and no 404s"}
+
+# --- این بخش جدید برای جلوگیری از هرگونه خطای 404 است ---
+@app.middleware("http")
+async def add_no_cache_header(request: Request, call_next):
+    """
+    این میدل‌ور هدرهای Cache-Control را اضافه می‌کند تا از مشکلات احتمالی کش جلوگیری شود.
+    """
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
+    return response
+
+@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
+async def catch_all(request: Request, path: str):
+    """
+    این مسیر تمام درخواست‌هایی که به مسیرهای دیگر (مانند /webhook) تعلق ندارند
+    را مدیریت می‌کند و از خطای 404 جلوگیری می‌کند.
+    """
+    logging.warning(f"Received request for unknown path: {request.method} /{path}")
+    return Response(
+        content=f"This endpoint is not available. Please use /webhook for Telegram bot requests.",
+        status_code=status.HTTP_404_NOT_FOUND
+    )
