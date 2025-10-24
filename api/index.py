@@ -3,7 +3,6 @@ import logging
 from fastapi import Request, FastAPI, Response, status
 from aiogram import Bot, Dispatcher, types
 from aiogram.enums import ParseMode
-from aiogram.filters import CommandStart
 from aiogram.types import Update
 
 # --- تنظیمات لاگ برای دیدن همه چیز ---
@@ -18,16 +17,15 @@ if not BOT_TOKEN:
 bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()
 
-# --- هندلرها ---
-@dp.message(CommandStart())
-async def send_welcome(message: types.Message):
-    logging.info(f"Received /start from user {message.from_user.id}")
-    await message.answer("سلام! ربات با موفقیت روی Vercel اجرا شد. ✅")
+# --- این بخش جدید و بسیار مهم است ---
+# ایمپورت کردن روتر از فایل bot.py
+from bot import router
 
-@dp.message()
-async def echo_message(message: types.Message):
-    logging.info(f"Received message: {message.text}")
-    await message.answer(f"پیام شما: {message.text}")
+# اضافه کردن روتر به دیسپچر
+# این کار تمام هندلرهای تعریف شده در bot.py را به ربات متصل می‌کند
+dp.include_router(router)
+# --- پایان بخش جدید ---
+
 
 # --- اپلیکیشن FastAPI ---
 app = FastAPI()
