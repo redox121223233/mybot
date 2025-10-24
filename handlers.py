@@ -241,6 +241,14 @@ def ai_type_kb():
     )
     return keyboard
 
+def ai_image_source_kb():
+    keyboard = types.InlineKeyboardMarkup(row_width=2)
+    keyboard.add(
+        types.InlineKeyboardButton("متن بنویس", callback_data="ai:source:text"),
+        types.InlineKeyboardButton("عکس بفرست", callback_data="ai:source:photo")
+    )
+    return keyboard
+
 def ai_vpos_kb():
     keyboard = types.InlineKeyboardMarkup(row_width=3)
     keyboard.add(
@@ -259,6 +267,21 @@ def ai_hpos_kb():
     )
     return keyboard
 
+def ai_color_kb():
+    keyboard = types.InlineKeyboardMarkup(row_width=4)
+    for name, hx in DEFAULT_PALETTE:
+        keyboard.add(types.InlineKeyboardButton(name, callback_data=f"ai:color:{hx}"))
+    return keyboard
+
+def ai_size_kb():
+    keyboard = types.InlineKeyboardMarkup(row_width=3)
+    keyboard.add(
+        types.InlineKeyboardButton("کوچک", callback_data="ai:size:small"),
+        types.InlineKeyboardButton("متوسط", callback_data="ai:size:medium"),
+        types.InlineKeyboardButton("بزرگ", callback_data="ai:size:large")
+    )
+    return keyboard
+
 def admin_panel_kb():
     keyboard = types.InlineKeyboardMarkup(row_width=1)
     keyboard.add(
@@ -270,9 +293,6 @@ def admin_panel_kb():
 
 # ============ تابع اصلی ثبت هندلرها ============
 def register_handlers(bot: telebot.TeleBot):
-    """
-    این تابع تمام هندلرهای ربات را به نمونه ربات ثبت می‌کند.
-    """
     @bot.message_handler(commands=['start'])
     async def start_command(message: types.Message):
         is_member = await check_membership(bot, message.from_user.id)
@@ -323,6 +343,35 @@ def register_handlers(bot: telebot.TeleBot):
         await bot.edit_message_text(f"سهمیه امروز: {quota_txt}", call.message.chat.id, call.message.message_id, reply_markup=back_to_menu_kb(is_admin))
         await bot.answer_callback_query(call.id)
 
+    @bot.callback_query_handler(func=lambda call: call.data == 'menu:admin')
+    async def admin_panel_callback(call: types.CallbackQuery):
+        if call.from_user.id != ADMIN_ID:
+            await bot.answer_callback_query(call.id, "شما دسترسی به این بخش را ندارید.", show_alert=True)
+            return
+        await bot.edit_message_text("پنل ادمین:", call.message.chat.id, call.message.message_id, reply_markup=admin_panel_kb())
+        await bot.answer_callback_query(call.id)
+
+    @bot.callback_query_handler(func=lambda call: call.data.startswith('admin:'))
+    async def admin_callbacks(call: types.CallbackQuery):
+        if call.from_user.id != ADMIN_ID:
+            await bot.answer_callback_query(call.id, "دسترسی غیرمجاز.", show_alert=True)
+            return
+        
+        s = sess(call.from_user.id)
+        action = call.data.split(':')[1]
+
+        if action == 'broadcast':
+            s['admin']['action'] = 'broadcast'
+            await bot.edit_message_text("پیام همگانی خود را ارسال کنید. برای انصراف /cancel را بفرستید.", call.message.chat.id, call.message.message_id)
+        elif action == 'dm_prompt':
+            s['admin']['action'] = 'dm_get_user'
+            await bot.edit_message_text("آیدی عددی کاربر مورد نظر را ارسال کنید. برای انصراف /cancel را بفرستید.", call.message.chat.id, call.message.message_id)
+        elif action == 'quota_prompt':
+            s['admin']['action'] = 'quota_get_user'
+            await bot.edit_message_text("آیدی عددی کاربر مورد نظر را برای تغییر سهمیه ارسال کنید. برای انصراف /cancel را بفرستید.", call.message.chat.id, call.message.message_id)
+        
+        await bot.answer_callback_query(call.id)
+
     @bot.callback_query_handler(func=lambda call: call.data == 'menu:simple')
     async def simple_callback(call: types.CallbackQuery):
         s = sess(call.from_user.id)
@@ -359,30 +408,39 @@ def register_handlers(bot: telebot.TeleBot):
             await bot.edit_message_text(rules_text, call.message.chat.id, call.message.message_id, reply_markup=back_to_menu_kb(call.from_user.id == ADMIN_ID))
         await bot.answer_callback_query(call.id)
 
-    @bot.callback_query_handler(func=lambda call: call.data.startswith('pack:select:'))
-    async def pack_select_callback(call: types.CallbackQuery):
-        pack_short_name = call.data.split(':')[-1]
+    @bot.callback_query_handler(func=lambda call: call.data.startswith('pack:'))
+    async def pack_callbacks(call: types.CallbackQuery):
+        s = sess(call.from_user.id)
         uid = call.from_user.id
-        s = sess(uid)
-        selected_pack = None
-        for pack in get_user_packs(uid):
-            if pack["short_name"] == pack_short_name:
-                selected_pack = pack
-                break
-        if selected_pack:
-            set_current_pack(uid, pack_short_name)
-            s["current_pack_short_name"] = pack_short_name
-            s["current_pack_title"] = selected_pack["name"]
-            s["pack_wizard"] = {}
-            mode = s.get("pack_wizard", {}).get("mode", "simple")
-            if mode == "simple":
-                s["mode"] = "simple"
-                s["simple"] = {"text": None, "bg_mode": "transparent", "bg_photo_bytes": None}
-                await bot.edit_message_text(f"پک «{selected_pack['name']}» انتخاب شد.\n\nمتن استیکر ساده رو بفرست:", call.message.chat.id, call.message.message_id, reply_markup=back_to_menu_kb(call.from_user.id == ADMIN_ID))
-            elif mode == "ai":
-                s["mode"] = "ai"
-                s["ai"] = {"text": None, "v_pos": "center", "h_pos": "center", "font": "Default", "color": "#FFFFFF", "size": "large", "bg_photo_bytes": None}
-                await bot.edit_message_text(f"پک «{selected_pack['name']}» انتخاب شد.\n\nنوع استیکر پیشرفته را انتخاب کنید:", call.message.chat.id, call.message.message_id, reply_markup=ai_type_kb())
+        parts = call.data.split(':')
+        
+        if parts[1] == 'select':
+            pack_short_name = parts[2]
+            selected_pack = None
+            for pack in get_user_packs(uid):
+                if pack["short_name"] == pack_short_name:
+                    selected_pack = pack
+                    break
+            if selected_pack:
+                set_current_pack(uid, pack_short_name)
+                s["current_pack_short_name"] = pack_short_name
+                s["current_pack_title"] = selected_pack["name"]
+                s["pack_wizard"] = {}
+                mode = s.get("pack_wizard", {}).get("mode", "simple")
+                if mode == "simple":
+                    s["mode"] = "simple"
+                    s["simple"] = {"text": None, "bg_mode": "transparent", "bg_photo_bytes": None}
+                    await bot.edit_message_text(f"پک «{selected_pack['name']}» انتخاب شد.\n\nمتن استیکر ساده رو بفرست:", call.message.chat.id, call.message.message_id, reply_markup=back_to_menu_kb(call.from_user.id == ADMIN_ID))
+                elif mode == "ai":
+                    s["mode"] = "ai"
+                    s["ai"] = {"text": None, "v_pos": "center", "h_pos": "center", "font": "Default", "color": "#FFFFFF", "size": "large", "bg_photo_bytes": None}
+                    await bot.edit_message_text(f"پک «{selected_pack['name']}» انتخاب شد.\n\nنوع استیکر پیشرفته را انتخاب کنید:", call.message.chat.id, call.message.message_id, reply_markup=ai_type_kb())
+        elif parts[1] == 'new':
+            mode = parts[2]
+            s["pack_wizard"] = {"step": "awaiting_name", "mode": mode}
+            rules_text = "برای ایجاد پک جدید، یک نام انگلیسی ارسال کنید.\n\n• فقط حروف انگلیسی کوچک، عدد و زیرخط\n• حداکثر ۵۰ کاراکتر"
+            await bot.edit_message_text(rules_text, call.message.chat.id, call.message.message_id, reply_markup=back_to_menu_kb(call.from_user.id == ADMIN_ID))
+        
         await bot.answer_callback_query(call.id)
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith('simple:bg:'))
@@ -400,40 +458,142 @@ def register_handlers(bot: telebot.TeleBot):
                 await bot.send_photo(call.message.chat.id, photo=img, caption="پیش‌نمایش آماده است", reply_markup=after_preview_kb("simple"))
         await bot.answer_callback_query(call.id)
 
-    @bot.callback_query_handler(func=lambda call: call.data == 'simple:confirm')
-    async def simple_confirm_callback(call: types.CallbackQuery):
+    @bot.callback_query_handler(func=lambda call: call.data.startswith('simple:'))
+    async def simple_action_callback(call: types.CallbackQuery):
         s = sess(call.from_user.id)
-        simple_data = s["simple"]
-        img = render_image(text=simple_data["text"] or "سلام", v_pos="center", h_pos="center", font_key="Default", color_hex="#FFFFFF", size_key="medium", bg_mode=simple_data.get("bg_mode") or "transparent", bg_photo=simple_data.get("bg_photo_bytes"))
-        s["last_sticker"] = img
-        await bot.send_sticker(call.message.chat.id, sticker=img)
-        await bot.send_message(call.message.chat.id, "از این استیکر راضی بودی؟", reply_markup=rate_kb())
+        action = call.data.split(':')[1]
+        if action == 'confirm':
+            simple_data = s["simple"]
+            img = render_image(text=simple_data["text"] or "سلام", v_pos="center", h_pos="center", font_key="Default", color_hex="#FFFFFF", size_key="medium", bg_mode=simple_data.get("bg_mode") or "transparent", bg_photo=simple_data.get("bg_photo_bytes"))
+            s["last_sticker"] = img
+            await bot.send_sticker(call.message.chat.id, sticker=img)
+            await bot.send_message(call.message.chat.id, "از این استیکر راضی بودی؟", reply_markup=rate_kb())
+        elif action == 'edit':
+            await bot.edit_message_text("پس‌زمینه رو انتخاب کن:", call.message.chat.id, call.message.message_id, reply_markup=simple_bg_kb())
         await bot.answer_callback_query(call.id)
 
-    @bot.callback_query_handler(func=lambda call: call.data == 'rate:yes')
-    async def rate_yes_callback(call: types.CallbackQuery):
+    @bot.callback_query_handler(func=lambda call: call.data.startswith('ai:'))
+    async def ai_callbacks(call: types.CallbackQuery):
         s = sess(call.from_user.id)
-        sticker_bytes = s.get("last_sticker")
-        pack_short_name = s.get("current_pack_short_name")
-        pack_title = s.get("current_pack_title")
-        if not sticker_bytes or not pack_short_name:
-            await bot.answer_callback_query(call.id, "خطایی در پیدا کردن پک یا استیکر رخ داد.", show_alert=True)
-            return
-        try:
-            await asyncio.sleep(1.5) # تاخیر برای جلوگیری از محدودیت تلگرام
-            await bot.add_sticker_to_set(call.from_user.id, pack_short_name, types.InputSticker(sticker=sticker_bytes, emoji='😂'))
-            pack_link = f"https://t.me/addstickers/{pack_short_name}"
-            await bot.edit_message_text(f"استیکر با موفقیت به پک «{pack_title}» اضافه شد.\n\n{pack_link}", call.message.chat.id, call.message.message_id, reply_markup=back_to_menu_kb(call.from_user.id == ADMIN_ID))
-        except Exception as e:
-            await bot.edit_message_text(f"خطا در افزودن استیکر به پک: {e}", call.message.chat.id, call.message.message_id, reply_markup=back_to_menu_kb(call.from_user.id == ADMIN_ID))
+        parts = call.data.split(':')
+        
+        if parts[1] == 'type':
+            s["ai"]["sticker_type"] = parts[2]
+            if parts[2] == 'image':
+                await bot.edit_message_text("منبع استیکر تصویری را انتخاب کنید:", call.message.chat.id, call.message.message_id, reply_markup=ai_image_source_kb())
+            elif parts[2] == 'video':
+                await bot.edit_message_text("یک فایل ویدیو ارسال کنید:", call.message.chat.id, call.message.message_id, reply_markup=back_to_menu_kb(call.from_user.id == ADMIN_ID))
+        
+        elif parts[1] == 'source':
+            if parts[2] == 'text':
+                await bot.edit_message_text("متن استیکر را بفرست:", call.message.chat.id, call.message.message_id, reply_markup=back_to_menu_kb(call.from_user.id == ADMIN_ID))
+            elif parts[2] == 'photo':
+                s["ai"]["awaiting_bg_photo"] = True
+                await bot.edit_message_text("عکس را ارسال کنید:", call.message.chat.id, call.message.message_id, reply_markup=back_to_menu_kb(call.from_user.id == ADMIN_ID))
+        
+        elif parts[1] in ['vpos', 'hpos', 'color', 'size']:
+            if parts[1] == 'vpos': s["ai"]["v_pos"] = parts[2]; await bot.edit_message_text("موقعیت افقی متن:", call.message.chat.id, call.message.message_id, reply_markup=ai_hpos_kb())
+            elif parts[1] == 'hpos': s["ai"]["h_pos"] = parts[2]; await bot.edit_message_text("رنگ متن:", call.message.chat.id, call.message.message_id, reply_markup=ai_color_kb())
+            elif parts[1] == 'color': s["ai"]["color"] = parts[2]; await bot.edit_message_text("اندازه فونت:", call.message.chat.id, call.message.message_id, reply_markup=ai_size_kb())
+            elif parts[1] == 'size':
+                s["ai"]["size"] = parts[2]
+                ai_data = s["ai"]
+                img = render_image(text=ai_data.get("text") or "متن ساده", v_pos=ai_data["v_pos"], h_pos=ai_data["h_pos"], font_key="Default", color_hex=ai_data["color"], size_key=parts[2], bg_mode="transparent", bg_photo=ai_data.get("bg_photo_bytes"))
+                await bot.send_photo(call.message.chat.id, photo=img, caption="پیش‌نمایش آماده است", reply_markup=after_preview_kb("ai"))
+        
+        elif parts[1] in ['confirm', 'edit']:
+            if parts[1] == 'confirm':
+                u = user(call.from_user.id)
+                is_admin = (call.from_user.id == ADMIN_ID)
+                left = _quota_left(u, is_admin)
+                if left <= 0 and not is_admin:
+                    await bot.answer_callback_query(call.id, "سهمیه تمام شد!", show_alert=True)
+                    return
+                ai_data = s["ai"]
+                img = render_image(text=ai_data.get("text") or "سلام", v_pos=ai_data["v_pos"], h_pos=ai_data["h_pos"], font_key="Default", color_hex=ai_data["color"], size_key=ai_data["size"], bg_mode="transparent", bg_photo=ai_data.get("bg_photo_bytes"))
+                s["last_sticker"] = img
+                if not is_admin: u["ai_used"] = int(u.get("ai_used", 0)) + 1
+                await bot.send_sticker(call.message.chat.id, sticker=img)
+                await bot.send_message(call.message.chat.id, "از این استیکر راضی بودی؟", reply_markup=rate_kb())
+            elif parts[1] == 'edit':
+                await bot.edit_message_text("موقعیت عمودی متن:", call.message.chat.id, call.message.message_id, reply_markup=ai_vpos_kb())
+        
         await bot.answer_callback_query(call.id)
 
-    @bot.message_handler(content_types=['text', 'photo'])
+    @bot.callback_query_handler(func=lambda call: call.data.startswith('rate:'))
+    async def rate_callbacks(call: types.CallbackQuery):
+        s = sess(call.from_user.id)
+        if call.data.split(':')[1] == 'yes':
+            sticker_bytes = s.get("last_sticker")
+            pack_short_name = s.get("current_pack_short_name")
+            pack_title = s.get("current_pack_title")
+            if not sticker_bytes or not pack_short_name:
+                await bot.answer_callback_query(call.id, "خطایی در پیدا کردن پک یا استیکر رخ داد.", show_alert=True)
+                return
+            try:
+                await asyncio.sleep(1.5)
+                await bot.add_sticker_to_set(call.from_user.id, pack_short_name, types.InputSticker(sticker=sticker_bytes, emoji_list=['😂']))
+                pack_link = f"https://t.me/addstickers/{pack_short_name}"
+                await bot.edit_message_text(f"استیکر با موفقیت به پک «{pack_title}» اضافه شد.\n\n{pack_link}", call.message.chat.id, call.message.message_id, reply_markup=back_to_menu_kb(call.from_user.id == ADMIN_ID))
+            except Exception as e:
+                await bot.edit_message_text(f"خطا در افزودن استیکر به پک: {e}", call.message.chat.id, call.message.message_id, reply_markup=back_to_menu_kb(call.from_user.id == ADMIN_ID))
+        else:
+            s["await_feedback"] = True
+            await bot.edit_message_text("چه چیزی رو دوست نداشتی؟", call.message.chat.id, call.message.message_id, reply_markup=back_to_menu_kb(call.from_user.id == ADMIN_ID))
+        await bot.answer_callback_query(call.id)
+
+    @bot.message_handler(content_types=['text', 'photo', 'video', 'document'])
     async def handle_content(message: types.Message):
         s = sess(message.from_user.id)
         uid = message.from_user.id
-        
-        # منطق ساخت پک جدید
+        is_admin = (uid == ADMIN_ID)
+
+        # Admin actions
+        if is_admin and s['admin'].get('action'):
+            action = s['admin']['action']
+            if action == 'broadcast':
+                s['admin']['action'] = None
+                success_count = 0
+                for user_id in USERS:
+                    try: await bot.copy_message(user_id, message.chat.id, message.message_id); success_count += 1
+                    except: pass
+                await bot.reply_to(message, f"پیام همگانی با موفقیت به {success_count} کاربر ارسال شد.")
+                return
+            if action == 'dm_get_user':
+                if message.text and message.text.isdigit():
+                    s['admin']['target_uid'] = int(message.text); s['admin']['action'] = 'dm_get_text'
+                    await bot.reply_to(message, f"پیام خود را برای ارسال به کاربر {message.text} بنویسید:")
+                else: await bot.reply_to(message, "آیدی عددی نامعتبر است.")
+                return
+            if action == 'dm_get_text':
+                target_uid = s['admin'].get('target_uid')
+                s['admin']['action'] = None
+                try: await bot.copy_message(target_uid, message.chat.id, message.message_id); await bot.reply_to(message, f"پیام به کاربر {target_uid} ارسال شد.")
+                except Exception as e: await bot.reply_to(message, f"خطا در ارسال پیام: {e}")
+                return
+            if action == 'quota_get_user':
+                if message.text and message.text.isdigit():
+                    s['admin']['target_uid'] = int(message.text); s['admin']['action'] = 'quota_get_value'
+                    await bot.reply_to(message, f"سهمیه جدید برای کاربر {message.text} را وارد کنید:")
+                else: await bot.reply_to(message, "آیدی عددی نامعتبر است.")
+                return
+            if action == 'quota_get_value':
+                target_uid = s['admin'].get('target_uid')
+                s['admin']['action'] = None
+                if message.text and message.text.isdigit():
+                    new_quota = int(message.text)
+                    if target_uid in USERS: USERS[target_uid]['daily_limit'] = new_quota; await bot.reply_to(message, f"سهمیه کاربر {target_uid} به {new_quota} تغییر یافت.")
+                    else: await bot.reply_to(message, "کاربر مورد نظر در سیستم یافت نشد.")
+                else: await bot.reply_to(message, "مقدار سهمیه نامعتبر است.")
+                return
+
+        # Feedback handler
+        if s.get("await_feedback") and message.text:
+            s["await_feedback"] = False
+            await bot.reply_to(message, "ممنون از بازخوردت", reply_markup=back_to_menu_kb(is_admin))
+            return
+
+        # Pack creation wizard
         pack_wizard = s.get("pack_wizard", {})
         if pack_wizard.get("step") == "awaiting_name" and message.text:
             global BOT_USERNAME
@@ -441,31 +601,33 @@ def register_handlers(bot: telebot.TeleBot):
                 bot_info = await bot.get_me()
                 BOT_USERNAME = bot_info.username
             pack_name = message.text.strip()
+            pack_name_lower = pack_name.lower()
+            if any(word in pack_name_lower for word in FORBIDDEN_WORDS):
+                await bot.reply_to(message, "نام پک انتخاب شده نامناسب است.", reply_markup=back_to_menu_kb(is_admin))
+                return
             if not re.match(r'^[a-z0-9_]{1,50}$', pack_name) or pack_name.startswith('_') or pack_name.endswith('_') or '__' in pack_name:
-                await bot.reply_to(message, "نام پک نامعتبر است. لطفا طبق قوانین یک نام جدید انتخاب کنید.", reply_markup=back_to_menu_kb(uid == ADMIN_ID))
+                await bot.reply_to(message, "نام پک نامعتبر است. لطفا طبق قوانین یک نام جدید انتخاب کنید.", reply_markup=back_to_menu_kb(is_admin))
                 return
             short_name = f"{pack_name}_by_{BOT_USERNAME}"
             mode = pack_wizard.get("mode")
             try:
-                await bot.create_new_sticker_set(uid, short_name, pack_name, types.InputSticker(sticker=render_image("First", "center", "center", "Default", "#FFFFFF", "medium"), '🎉'))
+                await bot.create_new_sticker_set(uid, short_name, pack_name, types.InputSticker(sticker=render_image("First", "center", "center", "Default", "#FFFFFF", "medium"), emoji_list=['🎉']))
                 add_user_pack(uid, pack_name, short_name)
                 s["current_pack_short_name"] = short_name
                 s["current_pack_title"] = pack_name
                 s["pack_wizard"] = {}
                 await bot.reply_to(message, f"پک استیکر «{pack_name}» با موفقیت ساخته شد!\n\nhttps://t.me/addstickers/{short_name}\n\nحالا استیکر بعدی خود را بسازید.")
                 if mode == "simple":
-                    s["mode"] = "simple"
-                    s["simple"] = {"text": None, "bg_mode": "transparent", "bg_photo_bytes": None}
+                    s["mode"] = "simple"; s["simple"] = {"text": None, "bg_mode": "transparent", "bg_photo_bytes": None}
                     await bot.send_message(message.chat.id, "متن استیکر ساده رو بفرست:")
                 elif mode == "ai":
-                    s["mode"] = "ai"
-                    s["ai"] = {"text": None, "v_pos": "center", "h_pos": "center", "font": "Default", "color": "#FFFFFF", "size": "large", "bg_photo_bytes": None}
+                    s["mode"] = "ai"; s["ai"] = {"text": None, "v_pos": "center", "h_pos": "center", "font": "Default", "color": "#FFFFFF", "size": "large", "bg_photo_bytes": None}
                     await bot.send_message(message.chat.id, "نوع استیکر پیشرفته را انتخاب کنید:", reply_markup=ai_type_kb())
             except Exception as e:
                 await bot.reply_to(message, f"خطا در ساخت پک: {e}")
             return
 
-        # منطق استیکر ساده
+        # Simple sticker logic
         if s["mode"] == "simple":
             if s["simple"].get("awaiting_bg_photo") and message.photo:
                 photo = message.photo[-1]
@@ -481,9 +643,20 @@ def register_handlers(bot: telebot.TeleBot):
                 await bot.send_photo(message.chat.id, photo=img, caption="پیش‌نمایش آماده است", reply_markup=after_preview_kb("simple"))
             return
 
-        # منطق استیکر پیشرفته
+        # AI sticker logic
         if s["mode"] == "ai":
-            if message.text:
+            if s["ai"].get("awaiting_bg_photo") and message.photo:
+                photo = message.photo[-1]
+                file_info = await bot.get_file(photo.file_id)
+                downloaded_file = await bot.download_file(file_info.file_path)
+                s["ai"]["bg_photo_bytes"] = downloaded_file
+                s["ai"]["awaiting_bg_photo"] = False
+                await bot.send_message(message.chat.id, "عکس به عنوان پس‌زمینه تنظیم شد. حالا موقعیت متن را انتخاب کنید:", reply_markup=ai_vpos_kb())
+                return
+            if s["ai"].get("sticker_type") == "image" and message.text:
                 s["ai"]["text"] = message.text
                 await bot.send_message(message.chat.id, "موقعیت عمودی متن:", reply_markup=ai_vpos_kb())
-            return
+                return
+            if s["ai"].get("sticker_type") == "video" and message.video:
+                await bot.reply_to(message, "پردازش ویدیو در حال حاضر پشتیبانی نمی‌شود.")
+                return
