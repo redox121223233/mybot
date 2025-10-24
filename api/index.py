@@ -2,14 +2,8 @@ import os
 import sys
 import logging
 from fastapi import Request, FastAPI, Response, status
-from aiogram import Bot, Dispatcher, types
-from aiogram.enums import ParseMode
-from aiogram.types import Update
-
-# --- این بخش بسیار مهم است: اضافه کردن مسیر ریشه پروژه ---
-# این خط به پایتون می‌گوید که فایل‌های موجود در پوشه والد (ریشه پروژه) را هم جستجو کند
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-# ---------------------------------------------------------
+import telebot
+from telebot.types import Update
 
 # --- تنظیمات لاگ ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -20,27 +14,36 @@ if not BOT_TOKEN:
     logging.error("BOT_TOKEN not found in environment variables!")
     raise RuntimeError("BOT_TOKEN را در تنظیمات Vercel قرار دهید.")
 
-bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.HTML)
-dp = Dispatcher()
+# --- ساخت نمونه ربات ---
+# از این نمونه برای تمام هندلرها استفاده خواهیم کرد
+bot = telebot.TeleBot(BOT_TOKEN, parse_mode='HTML')
 
-# --- ایمپورت کردن روتر از فایل bot.py ---
-# حالا که مسیر را اضافه کرده‌ایم، این دستور باید بدون خطا کار کند
-from bot import router
+# --- اضافه کردن مسیر ریشه پروژه برای پیدا کردن فایل هندلر ---
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# اضافه کردن روتر به دیسپچر
-dp.include_router(router)
-# ---------------------------------------------
+# --- ایمپورت و ثبت تمام هندلرها ---
+# تمام منطق ربات در فایل handlers.py قرار دارد
+import handlers
+handlers.register_handlers(bot)
 
 # --- اپلیکیشن FastAPI ---
 app = FastAPI()
 
 @app.post("/webhook")
 async def bot_webhook(request: Request):
-    logging.info("Webhook received a request!")
+    """
+    این نقطه پایانی، درخواست‌های وب‌هوک تلگرام را دریافت کرده و به ربات تحویل می‌دهد.
+    """
     try:
+        # خواندن داده‌های JSON از بدنه درخواست
         data = await request.json()
-        update = Update.model_validate(data, context={"bot": bot})
-        await dp.feed_update(update=update, bot=bot)
+        
+        # تبدیل داده‌ها به یک آبجکت آپدیت تلگرام
+        update = Update.de_json(data)
+        
+        # پردازش آپدیت توسط ربات
+        bot.process_new_updates([update])
+        
         return Response(content="OK", status_code=status.HTTP_200_OK)
     except Exception as e:
         logging.error(f"Error processing update: {e}", exc_info=True)
@@ -48,4 +51,4 @@ async def bot_webhook(request: Request):
 
 @app.get("/")
 async def read_root():
-    return {"status": "Bot is running on Vercel"}
+    return {"status": "Bot is running on Vercel with pyTelegramBotAPI"}
