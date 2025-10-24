@@ -1,3 +1,4 @@
+from aiogram.enums.parse_mode import ParseMode
 import os
 import re
 import asyncio
@@ -715,7 +716,7 @@ async def on_message(message: Message, bot: Bot):
 # =============== بخش اصلی وب‌هوک ===============
 dp = Dispatcher()
 dp.include_router(router)
-bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=HTML))
+bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 
 app = FastAPI()
 
