@@ -4,30 +4,24 @@ from fastapi import Request, FastAPI, Response, status
 from aiogram import Bot, Dispatcher, types
 from aiogram.enums import ParseMode
 from aiogram.types import Update
+from aiogram.filters import CommandStart
 
-# --- تنظیمات لاگ برای دیدن همه چیز ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
-# --- تنظیمات ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
-    logging.error("BOT_TOKEN not found in environment variables!")
-    raise RuntimeError("BOT_TOKEN را در تنظیمات Vercel قرار دهید.")
+    logging.error("BOT_TOKEN not found!")
+    raise RuntimeError("BOT_TOKEN is required.")
 
 bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()
 
-# --- این بخش جدید و بسیار مهم است ---
-# ایمپورت کردن روتر از فایل bot.py
-from bot import router
+# یک هندلر ساده برای تست
+@dp.message(CommandStart())
+async def simple_start_handler(message: types.Message):
+    logging.info(f"ساختار اصلی کار می‌کند! پیام /start از کاربر {message.from_user.id} دریافت شد.")
+    await message.answer("✅ ساختار اصلی ربات صحیح است! مشکل از کدهای پیچیده‌تر است.")
 
-# اضافه کردن روتر به دیسپچر
-# این کار تمام هندلرهای تعریف شده در bot.py را به ربات متصل می‌کند
-dp.include_router(router)
-# --- پایان بخش جدید ---
-
-
-# --- اپلیکیشن FastAPI ---
 app = FastAPI()
 
 @app.post("/webhook")
