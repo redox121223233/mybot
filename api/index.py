@@ -1,27 +1,37 @@
 import os
+import sys
 import logging
 from fastapi import Request, FastAPI, Response, status
 from aiogram import Bot, Dispatcher, types
 from aiogram.enums import ParseMode
 from aiogram.types import Update
-from aiogram.filters import CommandStart
 
+# --- این بخش بسیار مهم است: اضافه کردن مسیر ریشه پروژه ---
+# این خط به پایتون می‌گوید که فایل‌های موجود در پوشه والد (ریشه پروژه) را هم جستجو کند
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# ---------------------------------------------------------
+
+# --- تنظیمات لاگ ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
 
+# --- تنظیمات ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
-    logging.error("BOT_TOKEN not found!")
-    raise RuntimeError("BOT_TOKEN is required.")
+    logging.error("BOT_TOKEN not found in environment variables!")
+    raise RuntimeError("BOT_TOKEN را در تنظیمات Vercel قرار دهید.")
 
 bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.HTML)
 dp = Dispatcher()
 
-# یک هندلر ساده برای تست
-@dp.message(CommandStart())
-async def simple_start_handler(message: types.Message):
-    logging.info(f"ساختار اصلی کار می‌کند! پیام /start از کاربر {message.from_user.id} دریافت شد.")
-    await message.answer("✅ ساختار اصلی ربات صحیح است! مشکل از کدهای پیچیده‌تر است.")
+# --- ایمپورت کردن روتر از فایل bot.py ---
+# حالا که مسیر را اضافه کرده‌ایم، این دستور باید بدون خطا کار کند
+from bot import router
 
+# اضافه کردن روتر به دیسپچر
+dp.include_router(router)
+# ---------------------------------------------
+
+# --- اپلیکیشن FastAPI ---
 app = FastAPI()
 
 @app.post("/webhook")
