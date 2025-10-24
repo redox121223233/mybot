@@ -2,6 +2,7 @@ import os
 import re
 import asyncio
 import traceback
+import logging
 from io import BytesIO
 from typing import Dict, Any, Optional, Tuple, List
 from datetime import datetime, timezone
@@ -21,10 +22,16 @@ from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import arabic_reshaper
 from bidi.algorithm import get_display
 
+# =============== تنظیمات logging ===============
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 # =============== پیکربندی ===============
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
     raise RuntimeError("BOT_TOKEN را در تنظیمات Vercel قرار دهید.")
+    
+logger.info(f"Bot token loaded: {'YES' if BOT_TOKEN else 'NO'}")
 
 CHANNEL_USERNAME = "@redoxbot_sticker"
 SUPPORT_USERNAME = "@onedaytoalive"
@@ -682,7 +689,7 @@ async def on_message(message: Message, bot: Bot):
                 await message.answer("متن استیکر ساده رو بفرست:", reply_markup=back_to_menu_kb(is_admin))
             elif mode == "ai":
                 s["mode"] = "ai"
-                s["ai"] = {"text": None, "v_pos": "center", "پایین", "center", "font": "Default", "color": "#FFFFFF", "size": "large", "bg_photo_bytes": None}
+                s["ai"] = {"text": None, "v_pos": "center", "h_pos": "center", "font": "Default", "color": "#FFFFFF", "size": "large", "bg_photo_bytes": None}
                 await message.answer("نوع استیکر پیشرفته را انتخاب کنید:", reply_markup=ai_type_kb())
         except TelegramBadRequest as e:
             error_msg = e.message.lower()
@@ -723,13 +730,14 @@ app = FastAPI()
 async def bot_webhook(request: Request):
     try:
         data = await request.json()
+        logger.info(f"Received webhook data: {data}")
         update = Update.model_validate(data, context={"bot": bot})
         await dp.feed_update(update=update, bot=bot)
         return Response(content="OK", status_code=200)
     except Exception as e:
-        print(f"Error processing webhook: {e}")
-        traceback.print_exc()
-        return Response(content="Internal Server Error", status_code=500)
+        logger.error(f"Error processing webhook: {e}")
+        logger.error(traceback.format_exc())
+        return Response(content=f"Error: {str(e)}", status_code=500)
 
 @app.get("/")
 async def read_root():
