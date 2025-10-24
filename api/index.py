@@ -683,7 +683,7 @@ async def on_message(message: Message, bot: Bot):
                 await message.answer("متن استیکر ساده رو بفرست:", reply_markup=back_to_menu_kb(is_admin))
             elif mode == "ai":
                 s["mode"] = "ai"
-                s["ai"] = {"text": None, "v_pos": "center", "پایین", "center", "font": "Default", "color": "#FFFFFF", "size": "large", "bg_photo_bytes": None}
+        s["ai"] = {"text": None, "v_pos": "center", "font": "Default", "color": "#FFFFFF", "size": "large", "bg_photo_bytes": None}
                 await message.answer("نوع استیکر پیشرفته را انتخاب کنید:", reply_markup=ai_type_kb())
         except TelegramBadRequest as e:
             error_msg = e.message.lower()
