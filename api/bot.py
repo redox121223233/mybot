@@ -5,8 +5,8 @@ from io import BytesIO
 from typing import Dict, Any, Optional, Tuple, List
 from datetime import datetime, timezone
 import subprocess
-import pydantic_core  # برای مدیریت خطای اعتبارسنجی
-import traceback # برای نمایش خطاهای دقیق
+import pydantic_core
+import traceback
 
 from aiogram import Bot, Dispatcher, F, Router
 from aiogram.types import Message, CallbackQuery, BotCommand, BufferedInputFile, InputSticker
@@ -34,7 +34,7 @@ DAILY_LIMIT = 5
 BOT_USERNAME = ""
 
 # ============ فیلتر کلمات نامناسب ============
-FORBIDDEN_WORDS = ["kos", "kir", "kon", "koss", "kiri", "koon"] # می‌توانید این لیست را گسترش دهید
+FORBIDDEN_WORDS = ["kos", "kir", "kon", "koss", "kiri", "koon"]
 
 # ============ حافظه ساده (in-memory) ============
 USERS: Dict[int, Dict[str, Any]] = {}
@@ -60,31 +60,14 @@ def _quota_left(u: Dict[str, Any], is_admin: bool) -> int:
     limit = u.get("daily_limit", DAILY_LIMIT)
     return max(0, limit - int(u.get("ai_used", 0)))
 
-def _seconds_to_reset(u: Dict[str, Any]) -> int:
-    _reset_daily_if_needed(u)
-    now = int(datetime.now(timezone.utc).timestamp())
-    end = int(u["day_start"]) + 86400
-    return max(0, end - now)
-
-def _fmt_eta(secs: int) -> str:
-    h = secs // 3600
-    m = (secs % 3600) // 60
-    if h <= 0 and m <= 0:
-        return "کمتر از ۱ دقیقه"
-    if h <= 0:
-        return f"{m} دقیقه"
-    if m == 0:
-        return f"{h} ساعت"
-    return f"{h} ساعت و {m} دقیقه"
-
 def user(uid: int) -> Dict[str, Any]:
     if uid not in USERS:
         USERS[uid] = {
-            "ai_used": 0, 
-            "vote": None, 
-            "day_start": _today_start_ts(), 
-            "packs": [],  # لیست پک‌های کاربر
-            "current_pack": None  # پک فعلی انتخاب شده
+            "ai_used": 0,
+            "vote": None,
+            "day_start": _today_start_ts(),
+            "packs": [],
+            "current_pack": None
         }
     _reset_daily_if_needed(USERS[uid])
     return USERS[uid]
@@ -120,34 +103,24 @@ def reset_mode(uid: int):
 
 # ============ توابع مدیریت پک‌های کاربر ============
 def get_user_packs(uid: int) -> List[Dict[str, str]]:
-    """دریافت لیست پک‌های کاربر"""
     u = user(uid)
     return u.get("packs", [])
 
 def add_user_pack(uid: int, pack_name: str, pack_short_name: str):
-    """افزودن پک جدید به لیست پک‌های کاربر"""
     u = user(uid)
     packs = u.get("packs", [])
-    
-    # بررسی اینکه پک قبلا اضافه نشده باشد
     for pack in packs:
         if pack["short_name"] == pack_short_name:
             return
-    
-    packs.append({
-        "name": pack_name,
-        "short_name": pack_short_name
-    })
+    packs.append({"name": pack_name, "short_name": pack_short_name})
     u["packs"] = packs
     u["current_pack"] = pack_short_name
 
 def set_current_pack(uid: int, pack_short_name: str):
-    """تنظیم پک فعلی کاربر"""
     u = user(uid)
     u["current_pack"] = pack_short_name
 
 def get_current_pack(uid: int) -> Optional[Dict[str, str]]:
-    """دریافت پک فعلی کاربر"""
     u = user(uid)
     current_pack_short_name = u.get("current_pack")
     if current_pack_short_name:
@@ -175,7 +148,6 @@ LOCAL_FONT_FILES = {
     "Roboto": ["Roboto-Regular.ttf", "Roboto-Medium.ttf"],
     "Default": ["Vazirmatn-Regular.ttf", "Roboto-Regular.ttf"],
 }
-
 PERSIAN_FONTS = ["Vazirmatn", "NotoNaskh", "Sahel", "IRANSans"]
 ENGLISH_FONTS = ["Roboto"]
 
@@ -189,12 +161,7 @@ def _load_local_fonts() -> Dict[str, str]:
                     found[logical] = p
                     break
     return found
-
 _LOCAL_FONTS = _load_local_fonts()
-
-def available_font_options() -> List[Tuple[str, str]]:
-    keys = list(_LOCAL_FONTS.keys())
-    return [(k, k) for k in keys[:8]] if keys else [("Default", "Default")]
 
 def _detect_language(text: str) -> str:
     if not text:
@@ -222,12 +189,6 @@ def _prepare_text(text: str) -> str:
     reshaped_text = arabic_reshaper.reshape(text)
     bidi_text = get_display(reshaped_text)
     return bidi_text
-
-def is_persian(text):
-    if not text:
-        return False
-    persian_pattern = re.compile(r'[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]')
-    return bool(persian_pattern.search(text))
 
 def _parse_hex(hx: str) -> Tuple[int, int, int, int]:
     hx = (hx or "#ffffff").strip().lstrip("#")
@@ -353,30 +314,58 @@ async def process_video_to_webm(video_bytes: bytes) -> Optional[bytes]:
         print(f"Error during video processing: {e}")
         return None
 
-# ============ توابع بررسی عضویت در کانال ============
-async def check_channel_membership(bot: Bot, user_id: int) -> bool:
+# ============ توابع کمکی پک ============
+async def check_pack_exists(bot: Bot, short_name: str) -> bool:
     try:
-        member = await bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
-        return member.status in ["member", "administrator", "creator"]
-    except Exception as e:
-        print(f"Error checking channel membership: {e}")
-        return False
+        await bot.get_sticker_set(name=short_name)
+        return True
+    except TelegramBadRequest as e:
+        if "STICKERSET_INVALID" in e.message or "invalid sticker set name" in e.message.lower():
+            return False
+        raise
 
-async def require_channel_membership(message: Message, bot: Bot) -> bool:
-    is_member = await check_channel_membership(bot, message.from_user.id)
-    if not is_member:
-        kb = InlineKeyboardBuilder()
-        kb.button(text="عضویت در کانال", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}")
-        kb.button(text="بررسی عضویت", callback_data="check_membership")
-        kb.adjust(1)
-        
-        await message.answer(
-            f"برای استفاده از ربات، باید در کانال {CHANNEL_USERNAME} عضو شوید.\n\n"
-            "پس از عضویت، روی دکمه «بررسی عضویت» کلیک کنید.",
-            reply_markup=kb.as_markup()
-        )
+def is_valid_pack_name(name: str) -> bool:
+    if not (1 <= len(name) <= 50):
         return False
+    if not name[0].isalpha() or not name[0].islower():
+        return False
+    if name.endswith('_'):
+        return False
+    if '__' in name:
+        return False
+    for char in name:
+        if not (char.islower() or char.isdigit() or char == '_'):
+            return False
     return True
+
+# ============ دکوراتور بررسی عضویت (راه حل اصلی مشکل) ============
+def check_membership_decorator(handler):
+    async def wrapper(message_or_callback, bot: Bot, *args, **kwargs):
+        try:
+            member = await bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=message_or_callback.from_user.id)
+            if member.status not in ["member", "administrator", "creator"]:
+                kb = InlineKeyboardBuilder()
+                kb.button(text="عضویت در کانال", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}")
+                kb.button(text="بررسی عضویت", callback_data="check_membership")
+                kb.adjust(1)
+                
+                if isinstance(message_or_callback, Message):
+                    await message_or_callback.answer(
+                        f"برای استفاده از ربات، باید در کانال {CHANNEL_USERNAME} عضو شوید.\n\nپس از عضویت، روی دکمه «بررسی عضویت» کلیک کنید.",
+                        reply_markup=kb.as_markup()
+                    )
+                elif isinstance(message_or_callback, CallbackQuery):
+                    await message_or_callback.message.answer(
+                        f"برای استفاده از ربات، باید در کانال {CHANNEL_USERNAME} عضو شوید.\n\nپس از عضویت، روی دکمه «بررسی عضویت» کلیک کنید.",
+                        reply_markup=kb.as_markup()
+                    )
+                    await message_or_callback.answer()
+                return
+        except Exception as e:
+            print(f"Error checking channel membership: {e}")
+        
+        return await handler(message_or_callback, bot, *args, **kwargs)
+    return wrapper
 
 # ============ کیبوردها ============
 def main_menu_kb(is_admin: bool = False):
@@ -424,34 +413,17 @@ def rate_kb():
     return kb.as_markup()
 
 def pack_selection_kb(uid: int, mode: str):
-    """ساخت کیبورد انتخاب پک برای کاربر"""
     kb = InlineKeyboardBuilder()
     user_packs = get_user_packs(uid)
-    
-    # اگر پک قبلی وجود دارد، آن را به عنوان گزینه اول نمایش می‌دهیم
     current_pack = get_current_pack(uid)
     if current_pack:
         kb.button(text=f"📦 {current_pack['name']} (فعلی)", callback_data=f"pack:select:{current_pack['short_name']}")
-    
-    # بقیه پک‌ها را نمایش می‌دهیم
     for pack in user_packs:
         if current_pack and pack["short_name"] == current_pack["short_name"]:
-            continue  # از تکرار پک فعلی جلوگیری می‌کنیم
+            continue
         kb.button(text=f"📦 {pack['name']}", callback_data=f"pack:select:{pack['short_name']}")
-    
-    # گزینه ساخت پک جدید
     kb.button(text="➕ ساخت پک جدید", callback_data=f"pack:new:{mode}")
-    
-    # تنظیم تعداد ستون‌ها
     kb.adjust(1)
-    return kb.as_markup()
-
-def add_to_pack_kb():
-    kb = InlineKeyboardBuilder()
-    kb.button(text="افزودن به پک جدید", callback_data="pack:start_creation")
-    kb.button(text="انتخاب از پک‌های قبلی", callback_data="pack:select_existing")
-    kb.button(text="نه، لازم نیست", callback_data="pack:skip")
-    kb.adjust(3)
     return kb.as_markup()
 
 def ai_type_kb():
@@ -492,38 +464,12 @@ def admin_panel_kb():
     kb.adjust(1)
     return kb.as_markup()
 
-# ============ توابع کمکی پک ============
-async def check_pack_exists(bot: Bot, short_name: str) -> bool:
-    try:
-        await bot.get_sticker_set(name=short_name)
-        return True
-    except TelegramBadRequest as e:
-        if "STICKERSET_INVALID" in e.message or "invalid sticker set name" in e.message.lower():
-            return False
-        raise
-
-def is_valid_pack_name(name: str) -> bool:
-    if not (1 <= len(name) <= 50):
-        return False
-    if not name[0].isalpha() or not name[0].islower():
-        return False
-    if name.endswith('_'):
-        return False
-    if '__' in name:
-        return False
-    for char in name:
-        if not (char.islower() or char.isdigit() or char == '_'):
-            return False
-    return True
-
 # ============ روتر ============
 router = Router()
 
 @router.message(CommandStart())
+@check_membership_decorator
 async def on_start(message: Message, bot: Bot):
-    if not await require_channel_membership(message, bot):
-        return
-        
     reset_mode(message.from_user.id)
     is_admin = (message.from_user.id == ADMIN_ID)
     await message.answer(
@@ -534,34 +480,31 @@ async def on_start(message: Message, bot: Bot):
 
 @router.callback_query(F.data == "check_membership")
 async def on_check_membership(cb: CallbackQuery, bot: Bot):
-    is_member = await check_channel_membership(bot, cb.from_user.id)
-    if is_member:
-        await cb.message.answer(
-            "عضویت شما تایید شد! حالا می‌توانید از ربات استفاده کنید.",
-            reply_markup=main_menu_kb(cb.from_user.id == ADMIN_ID)
-        )
-    else:
-        await cb.answer("شما هنوز در کانال عضو نشده‌اید! لطفا ابتدا عضو شوید.", show_alert=True)
+    try:
+        member = await bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=cb.from_user.id)
+        if member.status in ["member", "administrator", "creator"]:
+            await cb.message.answer(
+                "عضویت شما تایید شد! حالا می‌توانید از ربات استفاده کنید.",
+                reply_markup=main_menu_kb(cb.from_user.id == ADMIN_ID)
+            )
+        else:
+            await cb.answer("شما هنوز در کانال عضو نشده‌اید! لطفا ابتدا عضو شوید.", show_alert=True)
+    except Exception as e:
+        print(f"Error in check_membership callback: {e}")
+        await cb.answer("خطایی در بررسی عضویت رخ داد. لطفا دوباره تلاش کنید.", show_alert=True)
     await cb.answer()
 
 @router.callback_query(F.data == "menu:home")
+@check_membership_decorator
 async def on_home(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
     reset_mode(cb.from_user.id)
     is_admin = (cb.from_user.id == ADMIN_ID)
-    await cb.message.answer(
-        "منوی اصلی:",
-        reply_markup=main_menu_kb(is_admin)
-    )
+    await cb.message.answer("منوی اصلی:", reply_markup=main_menu_kb(is_admin))
     await cb.answer()
 
 @router.callback_query(F.data == "menu:admin")
+@check_membership_decorator
 async def on_admin_panel(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
     if cb.from_user.id != ADMIN_ID:
         await cb.answer("شما دسترسی به این بخش را ندارید.", show_alert=True)
         return
@@ -569,40 +512,32 @@ async def on_admin_panel(cb: CallbackQuery, bot: Bot):
     await cb.answer()
 
 @router.callback_query(F.data == "admin:broadcast")
+@check_membership_decorator
 async def on_admin_broadcast(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
     s = sess(cb.from_user.id)
     s["admin"]["action"] = "broadcast"
     await cb.message.answer("پیام همگانی خود را ارسال کنید. برای انصراف /cancel را بفرستید.")
     await cb.answer()
 
 @router.callback_query(F.data == "admin:dm_prompt")
+@check_membership_decorator
 async def on_admin_dm_prompt(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
     s = sess(cb.from_user.id)
     s["admin"]["action"] = "dm_get_user"
     await cb.message.answer("آیدی عددی کاربر مورد نظر را ارسال کنید. برای انصراف /cancel را بفرستید.")
     await cb.answer()
 
 @router.callback_query(F.data == "admin:quota_prompt")
+@check_membership_decorator
 async def on_admin_quota_prompt(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
     s = sess(cb.from_user.id)
     s["admin"]["action"] = "quota_get_user"
     await cb.message.answer("آیدی عددی کاربر مورد نظر را برای تغییر سهمیه ارسال کنید. برای انصراف /cancel را بفرستید.")
     await cb.answer()
 
 @router.callback_query(F.data == "menu:help")
+@check_membership_decorator
 async def on_help(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
     help_text = (
         "راهنما\n\n"
         "• استیکر ساده: ساخت استیکر با تنظیمات سریع\n"
@@ -614,10 +549,8 @@ async def on_help(cb: CallbackQuery, bot: Bot):
     await cb.answer()
 
 @router.callback_query(F.data == "menu:support")
+@check_membership_decorator
 async def on_support(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
     await cb.message.answer(
         f"پشتیبانی: {SUPPORT_USERNAME}",
         reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID)
@@ -625,10 +558,8 @@ async def on_support(cb: CallbackQuery, bot: Bot):
     await cb.answer()
 
 @router.callback_query(F.data == "menu:quota")
+@check_membership_decorator
 async def on_quota(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
     u = user(cb.from_user.id)
     is_admin = (cb.from_user.id == ADMIN_ID)
     left = _quota_left(u, is_admin)
@@ -640,14 +571,10 @@ async def on_quota(cb: CallbackQuery, bot: Bot):
     await cb.answer()
 
 @router.callback_query(F.data == "menu:simple")
+@check_membership_decorator
 async def on_simple(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
     s = sess(cb.from_user.id)
     uid = cb.from_user.id
-    
-    # بررسی اینکه آیا کاربر پک قبلی دارد
     user_packs = get_user_packs(uid)
     if user_packs:
         s["pack_wizard"] = {"mode": "simple"}
@@ -669,26 +596,17 @@ async def on_simple(cb: CallbackQuery, bot: Bot):
     await cb.answer()
 
 @router.callback_query(F.data == "menu:ai")
+@check_membership_decorator
 async def on_ai(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
     u = user(cb.from_user.id)
     is_admin = (cb.from_user.id == ADMIN_ID)
     left = _quota_left(u, is_admin)
-
     if left <= 0 and not is_admin:
-        await cb.message.answer(
-            "سهمیه امروز تمام شد!",
-            reply_markup=back_to_menu_kb(is_admin)
-        )
+        await cb.message.answer("سهمیه امروز تمام شد!", reply_markup=back_to_menu_kb(is_admin))
         await cb.answer()
         return
-
     s = sess(cb.from_user.id)
     uid = cb.from_user.id
-    
-    # بررسی اینکه آیا کاربر پک قبلی دارد
     user_packs = get_user_packs(uid)
     if user_packs:
         s["pack_wizard"] = {"mode": "ai"}
@@ -710,29 +628,22 @@ async def on_ai(cb: CallbackQuery, bot: Bot):
     await cb.answer()
 
 @router.callback_query(F.data.startswith("pack:select:"))
+@check_membership_decorator
 async def on_pack_select(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
     pack_short_name = cb.data.split(":")[-1]
     uid = cb.from_user.id
     s = sess(uid)
-    
-    # پیدا کردن اطلاعات پک
     selected_pack = None
     for pack in get_user_packs(uid):
         if pack["short_name"] == pack_short_name:
             selected_pack = pack
             break
-    
     if selected_pack:
         set_current_pack(uid, pack_short_name)
         s["current_pack_short_name"] = pack_short_name
         s["current_pack_title"] = selected_pack["name"]
         s["pack_wizard"] = {}
-        
         mode = s.get("pack_wizard", {}).get("mode", "simple")
-        
         if mode == "simple":
             s["mode"] = "simple"
             s["simple"] = {"text": None, "bg_mode": "transparent", "bg_photo_bytes": None}
@@ -750,14 +661,11 @@ async def on_pack_select(cb: CallbackQuery, bot: Bot):
                 f"پک «{selected_pack['name']}» انتخاب شد.\n\nنوع استیکر پیشرفته را انتخاب کنید:",
                 reply_markup=ai_type_kb()
             )
-    
     await cb.answer()
 
 @router.callback_query(F.data.startswith("pack:new:"))
+@check_membership_decorator
 async def on_pack_new(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
     mode = cb.data.split(":")[-1]
     s = sess(cb.from_user.id)
     s["pack_wizard"] = {"step": "awaiting_name", "mode": mode}
@@ -770,13 +678,10 @@ async def on_pack_new(cb: CallbackQuery, bot: Bot):
     await cb.answer()
 
 @router.callback_query(F.data == "pack:select_existing")
+@check_membership_decorator
 async def on_pack_select_existing(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
     s = sess(cb.from_user.id)
     mode = s.get("pack_wizard", {}).get("mode", "simple")
-    
     await cb.message.answer(
         "کدام پک را انتخاب می‌کنید؟",
         reply_markup=pack_selection_kb(cb.from_user.id, mode)
@@ -784,10 +689,8 @@ async def on_pack_select_existing(cb: CallbackQuery, bot: Bot):
     await cb.answer()
 
 @router.callback_query(F.data.startswith("simple:bg:"))
+@check_membership_decorator
 async def on_simple_bg(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
     s = sess(cb.from_user.id)["simple"]
     mode = cb.data.split(":")[-1]
     if mode == "photo_prompt":
@@ -798,306 +701,192 @@ async def on_simple_bg(cb: CallbackQuery, bot: Bot):
         s["bg_photo_bytes"] = None
         if s.get("text"):
             img = render_image(
-                text=s["text"],
-                v_pos="center", h_pos="center",
-                font_key="Default",
-                color_hex="#FFFFFF",
-                size_key="medium",
-                bg_mode=mode,
-                bg_photo=s.get("bg_photo_bytes"),
-                as_webp=False
+                text=s["text"], v_pos="center", h_pos="center", font_key="Default",
+                color_hex="#FFFFFF", size_key="medium", bg_mode=mode,
+                bg_photo=s.get("bg_photo_bytes"), as_webp=False
             )
             file_obj = BufferedInputFile(img, filename="preview.png")
             await cb.message.answer_photo(
-                file_obj,
-                caption="پیش‌نمایش آماده است",
-                reply_markup=after_preview_kb("simple")
+                file_obj, caption="پیش‌نمایش آماده است", reply_markup=after_preview_kb("simple")
             )
     await cb.answer()
 
 @router.callback_query(F.data == "simple:confirm")
+@check_membership_decorator
 async def on_simple_confirm(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
     s = sess(cb.from_user.id)
     simple_data = s["simple"]
     img = render_image(
-        text=simple_data["text"] or "سلام",
-        v_pos="center", h_pos="center",
-        font_key="Default",
-        color_hex="#FFFFFF",
-        size_key="medium",
-        bg_mode=simple_data.get("bg_mode") or "transparent",
-        bg_photo=simple_data.get("bg_photo_bytes"),
-        as_webp=True
+        text=simple_data["text"] or "سلام", v_pos="center", h_pos="center", font_key="Default",
+        color_hex="#FFFFFF", size_key="medium", bg_mode=simple_data.get("bg_mode") or "transparent",
+        bg_photo=simple_data.get("bg_photo_bytes"), as_webp=True
     )
     s["last_sticker"] = img
     await cb.message.answer_sticker(BufferedInputFile(img, filename="sticker.webp"))
-    await cb.message.answer(
-        "از این استیکر راضی بودی؟",
-        reply_markup=rate_kb()
-    )
+    await cb.message.answer("از این استیکر راضی بودی؟", reply_markup=rate_kb())
     await cb.answer()
 
 @router.callback_query(F.data == "simple:edit")
+@check_membership_decorator
 async def on_simple_edit(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
-    await cb.message.answer(
-        "پس‌زمینه رو انتخاب کن:",
-        reply_markup=simple_bg_kb()
-    )
+    await cb.message.answer("پس‌زمینه رو انتخاب کن:", reply_markup=simple_bg_kb())
     await cb.answer()
 
 @router.callback_query(F.data.startswith("ai:type:"))
+@check_membership_decorator
 async def on_ai_type(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
     sticker_type = cb.data.split(":")[-1]
     s = sess(cb.from_user.id)
     s["ai"]["sticker_type"] = sticker_type
-
     if sticker_type == "image":
         await cb.message.answer("منبع استیکر تصویری را انتخاب کنید:", reply_markup=ai_image_source_kb())
     elif sticker_type == "video":
         if not is_ffmpeg_installed():
-            await cb.message.answer(
-                "قابلیت ویدیو فعال نیست.",
-                reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID)
-            )
+            await cb.message.answer("قابلیت ویدیو فعال نیست.", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
         else:
             await cb.message.answer("یک فایل ویدیو ارسال کنید:", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
     await cb.answer()
 
 @router.callback_query(F.data == "ai:source:text")
+@check_membership_decorator
 async def on_ai_source_text(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
     await cb.message.answer("متن استیکر را بفرست:", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
     await cb.answer()
 
 @router.callback_query(F.data == "ai:source:photo")
+@check_membership_decorator
 async def on_ai_source_photo(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
     sess(cb.from_user.id)["ai"]["awaiting_bg_photo"] = True
     await cb.message.answer("عکس را ارسال کنید:", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
     await cb.answer()
 
 @router.callback_query(F.data.startswith("ai:vpos:"))
+@check_membership_decorator
 async def on_ai_vpos(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
     v_pos = cb.data.split(":")[-1]
     sess(cb.from_user.id)["ai"]["v_pos"] = v_pos
     await cb.message.answer("موقعیت افقی متن:", reply_markup=ai_hpos_kb())
     await cb.answer()
 
 @router.callback_query(F.data.startswith("ai:hpos:"))
+@check_membership_decorator
 async def on_ai_hpos(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
     h_pos = cb.data.split(":")[-1]
     sess(cb.from_user.id)["ai"]["h_pos"] = h_pos
-
     kb = InlineKeyboardBuilder()
     for name, hx in DEFAULT_PALETTE:
         kb.button(text=name, callback_data=f"ai:color:{hx}")
     kb.adjust(4)
-
     await cb.message.answer("رنگ متن:", reply_markup=kb.as_markup())
     await cb.answer()
 
 @router.callback_query(F.data.func(lambda d: d and d.startswith("ai:color:")))
+@check_membership_decorator
 async def on_ai_color(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
     color = cb.data.split(":")[-1]
     sess(cb.from_user.id)["ai"]["color"] = color
-
     kb = InlineKeyboardBuilder()
     for label, val in [("کوچک", "small"), ("متوسط", "medium"), ("بزرگ", "large")]:
         kb.button(text=label, callback_data=f"ai:size:{val}")
     kb.adjust(3)
-
     await cb.message.answer("اندازه فونت:", reply_markup=kb.as_markup())
     await cb.answer()
 
 @router.callback_query(F.data.func(lambda d: d and d.startswith("ai:size:")))
+@check_membership_decorator
 async def on_ai_size(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
     size = cb.data.split(":")[-1]
     sess(cb.from_user.id)["ai"]["size"] = size
-
     ai_data = sess(cb.from_user.id)["ai"]
     img = render_image(
-        text=ai_data.get("text") or "متن ساده",
-        v_pos=ai_data["v_pos"],
-        h_pos=ai_data["h_pos"],
-        font_key="Default",
-        color_hex=ai_data["color"],
-        size_key=size,
-        bg_mode="transparent",
-        bg_photo=ai_data.get("bg_photo_bytes"),
-        as_webp=False
+        text=ai_data.get("text") or "متن ساده", v_pos=ai_data["v_pos"], h_pos=ai_data["h_pos"],
+        font_key="Default", color_hex=ai_data["color"], size_key=size, bg_mode="transparent",
+        bg_photo=ai_data.get("bg_photo_bytes"), as_webp=False
     )
-
     file_obj = BufferedInputFile(img, filename="preview.png")
     await cb.message.answer_photo(
-        file_obj,
-        caption="پیش‌نمایش آماده است",
-        reply_markup=after_preview_kb("ai")
+        file_obj, caption="پیش‌نمایش آماده است", reply_markup=after_preview_kb("ai")
     )
     await cb.answer()
 
 @router.callback_query(F.data == "ai:confirm")
+@check_membership_decorator
 async def on_ai_confirm(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
     u = user(cb.from_user.id)
     is_admin = (cb.from_user.id == ADMIN_ID)
     left = _quota_left(u, is_admin)
-
     if left <= 0 and not is_admin:
         await cb.answer("سهمیه تمام شد!", show_alert=True)
         return
-
     ai_data = sess(cb.from_user.id)["ai"]
     img = render_image(
-        text=ai_data.get("text") or "سلام",
-        v_pos=ai_data["v_pos"],
-        h_pos=ai_data["h_pos"],
-        font_key="Default",
-        color_hex=ai_data["color"],
-        size_key=ai_data["size"],
-        bg_mode="transparent",
-        bg_photo=ai_data.get("bg_photo_bytes"),
-        as_webp=True
+        text=ai_data.get("text") or "سلام", v_pos=ai_data["v_pos"], h_pos=ai_data["h_pos"],
+        font_key="Default", color_hex=ai_data["color"], size_key=ai_data["size"],
+        bg_mode="transparent", bg_photo=ai_data.get("bg_photo_bytes"), as_webp=True
     )
-
     sess(cb.from_user.id)["last_sticker"] = img
     if not is_admin:
         u["ai_used"] = int(u.get("ai_used", 0)) + 1
-
     await cb.message.answer_sticker(BufferedInputFile(img, filename="sticker.webp"))
-    await cb.message.answer(
-        "از این استیکر راضی بودی؟",
-        reply_markup=rate_kb()
-    )
+    await cb.message.answer("از این استیکر راضی بودی؟", reply_markup=rate_kb())
     await cb.answer()
 
 @router.callback_query(F.data == "ai:edit")
+@check_membership_decorator
 async def on_ai_edit(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
-    await cb.message.answer(
-        "موقعیت عمودی متن:",
-        reply_markup=ai_vpos_kb()
-    )
+    await cb.message.answer("موقعیت عمودی متن:", reply_markup=ai_vpos_kb())
     await cb.answer()
 
-# --- تابع اصلاح شده با راه حل نهایی ---
 @router.callback_query(F.data == "rate:yes")
+@check_membership_decorator
 async def on_rate_yes(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
     s = sess(cb.from_user.id)
     sticker_bytes = s.get("last_sticker")
     pack_short_name = s.get("current_pack_short_name")
     pack_title = s.get("current_pack_title")
-
     if not sticker_bytes or not pack_short_name:
-        print(f"DEBUG: Missing data. Sticker bytes: {bool(sticker_bytes)}, Pack short name: {bool(pack_short_name)}")
         await cb.message.answer("خطایی در پیدا کردن پک یا استیکر رخ داد. لطفا دوباره تلاش کنید.", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
         await cb.answer()
         return
-
-    # --- شروع کدهای اشکال‌زدایی و راه حل ---
-    print(f"DEBUG: Attempting to add sticker to pack '{pack_short_name}' for user {cb.from_user.id}")
-    print(f"DEBUG: Sticker size: {len(sticker_bytes)} bytes")
-    
-    # ذخیره فایل استیکر روی کامپیوتر برای بررسی دستی (اختیاری)
-    try:
-        with open(f"debug_sticker_{cb.from_user.id}.webp", "wb") as f:
-            f.write(sticker_bytes)
-        print(f"DEBUG: Saved sticker to debug_sticker_{cb.from_user.id}.webp for manual inspection.")
-    except Exception as e:
-        print(f"DEBUG: Could not save debug file: {e}")
-
-    if len(sticker_bytes) > 64 * 1024: # 64 KB limit for static stickers
-        print("DEBUG: Sticker is too large!")
+    if len(sticker_bytes) > 64 * 1024:
         await cb.message.answer("فایل استیکر خیلی بزرگ است. لطفا با متن کوتاه‌تر یا ساده‌تر دوباره تلاش کنید.", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
         await cb.answer()
         return
-    
-    # --- راه حل اصلی: اضافه کردن تاخیر و تغییر ایموجی ---
     await cb.message.answer("در حال افزودن استیکر به پک، لطفا چند لحظه صبر کنید...")
-    await asyncio.sleep(1.5)  # تاخیر 1.5 ثانیه‌ای برای جلوگیری از محدودیت سرعت تلگرام
-    # --- پایان راه حل ---
-
+    await asyncio.sleep(1.5)
     try:
         sticker_to_add = InputSticker(
             sticker=BufferedInputFile(sticker_bytes, filename="sticker.webp"),
-            emoji_list=["😂"]  # تغییر ایموجی به یک گزینه رایج‌تر
+            emoji_list=["😂"]
         )
-        response = await cb.bot.add_sticker_to_set(
-            user_id=cb.from_user.id,
-            name=pack_short_name,
-            sticker=sticker_to_add
+        await cb.bot.add_sticker_to_set(
+            user_id=cb.from_user.id, name=pack_short_name, sticker=sticker_to_add
         )
-        print(f"DEBUG: API response from add_sticker_to_set: {response}")
-        
         pack_link = f"https://t.me/addstickers/{pack_short_name}"
         await cb.message.answer(f"استیکر با موفقیت به پک «{pack_title}» اضافه شد.\n\n{pack_link}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
-        
     except TelegramBadRequest as e:
-        print(f"DEBUG: TelegramBadRequest on add_sticker_to_set: {e.message}")
         await cb.message.answer(f"خطا در افزودن استیکر به پک: {e.message}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
     except Exception as e:
-        print(f"DEBUG: Unexpected error on add_sticker_to_set: {e}")
         traceback.print_exc()
         await cb.message.answer(f"خطای غیرمنتظره‌ای رخ داد. لطفا به ادمین اطلاع دهید.\nخطا: {str(e)}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
-
     await cb.answer()
 
 @router.callback_query(F.data == "rate:no")
+@check_membership_decorator
 async def on_rate_no(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
     sess(cb.from_user.id)["await_feedback"] = True
     await cb.message.answer("چه چیزی رو دوست نداشتی؟")
     await cb.answer()
 
 @router.callback_query(F.data == "pack:skip")
+@check_membership_decorator
 async def on_pack_skip(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
-    await cb.message.answer(
-        "باشه، اضافه نکردم.",
-        reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID)
-    )
+    await cb.message.answer("باشه، اضافه نکردم.", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
     await cb.answer()
 
 @router.callback_query(F.data == "pack:start_creation")
+@check_membership_decorator
 async def on_pack_start_creation(cb: CallbackQuery, bot: Bot):
-    if not await check_channel_membership(bot, cb.from_user.id):
-        return
-        
     s = sess(cb.from_user.id)
     mode = s.get("pack_wizard", {}).get("mode", "simple")
     s["pack_wizard"] = {"step": "awaiting_name", "mode": mode}
@@ -1110,15 +899,11 @@ async def on_pack_start_creation(cb: CallbackQuery, bot: Bot):
     await cb.answer()
 
 @router.message()
+@check_membership_decorator
 async def on_message(message: Message, bot: Bot):
     uid = message.from_user.id
     s = sess(uid)
     is_admin = (uid == ADMIN_ID)
-    
-    # بررسی عضویت در کانال برای تمام پیام‌ها
-    if not await require_channel_membership(message, bot):
-        return
-
     if is_admin and s["admin"].get("action"):
         action = s["admin"]["action"]
         if action == "broadcast":
@@ -1132,7 +917,6 @@ async def on_message(message: Message, bot: Bot):
                     pass
             await message.answer(f"پیام همگانی با موفقیت به {success_count} کاربر ارسال شد.")
             return
-
         if action == "dm_get_user":
             if message.text and message.text.isdigit():
                 target_uid = int(message.text)
@@ -1142,7 +926,6 @@ async def on_message(message: Message, bot: Bot):
             else:
                 await message.answer("آیدی عددی نامعتبر است. لطفا دوباره تلاش کنید.")
             return
-
         if action == "dm_get_text":
             target_uid = s["admin"].get("target_uid")
             s["admin"]["action"] = None
@@ -1152,7 +935,6 @@ async def on_message(message: Message, bot: Bot):
             except Exception as e:
                 await message.answer(f"خطا در ارسال پیام: {e}")
             return
-
         if action == "quota_get_user":
             if message.text and message.text.isdigit():
                 target_uid = int(message.text)
@@ -1162,7 +944,6 @@ async def on_message(message: Message, bot: Bot):
             else:
                 await message.answer("آیدی عددی نامعتبر است. لطفا دوباره تلاش کنید.")
             return
-
         if action == "quota_get_value":
             target_uid = s["admin"].get("target_uid")
             s["admin"]["action"] = None
@@ -1176,35 +957,21 @@ async def on_message(message: Message, bot: Bot):
             else:
                 await message.answer("مقدار سهمیه نامعتبر است. لطفا یک عدد وارد کنید.")
             return
-
     if s.get("await_feedback") and message.text:
         s["await_feedback"] = False
-        await message.answer(
-            "ممنون از بازخوردت",
-            reply_markup=back_to_menu_kb(is_admin)
-        )
+        await message.answer("ممنون از بازخوردت", reply_markup=back_to_menu_kb(is_admin))
         return
-
     pack_wizard = s.get("pack_wizard", {})
     if pack_wizard.get("step") == "awaiting_name" and message.text:
         global BOT_USERNAME
-
         if not BOT_USERNAME:
             bot_info = await message.bot.get_me()
             BOT_USERNAME = bot_info.username
-
         pack_name = message.text.strip()
-
-        # --- شروع فیلتر کلمات نامناسب ---
         pack_name_lower = pack_name.lower()
         if any(word in pack_name_lower for word in FORBIDDEN_WORDS):
-            await message.answer(
-                "نام پک انتخاب شده نامناسب است. لطفاً از کلمات مناسب و بدون کاراکترهای خاص استفاده کنید.",
-                reply_markup=back_to_menu_kb(is_admin)
-            )
+            await message.answer("نام پک انتخاب شده نامناسب است. لطفاً از کلمات مناسب و بدون کاراکترهای خاص استفاده کنید.", reply_markup=back_to_menu_kb(is_admin))
             return
-        # --- پایان فیلتر ---
-
         if not is_valid_pack_name(pack_name):
             await message.answer(
                 "نام پک نامعتبر است. لطفا طبق قوانین یک نام جدید انتخاب کنید:\n\n"
@@ -1216,12 +983,8 @@ async def on_message(message: Message, bot: Bot):
                 reply_markup=back_to_menu_kb(is_admin)
             )
             return
-
         short_name = f"{pack_name}_by_{BOT_USERNAME}"
         mode = pack_wizard.get("mode")
-
-        print(f"DEBUG: pack_name='{pack_name}', BOT_USERNAME='{BOT_USERNAME}', short_name='{short_name}'")
-
         if len(short_name) > 64:
             await message.answer(
                 f"نام پک خیلی طولانی است. با اضافه شدن '_by_{BOT_USERNAME}' به {len(short_name)} کاراکتر می‌رسد.\n"
@@ -1229,15 +992,12 @@ async def on_message(message: Message, bot: Bot):
                 reply_markup=back_to_menu_kb(is_admin)
             )
             return
-
         try:
             pack_exists = await check_pack_exists(message.bot, short_name)
-
             if pack_exists:
                 s["current_pack_short_name"] = short_name
                 s["current_pack_title"] = pack_name
                 s["pack_wizard"] = {}
-                # افزودن پک به لیست پک‌های کاربر
                 add_user_pack(uid, pack_name, short_name)
                 await message.answer(f"استیکرها به پک موجود «{pack_name}» اضافه خواهند شد.")
             else:
@@ -1246,33 +1006,22 @@ async def on_message(message: Message, bot: Bot):
                     sticker=BufferedInputFile(dummy_img, filename="sticker.webp"),
                     emoji_list=["🎉"]
                 )
-                # --- شروع بخش اصلاح شده برای مدیریت خطای pydantic ---
                 try:
                     await message.bot.create_new_sticker_set(
-                        user_id=uid,
-                        name=short_name,
-                        title=pack_name,
-                        stickers=[sticker_to_add],
-                        sticker_type='regular',
-                        sticker_format='static'
+                        user_id=uid, name=short_name, title=pack_name,
+                        stickers=[sticker_to_add], sticker_type='regular', sticker_format='static'
                     )
                 except pydantic_core.ValidationError as e:
-                    # نادیده گرفتن خطای شناخته شده در نسخه‌های جدید aiogram
                     if "result.is_animated" in str(e) and "result.is_video" in str(e):
                         print(f"Ignoring known aiogram validation error for pack {short_name}")
                     else:
-                        # اگر خطای دیگری بود، آن را دوباره ارسال کن
                         raise e
-                # --- پایان بخش اصلاح شده ---
-                
                 s["current_pack_short_name"] = short_name
                 s["current_pack_title"] = pack_name
                 s["pack_wizard"] = {}
-                # افزودن پک به لیست پک‌های کاربر
                 add_user_pack(uid, pack_name, short_name)
                 pack_link = f"https://t.me/addstickers/{short_name}"
                 await message.answer(f"پک استیکر «{pack_name}» با موفقیت ساخته شد!\n\n{pack_link}\n\nحالا استیکر بعدی خود را بسازید.")
-
             if mode == "simple":
                 s["mode"] = "simple"
                 s["simple"] = {"text": None, "bg_mode": "transparent", "bg_photo_bytes": None}
@@ -1284,94 +1033,47 @@ async def on_message(message: Message, bot: Bot):
                     "color": "#FFFFFF", "size": "large", "bg_photo_bytes": None
                 }
                 await message.answer("نوع استیکر پیشرفته را انتخاب کنید:", reply_markup=ai_type_kb())
-
         except TelegramBadRequest as e:
-            error_msg = e.message.lower()
-            if "invalid sticker set name" in error_msg or "bad request" in error_msg:
-                await message.answer(
-                    f"نام پک نامعتبر است. خطا: {e.message}\n\n"
-                    "لطفا یک نام دیگر انتخاب کنید که:\n"
-                    "• فقط شامل حروف انگلیسی کوچک، عدد و زیرخط باشد\n"
-                    "• با حرف شروع شود\n"
-                    "• کوتاه‌تر باشد",
-                    reply_markup=back_to_menu_kb(is_admin)
-                )
-            else:
-                await message.answer(f"خطا در ساخت پک: {e.message}", reply_markup=back_to_menu_kb(is_admin))
+            await message.answer(f"خطا در ساخت پک: {e.message}", reply_markup=back_to_menu_kb(is_admin))
         except Exception as e:
-            await message.answer(f"خطای غیرمنتظره: {str(e)}", reply_markup=back_to_menu_kb(is_admin))
+            traceback.print_exc()
+            await message.answer(f"خطای غیرمنتظره‌ای رخ داد: {str(e)}", reply_markup=back_to_menu_kb(is_admin))
         return
-
-    if message.photo:
-        if s.get("mode") == "simple" and s["simple"].get("awaiting_bg_photo"):
-            file = await message.bot.download(message.photo[-1].file_id)
-            s["simple"]["bg_photo_bytes"] = file.read()
-            s["simple"]["awaiting_bg_photo"] = False
-            if s["simple"].get("text"):
-                img = render_image(
-                    text=s["simple"]["text"],
-                    v_pos="center",
-                    h_pos="center",
-                    font_key="Default",
-                    color_hex="#FFFFFF",
-                    size_key="medium",
-                    bg_photo=s["simple"]["bg_photo_bytes"],
-                    as_webp=False
-                )
-                await message.answer_photo(BufferedInputFile(img, "preview.png"), caption="پیش‌نمایش آماده است", reply_markup=after_preview_kb("simple"))
-            else:
-                await message.answer("عکس دریافت شد. حالا متن را بفرستید:")
-        elif s.get("mode") == "ai" and s["ai"].get("awaiting_bg_photo"):
-            file = await message.bot.download(message.photo[-1].file_id)
-            s["ai"]["bg_photo_bytes"] = file.read()
+    if s["mode"] == "simple":
+        s["simple"]["text"] = message.text
+        img = render_image(
+            text=message.text, v_pos="center", h_pos="center", font_key="Default",
+            color_hex="#FFFFFF", size_key="medium", bg_mode=s["simple"].get("bg_mode", "transparent"),
+            bg_photo=s["simple"].get("bg_photo_bytes"), as_webp=False
+        )
+        file_obj = BufferedInputFile(img, filename="preview.png")
+        await message.answer_photo(
+            file_obj, caption="پیش‌نمایش آماده است", reply_markup=after_preview_kb("simple")
+        )
+        return
+    if s["mode"] == "ai":
+        if s["ai"].get("awaiting_bg_photo") and message.photo:
+            photo = message.photo[-1]
+            file_info = await bot.get_file(photo.file_id)
+            downloaded_file = await bot.download_file(file_info.file_path)
+            s["ai"]["bg_photo_bytes"] = downloaded_file
             s["ai"]["awaiting_bg_photo"] = False
-            await message.answer("عکس دریافت شد. حالا متن را بفرستید:")
-        return
-
-    if message.video and s.get("mode") == "ai" and s["ai"].get("sticker_type") == "video":
-        await message.answer("در حال پردازش ویدیو...")
-        file = await message.bot.download(message.video.file_id)
-        webm_bytes = await process_video_to_webm(file.read())
-
-        if webm_bytes:
-            sess(uid)["last_sticker"] = webm_bytes
-            await message.answer_sticker(BufferedInputFile(webm_bytes, "sticker.webm"))
-            await message.answer("از این استیکر راضی بودی؟", reply_markup=rate_kb())
-        else:
-            await message.answer("پردازش ویدیو با خطا مواجه شد.", reply_markup=back_to_menu_kb(is_admin))
-        return
-
-    mode = s.get("mode", "menu")
-
-    if mode == "simple":
-        if message.text:
-            s["simple"]["text"] = message.text.strip()
-            await message.answer("پس‌زمینه رو انتخاب کن:", reply_markup=simple_bg_kb())
-    elif mode == "ai":
-        if message.text and s["ai"].get("sticker_type") == "image":
-            u = user(uid)
-            left = _quota_left(u, is_admin)
-            if left <= 0 and not is_admin:
-                await message.answer("سهمیه تمام شد!", reply_markup=back_to_menu_kb(is_admin))
-                return
-            s["ai"]["text"] = message.text.strip()
+            await message.answer("عکس به عنوان پس‌زمینه تنظیم شد. حالا موقعیت متن را انتخاب کنید:", reply_markup=ai_vpos_kb())
+            return
+        if s["ai"].get("sticker_type") == "image":
+            s["ai"]["text"] = message.text
             await message.answer("موقعیت عمودی متن:", reply_markup=ai_vpos_kb())
-    else:
-        is_admin = (uid == ADMIN_ID)
-        await message.answer("از منوی زیر انتخاب کن:", reply_markup=main_menu_kb(is_admin))
-
-async def main():
-    global BOT_USERNAME
-
-    dp = Dispatcher()
-    dp.include_router(router)
-    bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-
-    bot_info = await bot.get_me()
-    BOT_USERNAME = bot_info.username
-    print(f"ربات با نام کاربری @{BOT_USERNAME} شروع به کار کرد")
-
-    await dp.start_polling(bot)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+            return
+        if s["ai"].get("sticker_type") == "video" and message.video:
+            await message.answer("در حال پردازش ویدیو...")
+            video = message.video
+            file_info = await bot.get_file(video.file_id)
+            downloaded_file = await bot.download_file(file_info.file_path)
+            webm_bytes = await process_video_to_webm(downloaded_file)
+            if webm_bytes:
+                s["last_video_sticker"] = webm_bytes
+                await message.answer_sticker(BufferedInputFile(webm_bytes, filename="sticker.webm"))
+                await message.answer("از این استیکر راضی بودی؟", reply_markup=rate_kb())
+            else:
+                await message.answer("پردازش ویدیو با خطا مواجه شد. لطفا دوباره تلاش کنید.")
+            return
