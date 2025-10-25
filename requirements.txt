@@ -1,5 +1,5 @@
 # --- فریم‌ورک اصلی ربات ---
-pyTelegramBotAPI==4.14.0
+aiogram==3.4.1
 
 # --- وب سرور ---
 fastapi
