@@ -1,11 +1,22 @@
-# --- api/index.py (نسخه تست اول) ---
 import os
 import sys
 import logging
 from fastapi import Request, FastAPI, Response, status
+from aiogram import Bot, Dispatcher, types
+from aiogram.enums import ParseMode
+from aiogram.types import Update
 
 # --- تنظیمات لاگ ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
+
+# --- تنظیمات ---
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    logging.error("BOT_TOKEN not found in environment variables!")
+    raise RuntimeError("BOT_TOKEN را در تنظیمات Vercel قرار دهید.")
+
+# --- اضافه کردن مسیر ریشه پروژه ---
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # --- اپلیکیشن FastAPI ---
 app = FastAPI()
@@ -13,25 +24,29 @@ app = FastAPI()
 @app.post("/webhook")
 async def bot_webhook(request: Request):
     """
-    این تابع فقط برای تست است. هیچ منطق رباتی در آن وجود ندارد.
+    این تابع برای هر درخواست، یک نمونه جدید از ربات و دیسپچر می‌سازد
+    تا از مشکلات حالت (state) در محیط Serverless جلوگیری کند.
     """
     try:
-        body = await request.body()
-        print("SUCCESS: Webhook endpoint received a POST request!")
-        print(f"Raw body: {body}")
+        data = await request.json()
+        
+        # ساخت نمونه جدید از بات و دیسپچر برای این درخواست
+        bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.HTML)
+        dp = Dispatcher()
+
+        # ایمپورت و ثبت هندلرها
+        import handlers
+        handlers.register_handlers(dp)
+
+        # ساخت آبجکت آپدیت و پردازش آن
+        update = Update.model_validate(data, context={"bot": bot})
+        await dp.feed_update(update=update, bot=bot)
+        
         return Response(content="OK", status_code=status.HTTP_200_OK)
     except Exception as e:
-        print(f"ERROR: Exception in simple webhook: {e}")
+        logging.error(f"Error processing update: {e}", exc_info=True)
         return Response(content="Internal Server Error", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @app.get("/")
 async def read_root():
-    return {"status": "Simple FastAPI app for testing webhook."}
-
-@app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
-async def catch_all(request: Request, path: str):
-    logging.warning(f"Received request for unknown path: {request.method} /{path}")
-    return Response(
-        content=f"This endpoint is not available. Please use /webhook for Telegram bot requests.",
-        status_code=status.HTTP_404_NOT_FOUND
-    )
+    return {"status": "Bot is running on Vercel with aiogram (stateless)"}
