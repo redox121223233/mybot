@@ -29,6 +29,15 @@ if not BOT_TOKEN:
 # --- اضافه کردن مسیر ریشه پروژه ---
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+# --- ایمپورت هندلرها ---
+try:
+    import handlers
+    print("INFO: handlers module imported successfully")
+except ImportError as e:
+    print(f"ERROR: Failed to import handlers module: {e}")
+    # در صورت خطا، از یک هندلر ساده استفاده می‌کنیم
+    handlers = None
+
 # --- اپلیکیشن FastAPI ---
 app = FastAPI()
 
@@ -46,9 +55,11 @@ async def bot_webhook(request: Request):
         # ساخت نمونه جدید از دیسپچر و پاس دادن نمونه بات به آن
         dp = Dispatcher()
         
-        # ایمپورت و ثبت هندلرها
-        import handlers
-        handlers.register_handlers(dp)
+        # ثبت هندلرها
+        if handlers:
+            handlers.register_handlers(dp)
+        else:
+            print("WARNING: handlers module not available, using default behavior")
 
         # ساخت آبجکت آپدیت و پردازش آن
         update = Update.model_validate(data, context={"bot": bot})
