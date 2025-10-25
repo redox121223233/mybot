@@ -1,14 +1,5 @@
-# --- فریم‌ورک اصلی ربات ---
-aiogram>=3.4.1,<4.0.0
-
-# --- وب سرور ---
-fastapi
-uvicorn[standard]
-
-# --- پردازش تصویر و متن ---
-Pillow
-arabic-reshaper
-python-bidi
-
-# --- سایر ابزارها ---
-python-multipart
+Flask==2.3.3
+python-telegram-bot==20.6
+requests==2.31.0
+beautifulsoup4==4.12.2
+Pillow==10.0.1
