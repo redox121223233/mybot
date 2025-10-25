@@ -26,9 +26,10 @@ async def bot_webhook(request: Request):
         data = await request.json()
         print(f"Step 1: JSON data received successfully.")
         
-        # تست وارد کردن ماژول‌های aiogram
+        # --- این بخش کلیدی است: وارد کردن از مسیرهای مشخص ---
         try:
-            from aiogram import Bot, Dispatcher, types, ParseMode
+            from aiogram import Bot, Dispatcher, types
+            from aiogram.enums import ParseMode  # وارد کردن از مسیر مستقیم
             from aiogram.types import Update
             print("Step 2: aiogram modules imported successfully.")
         except ImportError as e:
@@ -64,7 +65,7 @@ async def bot_webhook(request: Request):
         return Response(content="OK", status_code=status.HTTP_200_OK)
     except Exception as e:
         print(f"ERROR: Unhandled exception in webhook: {e}")
-        traceback.print_exc() # این خط کلیدی است. تمام جزئیات خطا را چاپ می‌کند.
+        traceback.print_exc()
         return Response(content="Internal Server Error", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @app.get("/")
