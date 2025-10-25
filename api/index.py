@@ -38,47 +38,34 @@ app = FastAPI()
 @app.post("/webhook")
 async def bot_webhook(request: Request):
     """
-    این نقطه پایانی، درخواست‌های وب‌هوک تلگرام را دریافت کرده و به صورت غیرهمزمان
-    به ربات تحویل می‌دهد تا از تداخل با حلقه رویداد FastAPI جلوگیری شود.
+    این نقطه پایانی، درخواست‌های وب‌هوک تلگرام را دریافت کرده و با استفاده از
+    asyncio.to_thread به صورت غیرهمزمان به ربات تحویل می‌دهد.
     """
     try:
         data = await request.json()
         update = Update.de_json(data)
         
-        # اجرای کد همزمان ربات در یک زمینه جداگانه
-        loop = asyncio.get_event_loop()
-        await loop.run_in_executor(None, bot.process_new_updates, [update])
+        print(f"DEBUG: Received update: {update}") # لاگ برای دیدن آپدیت دریافتی
         
+        # --- این بخش کلیدی و جدید است ---
+        # استفاده از asyncio.to_thread برای اجرای کد همزمان
+        await asyncio.to_thread(bot.process_new_updates, [update])
+        # -------------------------
+        
+        print("DEBUG: bot.process_new_updates finished.")
         return Response(content="OK", status_code=status.HTTP_200_OK)
     except Exception as e:
-        logging.error(f"ERROR: Exception in webhook handler: {e}", exc_info=True)
+        print(f"ERROR: Exception in webhook handler: {e}")
+        import traceback
+        traceback.print_exc() # چاپ کامل خطا برای دیباگ
         return Response(content="Internal Server Error", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @app.get("/")
 async def read_root():
-    """
-    این مسیر برای بررسی سلامت ربات است و از خطای 404 جلوگیری می‌کند.
-    """
-    return {"status": "Bot is running with async/sync separation and no 404s"}
-
-# --- این بخش جدید برای جلوگیری از هرگونه خطای 404 است ---
-@app.middleware("http")
-async def add_no_cache_header(request: Request, call_next):
-    """
-    این میدل‌ور هدرهای Cache-Control را اضافه می‌کند تا از مشکلات احتمالی کش جلوگیری شود.
-    """
-    response = await call_next(request)
-    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
-    response.headers["Pragma"] = "no-cache"
-    response.headers["Expires"] = "0"
-    return response
+    return {"status": "Bot is running with asyncio.to_thread"}
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
 async def catch_all(request: Request, path: str):
-    """
-    این مسیر تمام درخواست‌هایی که به مسیرهای دیگر (مانند /webhook) تعلق ندارند
-    را مدیریت می‌کند و از خطای 404 جلوگیری می‌کند.
-    """
     logging.warning(f"Received request for unknown path: {request.method} /{path}")
     return Response(
         content=f"This endpoint is not available. Please use /webhook for Telegram bot requests.",
