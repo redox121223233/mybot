@@ -2,6 +2,7 @@ import os
 import sys
 import logging
 import asyncio
+import json # برای لاگ گرفتن از بدنه خام
 from fastapi import Request, FastAPI, Response, status
 import telebot
 from telebot.types import Update
@@ -39,30 +40,49 @@ app = FastAPI()
 async def bot_webhook(request: Request):
     """
     این نقطه پایانی، درخواست‌های وب‌هوک تلگرام را دریافت کرده و با استفاده از
-    asyncio.to_thread به صورت غیرهمزمان به ربات تحویل می‌دهد.
+    لاگ‌گیری دقیق، مشکل را پیدا می‌کند.
     """
     try:
-        data = await request.json()
-        update = Update.de_json(data)
+        # --- لاگ گرفتن از بدنه خام درخواست ---
+        body = await request.body()
+        print(f"DEBUG: Raw request body received: {body}")
         
-        print(f"DEBUG: Received update: {update}") # لاگ برای دیدن آپدیت دریافتی
+        # اگر بدنه خالی بود، این یک مشکل است
+        if not body:
+            print("ERROR: Request body is empty!")
+            return Response(content="Bad Request: Empty body", status_code=status.HTTP_400_BAD_REQUEST)
         
-        # --- این بخش کلیدی و جدید است ---
-        # استفاده از asyncio.to_thread برای اجرای کد همزمان
+        # تلاش برای تبدیل بدنه به JSON
+        try:
+            data = await request.json()
+            print(f"DEBUG: Parsed JSON data: {data}")
+        except Exception as e:
+            print(f"ERROR: Failed to parse JSON: {e}")
+            return Response(content="Bad Request: Invalid JSON", status_code=status.HTTP_400_BAD_REQUEST)
+        
+        # تلاش برای ساخت آبجکت آپدیت
+        try:
+            update = Update.de_json(data)
+            print(f"DEBUG: Parsed Update object: {update}")
+        except Exception as e:
+            print(f"ERROR: Failed to create Update object: {e}")
+            return Response(content="Bad Request: Invalid Update object", status_code=status.HTTP_400_BAD_REQUEST)
+        
+        # اگر همه چیز تا اینجا درست بود، ربات را اجرا کن
+        print("DEBUG: All checks passed. Processing update...")
         await asyncio.to_thread(bot.process_new_updates, [update])
-        # -------------------------
-        
         print("DEBUG: bot.process_new_updates finished.")
+        
         return Response(content="OK", status_code=status.HTTP_200_OK)
     except Exception as e:
-        print(f"ERROR: Exception in webhook handler: {e}")
+        print(f"ERROR: Unhandled exception in webhook handler: {e}")
         import traceback
-        traceback.print_exc() # چاپ کامل خطا برای دیباگ
+        traceback.print_exc()
         return Response(content="Internal Server Error", status_code=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 @app.get("/")
 async def read_root():
-    return {"status": "Bot is running with asyncio.to_thread"}
+    return {"status": "Bot is running with detailed logging"}
 
 @app.api_route("/{path:path}", methods=["GET", "POST", "PUT", "DELETE", "PATCH", "HEAD", "OPTIONS"])
 async def catch_all(request: Request, path: str):
