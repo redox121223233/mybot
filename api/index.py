@@ -3,19 +3,10 @@ import sys
 import logging
 import traceback
 from fastapi import Request, FastAPI, Response, status
-
-# --- وارد کردن تمام ماژول‌های مورد نیاز در سطح بالا ---
-try:
-    from aiogram import Bot, Dispatcher, types
-    from aiogram.client.default import DefaultBotProperties
-    from aiogram.enums import ParseMode
-    from aiogram.types import Update
-    print("INFO: All aiogram modules imported successfully at the top level.")
-except ImportError as e:
-    print(f"CRITICAL ERROR: Failed to import aiogram modules at top level: {e}")
-    traceback.print_exc()
-    # اگر وارد کردن در سطح بالا هم fail شود، دیگر نمی‌توانیم کاری کنیم
-    raise RuntimeError("Cannot import aiogram. Check requirements.txt")
+from aiogram import Bot, Dispatcher, types
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
+from aiogram.types import Update
 
 # --- تنظیمات لاگ ---
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -26,25 +17,14 @@ if not BOT_TOKEN:
     logging.error("BOT_TOKEN not found in environment variables!")
     raise RuntimeError("BOT_TOKEN را در تنظیمات Vercel قرار دهید.")
 
-# --- اضافه کردن مسیر ریشه پروژه ---
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-
-# --- ایمپورت هندلرها ---
-try:
-    import handlers
-    print("INFO: handlers module imported successfully")
-except ImportError as e:
-    print(f"ERROR: Failed to import handlers module: {e}")
-    # در صورت خطا، از یک هندلر ساده استفاده می‌کنیم
-    handlers = None
-
 # --- اپلیکیشن FastAPI ---
 app = FastAPI()
 
 @app.post("/webhook")
 async def bot_webhook(request: Request):
     """
-    این تابع برای هر درخواست، یک نمونه جدید از ربات و دیسپچر می‌سازد.
+    این تابع برای هر درخواست، یک نمونه جدید از ربات و دیسپچر می‌سازد
+    تا از مشکلات حالت (state) در محیط Serverless جلوگیری کند.
     """
     try:
         data = await request.json()
@@ -53,13 +33,11 @@ async def bot_webhook(request: Request):
         bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
         
         # ساخت نمونه جدید از دیسپچر و پاس دادن نمونه بات به آن
-        dp = Dispatcher()
-        
-        # ثبت هندلرها
-        if handlers:
-            handlers.register_handlers(dp)
-        else:
-            print("WARNING: handlers module not available, using default behavior")
+        dp = Dispatcher(bot=bot)
+
+        # ایمپورت و ثبت هندلرها
+        import handlers
+        handlers.register_handlers(dp)
 
         # ساخت آبجکت آپدیت و پردازش آن
         update = Update.model_validate(data, context={"bot": bot})
@@ -72,4 +50,4 @@ async def bot_webhook(request: Request):
 
 @app.get("/")
 async def read_root():
-    return {"status": "Bot is running with top-level imports"}
+    return {"status": "Bot is running on Vercel with aiogram (stateless, v3.7+)"}
