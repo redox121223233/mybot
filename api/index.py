@@ -44,7 +44,7 @@ async def bot_webhook(request: Request):
         bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
         
         # ساخت نمونه جدید از دیسپچر و پاس دادن نمونه بات به آن
-        dp = Dispatcher(bot=bot)
+        dp = Dispatcher()
         
         # ایمپورت و ثبت هندلرها
         import handlers

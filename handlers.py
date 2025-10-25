@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import arabic_reshaper
 from bidi.algorithm import get_display
-from aiogram import F, Router, types
+from aiogram import F, Router, types, Dispatcher
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.filters import CommandStart
 from aiogram.exceptions import TelegramBadRequest
