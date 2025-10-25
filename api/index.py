@@ -30,9 +30,11 @@ async def bot_webhook(request: Request):
     try:
         data = await request.json()
         
-        # ساخت نمونه جدید از بات و دیسپچر برای این درخواست
+        # ساخت نمونه جدید از بات
         bot = Bot(token=BOT_TOKEN, parse_mode=ParseMode.HTML)
-        dp = Dispatcher()
+        
+        # ساخت نمونه جدید از دیسپچر و پاس دادن نمونه بات به آن
+        dp = Dispatcher(bot=bot)
 
         # ایمپورت و ثبت هندلرها
         import handlers
