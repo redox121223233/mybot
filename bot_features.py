@@ -6,7 +6,7 @@ import os
 from datetime import datetime
 import asyncio
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
-from telegram.ext import CallbackContext
+from telegram.ext import ContextTypes
 import tempfile
 import shutil
 from PIL import Image, ImageDraw, ImageFont
@@ -36,24 +36,24 @@ class TelegramBotFeatures:
             "jazz": ["JazzArtist1 - JazzSong1", "JazzArtist2 - JazzSong2", "JazzArtist3 - JazzSong3"],
         }
     
-    async def start_command(self, update: Update, context: CallbackContext):
+    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         welcome_message = """
 🎉 به ربات من خوش آمدید! 🎉
-
+        
 من یک ربات چندمنظوره با قابلیت‌های زیر هستم:
-
+        
 📱 **قابلیت‌های اصلی:**
 • 🔍 جستجوی پیشرفته اینترنت
 • 🎵 دانلود و پخش موسیقی
 • 🎬 جستجوی فیلم و سریال
-• 💬 چت با هوش مصنوعی
-• 🌦️ اطلاعات آب و هوا
+• 🤖 چت با هوش مصنوعی
+• 🌤️ اطلاعات آب و هوا
 • 📊 قیمت ارزهای دیجیتال
 • 🎮 بازی و سرگرمی
 • 🛍️ جستجوی کالا و قیمت‌ها
 • 📰 اخبار روز
 • 🎨 ساخت استیکر و تصاویر
-
+        
 برای شروع، دستور /help را وارد کنید یا یکی از گزینه‌های زیر را انتخاب کنید:
         """
         
@@ -62,7 +62,7 @@ class TelegramBotFeatures:
              InlineKeyboardButton("🎵 موسیقی", callback_data="music")],
             [InlineKeyboardButton("🎬 فیلم", callback_data="movie"),
              InlineKeyboardButton("🤖 چت با AI", callback_data="chat")],
-            [InlineKeyboardButton("🌦️ آب و هوا", callback_data="weather"),
+            [InlineKeyboardButton("🌤️ آب و هوا", callback_data="weather"),
              InlineKeyboardButton("💰 قیمت ارز", callback_data="crypto")],
             [InlineKeyboardButton("🎮 بازی", callback_data="game"),
              InlineKeyboardButton("🛍️ خرید", callback_data="shopping")],
@@ -71,7 +71,7 @@ class TelegramBotFeatures:
         reply_markup = InlineKeyboardMarkup(keyboard)
         await update.message.reply_text(welcome_message, reply_markup=reply_markup)
     
-    async def help_command(self, update: Update, context: CallbackContext):
+    async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         help_text = """
 📖 **راهنمای کامل ربات:**
 
@@ -91,7 +91,7 @@ class TelegramBotFeatures:
 • /ai <سوال> - پرسش از AI
 • /chat <متن> - چت با هوش مصنوعی
 
-🌦️ **آب و هوا:**
+🌤️ **آب و هوا:**
 • /weather <شهر> - آب و هوای شهر
 
 💰 **ارز دیجیتال:**
@@ -105,7 +105,7 @@ class TelegramBotFeatures:
 
 🛍️ **خرید:**
 • /price <کالا> - قیمت کالا
-• /coupon - کوپن‌های تخفیف
+• /coupon - کپن‌های تخفیف
 
 🎨 **سازندگان:**
 • /sticker <متن> - ساخت استیکر
@@ -115,10 +115,24 @@ class TelegramBotFeatures:
 • /news - اخبار روز
 • /technews - اخبار تکنولوژی
 
-📊 **سایر:**
+📊 **حساب کاربری:**
+• /profile - مشاهده پروفایل
+• /stats - آمار استفاده شما
+• /settings - تنظیمات شخصی
+
+🔧 **مدیریت:**
+• /admin - پنل مدیریت ادمین (فقط ادمین)
+
+📋 **سایر:**
 • /time - زمان فعلی
 • /calc <محاسبه> - ماشین حساب
 • /translate <متن> - ترجمه
+
+🆕 **قابلیت‌های جدید:**
+• سیستم امنیتی پیشرفته
+• مدیریت کاربران و آمار
+• تنظیمات شخصی‌سازی
+• پروفایل کاربری با امتیاز
 
 برای هر دستور می‌توانید از منوی هم استفاده کنید!
         """
@@ -259,7 +273,7 @@ class TelegramBotFeatures:
             ]
             
             riddle = random.choice(riddles)
-            return f"🧩 معما: {riddle['riddle']}\n\n💭 برای دیدن جواب، روی دکمه زیر کلیک کنید:"
+            return f"🧩 معما: {riddle['riddle']}\n\n🧠 برای دیدن جواب، روی دکمه زیر کلیک کنید:"
     
     async def search_products(self, product_name: str):
         try:
@@ -301,7 +315,7 @@ class TelegramBotFeatures:
                 filtered_coupons = self.coupons
             
             if not filtered_coupons:
-                return "❌ کوپنی برای این دسته یافت نشد!"
+                return "❌ کپنی برای این دسته یافت نشد!"
             
             results = []
             for coupon in filtered_coupons:
@@ -309,7 +323,7 @@ class TelegramBotFeatures:
             
             return "\n".join(results)
         except Exception as e:
-            return f"خطا در دریافت کوپن‌ها: {str(e)}"
+            return f"خطا در دریافت کپن‌ها: {str(e)}"
     
     async def translate_text(self, text: str, target_lang: str = "en"):
         try:
@@ -345,19 +359,19 @@ class TelegramBotFeatures:
             # شبیه‌سازی دریافت اخبار
             news = {
                 "general": [
-                    "📰 خبر مهم: اتفاق جدید در جهان رخ داده است",
+                    "📰 خبر مهم: اتفاق جدیدی در جهان رخ داده است",
                     "📰 تکنولوژی: شرکت بزرگ فناوری محصول جدیدی را عرضه کرد",
                     "📰 ورزشی: تیم مهمی در مسابقات پیروز شد",
                 ],
                 "tech": [
                     "💻 هوش مصنوعی: پیشرفت‌های جدید در زمینه AI",
                     "📱 موبایل: گوشی جدید با قابلیت‌های فوق‌العاده",
-                    "🌐 اینترنت: شبکه‌های اجتماعی با تغییرات جدید",
+                    "🌐 اینترنت: شبکه‌های اجماعی با تغییرات جدید",
                 ],
                 "sports": [
                     "⚽ فوتبال: نتایج مهم هفته گذشته",
                     "🏀 بسکتبال: بازیکن ستاره رکورد جدید زد",
-                    "🎾 تنیس: قهرمانی جدید مشخص شد",
+                    "🎾 تنیس: قهرمانان جدید مشخص شد",
                 ],
             }
             
