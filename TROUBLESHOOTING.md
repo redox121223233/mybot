@@ -10,7 +10,15 @@
 from aiogram import F, Router, types, Dispatcher
 ```
 
-### ۲. خطاهای 404 در Vercel
+### ۲. خطای "name 'Bot' is not defined"
+**علت:** عدم وارد کردن (import) کلاس Bot در فایل handlers.py
+**راه‌حل:** اضافه کردن `Bot` به import‌های aiogram در handlers.py
+
+```python
+from aiogram import F, Router, types, Dispatcher, Bot
+```
+
+### ۳. خطاهای 404 در Vercel
 **علت:** تنظیمات نامناسب مسیردهی (routing) در vercel.json
 **راه‌حل:** به‌روزرسانی vercel.json با مسیردهی صحیح:
 
@@ -40,7 +48,7 @@ from aiogram import F, Router, types, Dispatcher
 }
 ```
 
-### ۳. خطاهای مربوط به BOT_TOKEN
+### ۴. خطاهای مربوط به BOT_TOKEN
 **علت:** عدم تنظیم متغیر محیطی BOT_TOKEN در Vercel
 **راه‌حل:**
 1. وارد حساب Vercel خود شوید
@@ -48,7 +56,7 @@ from aiogram import F, Router, types, Dispatcher
 3. به تب Settings → Environment Variables بروید
 4. متغیر BOT_TOKEN را با توکن ربات خود اضافه کنید
 
-### ۴. مشکلات مربوط به Webhook
+### ۵. مشکلات مربوط به Webhook
 **علت:** عدم تنظیم صحیح webhook در تلگرام
 **راه‌حل:**
 1. پس از استقرار در Vercel، URL webhook را دریافت کنید
