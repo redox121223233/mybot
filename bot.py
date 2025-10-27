@@ -9,63 +9,41 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFi
 from telegram.ext import CallbackContext
 import tempfile
 import shutil
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageColor
 import io
 
 class TelegramBotFeatures:
     def __init__(self):
         self.user_data = {}
-        self.coupons = self.load_coupons()
-        self.music_data = self.load_music_data()
         self.api_key = os.getenv('API_KEY', 'your_default_api_key')
-    
-    def load_coupons(self):
-        return [
-            {"code": "SAVE10", "discount": "10%", "category": "electronics"},
-            {"code": "FOOD20", "discount": "20%", "category": "food"},
-            {"code": "STYLE15", "discount": "15%", "category": "fashion"},
-            {"code": "TECH25", "discount": "25%", "category": "technology"},
-            {"code": "HOME30", "discount": "30%", "category": "home"},
-        ]
-    
-    def load_music_data(self):
-        return {
-            "pop": ["Artist1 - Song1", "Artist2 - Song2", "Artist3 - Song3"],
-            "rock": ["Band1 - Track1", "Band2 - Track2", "Band3 - Track3"],
-            "classical": ["Composer1 - Piece1", "Composer2 - Piece2", "Composer3 - Piece3"],
-            "jazz": ["JazzArtist1 - JazzSong1", "JazzArtist2 - JazzSong2", "JazzArtist3 - JazzSong3"],
-        }
-    
+        
     async def start_command(self, update: Update, context: CallbackContext):
         welcome_message = """
-🎉 به ربات من خوش آمدید! 🎉
+🎮 **به ربات بازی و استیکر ساز خوش آمدید!** 🎨
 
-من یک ربات چندمنظوره با قابلیت‌های زیر هستم:
+من یک ربات ساده با قابلیت‌های زیر هستم:
 
-📱 **قابلیت‌های اصلی:**
-• 🔍 جستجوی پیشرفته اینترنت
-• 🎵 دانلود و پخش موسیقی
-• 🎬 جستجوی فیلم و سریال
-• 💬 چت با هوش مصنوعی
-• 🌦️ اطلاعات آب و هوا
-• 📊 قیمت ارزهای دیجیتال
-• 🎮 بازی و سرگرمی
-• 🛍️ جستجوی کالا و قیمت‌ها
-• 📰 اخبار روز
-• 🎨 ساخت استیکر و تصاویر
+🎮 **بازی‌ها:**
+• 🎯 حدس عدد
+• ✂️ سنگ کاغذ قیچی
+• 📝 بازی کلمات
+• 🧠 بازی حافظه
 
-برای شروع، دستور /help را وارد کنید یا یکی از گزینه‌های زیر را انتخاب کنید:
+🎨 **استیکر ساز:**
+• 📸 ساخت استیکر متنی
+• 🎨 انتخاب رنگ و فونت
+• ⚡ ساخت سریع استیکر
+
+برای شروع، یکی از گزینه‌های زیر را انتخاب کنید:
         """
         
         keyboard = [
-            [InlineKeyboardButton("🔍 جستجو", callback_data="search"),
-             InlineKeyboardButton("🎵 موسیقی", callback_data="music")],
-            [InlineKeyboardButton("🎬 فیلم", callback_data="movie"),
-             InlineKeyboardButton("🤖 چت با AI", callback_data="chat")],
-            [InlineKeyboardButton("🌦️ آب و هوا", callback_data="weather"),
-             InlineKeyboardButton("💰 قیمت ارز", callback_data="crypto")],
-            [InlineKeyboardButton("🎮 بازی", callback_data="game"),
-             InlineKeyboardButton("🛍️ خرید", callback_data="shopping")],
+            [InlineKeyboardButton("🎯 حدس عدد", callback_data="guess_number"),
+             InlineKeyboardButton("✂️ سنگ کاغذ قیچی", callback_data="rock_paper_scissors")],
+            [InlineKeyboardButton("📝 بازی کلمات", callback_data="word_game"),
+             InlineKeyboardButton("🧠 بازی حافظه", callback_data="memory_game")],
+            [InlineKeyboardButton("🎨 استیکر ساز", callback_data="sticker_creator"),
+             InlineKeyboardButton("🎲 بازی تصادفی", callback_data="random_game")],
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -75,150 +53,89 @@ class TelegramBotFeatures:
         help_text = """
 📖 **راهنمای کامل ربات:**
 
-🔍 **جستجوی اینترنت:**
-• /search <متن> - جستجوی گوگل
-• /image <متن> - جستجوی تصویر
+🎯 **حدس عدد:**
+• /guess - شروع بازی حدس عدد
 
-🎵 **موسیقی:**
-• /music <نام آهنگ> - جستجوی موسیقی
-• /download <لینک> - دانلود موسیقی
+✂️ **سنگ کاغذ قیچی:**
+• /rps - شروع بازی سنگ کاغذ قیچی
 
-🎬 **فیلم و سریال:**
-• /movie <نام فیلم> - جستجوی فیلم
-• /series <نام سریال> - جستجوی سریال
+📝 **بازی کلمات:**
+• /word - شروع بازی با کلمات
 
-🤖 **هوش مصنوعی:**
-• /ai <سوال> - پرسش از AI
-• /chat <متن> - چت با هوش مصنوعی
+🧠 **بازی حافظه:**
+• /memory - شروع بازی حافظه
 
-🌦️ **آب و هوا:**
-• /weather <شهر> - آب و هوای شهر
+🎨 **استیکر ساز:**
+• /sticker <متن> - ساخت استیکر متنی
+• /customsticker - ساخت استیکر سفارشی
 
-💰 **ارز دیجیتال:**
-• /crypto <نام ارز> - قیمت ارز دیجیتال
-• /btc - قیمت بیت‌کوین
-• /eth - قیمت اتریوم
-
-🎮 **بازی:**
-• /game - شروع بازی
-• /quiz - مسابقه
-
-🛍️ **خرید:**
-• /price <کالا> - قیمت کالا
-• /coupon - کوپن‌های تخفیف
-
-🎨 **سازندگان:**
-• /sticker <متن> - ساخت استیکر
-• /meme <متن> - ساخت میم
-
-📰 **اخبار:**
-• /news - اخبار روز
-• /technews - اخبار تکنولوژی
-
-📊 **سایر:**
-• /time - زمان فعلی
-• /calc <محاسبه> - ماشین حساب
-• /translate <متن> - ترجمه
+🎲 **بازی تصادفی:**
+• /random - بازی تصادفی
 
 برای هر دستور می‌توانید از منوی هم استفاده کنید!
         """
         await update.message.reply_text(help_text)
     
-    async def search_internet(self, query: str):
-        try:
-            url = f"https://duckduckgo.com/html/?q={query}"
-            headers = {'User-Agent': 'Mozilla/5.0'}
-            response = requests.get(url, headers=headers, timeout=10)
-            soup = BeautifulSoup(response.content, 'html.parser')
-            
-            results = []
-            for result in soup.find_all('div', class_='result')[:5]:
-                title = result.find('a', class_='result__a')
-                snippet = result.find('a', class_='result__snippet')
-                
-                if title:
-                    title_text = title.get_text(strip=True)
-                    link = title.get('href', '')
-                    snippet_text = snippet.get_text(strip=True) if snippet else "بدون توضیحات"
-                    results.append(f"🔗 {title_text}\n📝 {snippet_text}\n🌐 {link}\n")
-            
-            return "\n".join(results) if results else "نتیجه‌ای یافت نشد!"
-        except Exception as e:
-            return f"خطا در جستجو: {str(e)}"
-    
-    async def search_music(self, query: str):
-        try:
-            # شبیه‌سازی جستجوی موسیقی
-            results = [
-                f"🎵 {query} -Artist 1\n🔗 https://music.example.com/{query.replace(' ', '-')}-1",
-                f"🎵 {query} -Artist 2\n🔗 https://music.example.com/{query.replace(' ', '-')}-2",
-                f"🎵 {query} -Artist 3\n🔗 https://music.example.com/{query.replace(' ', '-')}-3",
-            ]
-            return "\n\n".join(results)
-        except Exception as e:
-            return f"خطا در جستجوی موسیقی: {str(e)}"
-    
-    async def get_weather(self, city: str):
-        try:
-            # شبیه‌سازی دریافت آب و هوا
-            weather_data = {
-                "tehran": {"temp": "28°C", "condition": "آفتابی", "humidity": "30%"},
-                "mashhad": {"temp": "25°C", "condition": "نیمه‌ابری", "humidity": "40%"},
-                "isfahan": {"temp": "26°C", "condition": "آفتابی", "humidity": "35%"},
-                "shiraz": {"temp": "30°C", "condition": "آفتابی", "humidity": "25%"},
-            }
-            
-            city_lower = city.lower()
-            if city_lower in weather_data:
-                data = weather_data[city_lower]
-                return f"🌤️ **آب و هوای {city.title()}**\n\n🌡️ دما: {data['temp']}\n☁️ وضعیت: {data['condition']}\n💧 رطوبت: {data['humidity']}"
-            else:
-                return f"❌ شهر {city} یافت نشد. لطفاً شهر معتبر وارد کنید."
-        except Exception as e:
-            return f"خطا در دریافت آب و هوا: {str(e)}"
-    
-    async def get_crypto_price(self, symbol: str):
-        try:
-            # شبیه‌سازی قیمت ارز دیجیتال
-            prices = {
-                "btc": {"price": "$45,000", "change": "+2.5%"},
-                "eth": {"price": "$3,200", "change": "+1.8%"},
-                "bnb": {"price": "$320", "change": "-0.5%"},
-                "ada": {"price": "$1.20", "change": "+3.2%"},
-                "sol": {"price": "$120", "change": "+4.1%"},
-            }
-            
-            symbol_lower = symbol.lower()
-            if symbol_lower in prices:
-                data = prices[symbol_lower]
-                return f"💰 **{symbol.upper()}**\n\n💵 قیمت: {data['price']}\n📈 تغییر: {data['change']}"
-            else:
-                return f"❌ ارز {symbol.upper()} یافت نشد. ارزهای موجود: BTC, ETH, BNB, ADA, SOL"
-        except Exception as e:
-            return f"خطا در دریافت قیمت: {str(e)}"
-    
-    async def create_sticker(self, text: str):
+    async def create_sticker(self, text: str, bg_color: str = "white", font_size: int = 40, text_color: str = "black"):
         try:
             # ایجاد تصویر استیکر
-            img = Image.new('RGBA', (512, 512), (255, 255, 255, 0))
+            img = Image.new('RGBA', (512, 512), bg_color)
             draw = ImageDraw.Draw(img)
             
             # تلاش برای استفاده از فونت فارسی
             try:
-                font = ImageFont.truetype("fonts/arial.ttf", 40)
+                # تلاش برای فونت‌های مختلف
+                font_paths = [
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                    "/System/Library/Fonts/Arial.ttf",
+                    "arial.ttf"
+                ]
+                font = None
+                for font_path in font_paths:
+                    try:
+                        font = ImageFont.truetype(font_path, font_size)
+                        break
+                    except:
+                        continue
+                
+                if font is None:
+                    font = ImageFont.load_default()
             except:
                 font = ImageFont.load_default()
             
             # محاسبه موقعیت متن
-            bbox = draw.textbbox((0, 0), text, font=font)
-            text_width = bbox[2] - bbox[0]
-            text_height = bbox[3] - bbox[1]
+            lines = []
+            words = text.split()
+            current_line = []
             
-            x = (512 - text_width) // 2
-            y = (512 - text_height) // 2
+            for word in words:
+                test_line = ' '.join(current_line + [word])
+                bbox = draw.textbbox((0, 0), test_line, font=font)
+                if bbox[2] - bbox[0] < 400:  # عرض مجاز
+                    current_line.append(word)
+                else:
+                    if current_line:
+                        lines.append(' '.join(current_line))
+                        current_line = [word]
+                    else:
+                        lines.append(word)
+            
+            if current_line:
+                lines.append(' '.join(current_line))
             
             # رسم متن
-            draw.text((x, y), text, fill=(0, 0, 0, 255), font=font)
+            total_height = len(lines) * (font_size + 10)
+            start_y = (512 - total_height) // 2
+            
+            for i, line in enumerate(lines):
+                bbox = draw.textbbox((0, 0), line, font=font)
+                text_width = bbox[2] - bbox[0]
+                x = (512 - text_width) // 2
+                y = start_y + i * (font_size + 10)
+                
+                # افزودن سایه برای خوانایی بهتر
+                draw.text((x + 2, y + 2), line, fill="gray", font=font)
+                draw.text((x, y), line, fill=text_color, font=font)
             
             # ذخیره تصویر
             img_bytes = io.BytesIO()
@@ -230,144 +147,206 @@ class TelegramBotFeatures:
             print(f"Error creating sticker: {e}")
             return None
     
-    async def play_game(self, game_type: str = "quiz"):
-        if game_type == "quiz":
-            questions = [
-                {"question": "پایتخت ایران کجاست؟", "options": ["تهران", "اصفهان", "مشهد", "شیراز"], "answer": 0},
-                {"question": "۲+۲ چند می‌شود؟", "options": ["۳", "۴", "۵", "۶"], "answer": 1},
-                {"question": "بزرگ‌ترین اقیانوس کدام است؟", "options": ["اطلس", "هند", "آرام", "منجمد شمالی"], "answer": 2},
-            ]
-            
-            question = random.choice(questions)
-            keyboard = []
-            
-            for i, option in enumerate(question["options"]):
-                keyboard.append([InlineKeyboardButton(option, callback_data=f"quiz_answer_{i}")])
-            
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            return {
-                "question": question["question"],
-                "reply_markup": reply_markup,
-                "answer": question["answer"]
-            }
+    async def guess_number_game(self):
+        number = random.randint(1, 100)
+        self.user_data['guess_number'] = number
+        self.user_data['guess_attempts'] = 0
         
-        elif game_type == "riddle":
-            riddles = [
-                {"riddle": "چه چیزی دم در است اما خانه نیست؟", "answer": "کلید"},
-                {"riddle": "چه چیزی همیشه به سمت بالا می‌رود اما هرگز پایین نمی‌آید؟", "answer": "سن"},
-                {"riddle": "چه چیزی چشم دارد اما نمی‌بیند؟", "answer": "سوزن"},
-            ]
-            
-            riddle = random.choice(riddles)
-            return f"🧩 معما: {riddle['riddle']}\n\n💭 برای دیدن جواب، روی دکمه زیر کلیک کنید:"
+        keyboard = [
+            [InlineKeyboardButton("🎯 حدس بزن", callback_data="guess_prompt")],
+            [InlineKeyboardButton("🔢 راهنمایی", callback_data="guess_hint")],
+            [InlineKeyboardButton("🏠 منوی اصلی", callback_data="back_to_main")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        return {
+            "message": f"🎯 **بازی حدس عدد شروع شد!**\n\nمن یک عدد بین 1 تا 100 انتخاب کردم.\nتلاش کن حدس بزنی!\n\nتعداد تلاش‌ها: {self.user_data['guess_attempts']}",
+            "reply_markup": reply_markup
+        }
     
-    async def search_products(self, product_name: str):
-        try:
-            # شبیه‌سازی جستجوی محصول
-            products = [
-                {
-                    "name": f"{product_name} - برند A",
-                    "price": "۱,۵۰۰,۰۰۰ تومان",
-                    "rating": "۴.۵",
-                    "link": f"https://shop.example.com/{product_name.replace(' ', '-')}-a"
-                },
-                {
-                    "name": f"{product_name} - برند B",
-                    "price": "۱,۲۰۰,۰۰۰ تومان",
-                    "rating": "۴.۲",
-                    "link": f"https://shop.example.com/{product_name.replace(' ', '-')}-b"
-                },
-                {
-                    "name": f"{product_name} - برند C",
-                    "price": "۱,۸۰۰,۰۰۰ تومان",
-                    "rating": "۴.۸",
-                    "link": f"https://shop.example.com/{product_name.replace(' ', '-')}-c"
-                },
-            ]
-            
-            results = []
-            for product in products:
-                results.append(f"🛍️ {product['name']}\n💰 قیمت: {product['price']}\n⭐ امتیاز: {product['rating']}\n🔗 {product['link']}\n")
-            
-            return "\n".join(results)
-        except Exception as e:
-            return f"خطا در جستجوی محصول: {str(e)}"
-    
-    async def get_coupons(self, category: str = None):
-        try:
-            if category:
-                filtered_coupons = [c for c in self.coupons if c["category"] == category.lower()]
-            else:
-                filtered_coupons = self.coupons
-            
-            if not filtered_coupons:
-                return "❌ کوپنی برای این دسته یافت نشد!"
-            
-            results = []
-            for coupon in filtered_coupons:
-                results.append(f"🎫 کد: {coupon['code']}\n💰 تخفیف: {coupon['discount']}\n📂 دسته: {coupon['category']}\n")
-            
-            return "\n".join(results)
-        except Exception as e:
-            return f"خطا در دریافت کوپن‌ها: {str(e)}"
-    
-    async def translate_text(self, text: str, target_lang: str = "en"):
-        try:
-            # شبیه‌سازی ترجمه
-            translations = {
-                "en": f"Translation of '{text}' to English",
-                "fa": f"ترجمه '{text}' به فارسی",
-                "ar": f"ترجمة '{text}' إلى العربية",
-                "es": f"Traducción de '{text}' al español",
+    async def check_guess(self, guess: int):
+        if 'guess_number' not in self.user_data:
+            return {"message": "❌ بازی شروع نشده! لطفاً دوباره بازی را شروع کنید."}
+        
+        self.user_data['guess_attempts'] += 1
+        number = self.user_data['guess_number']
+        attempts = self.user_data['guess_attempts']
+        
+        keyboard = [
+            [InlineKeyboardButton("🎯 حدس بعدی", callback_data="guess_prompt")],
+            [InlineKeyboardButton("🔢 راهنمایی", callback_data="guess_hint")],
+            [InlineKeyboardButton("🏠 منوی اصلی", callback_data="back_to_main")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if guess == number:
+            del self.user_data['guess_number']
+            del self.user_data['guess_attempts']
+            return {
+                "message": f"🎉 **تبریک! برنده شدی!**\n\nعدد صحیح {number} بود!\nتعداد تلاش‌ها: {attempts}",
+                "reply_markup": reply_markup
             }
-            
-            if target_lang in translations:
-                return translations[target_lang]
-            else:
-                return f"❌ زبان {target_lang} پشتیبانی نمی‌شود. زبان‌های موجود: en, fa, ar, es"
-        except Exception as e:
-            return f"خطا در ترجمه: {str(e)}"
-    
-    async def calculate(self, expression: str):
-        try:
-            # محاسبه امن
-            allowed_chars = set('0123456789+-*/(). ')
-            if not all(c in allowed_chars for c in expression):
-                return "❌ عبارت نامعتبر است!"
-            
-            result = eval(expression)
-            return f"🧮 نتیجه: {expression} = {result}"
-        except Exception as e:
-            return f"❌ خطا در محاسبه: {str(e)}"
-    
-    async def get_news(self, category: str = "general"):
-        try:
-            # شبیه‌سازی دریافت اخبار
-            news = {
-                "general": [
-                    "📰 خبر مهم: اتفاق جدید در جهان رخ داده است",
-                    "📰 تکنولوژی: شرکت بزرگ فناوری محصول جدیدی را عرضه کرد",
-                    "📰 ورزشی: تیم مهمی در مسابقات پیروز شد",
-                ],
-                "tech": [
-                    "💻 هوش مصنوعی: پیشرفت‌های جدید در زمینه AI",
-                    "📱 موبایل: گوشی جدید با قابلیت‌های فوق‌العاده",
-                    "🌐 اینترنت: شبکه‌های اجتماعی با تغییرات جدید",
-                ],
-                "sports": [
-                    "⚽ فوتبال: نتایج مهم هفته گذشته",
-                    "🏀 بسکتبال: بازیکن ستاره رکورد جدید زد",
-                    "🎾 تنیس: قهرمانی جدید مشخص شد",
-                ],
+        elif guess < number:
+            return {
+                "message": f"📈 **بالاتر برو!**\n\nعدد بزرگتری انتخاب کن!\nتعداد تلاش‌ها: {attempts}",
+                "reply_markup": reply_markup
             }
-            
-            if category in news:
-                articles = news[category]
-                return "\n\n".join(articles)
-            else:
-                return f"❌ دسته {category} یافت نشد. دسته‌های موجود: general, tech, sports"
-        except Exception as e:
-            return f"خطا در دریافت اخبار: {str(e)}"
+        else:
+            return {
+                "message": f"📉 **پایینتر بیا!**\n\nعدد کوچکتری انتخاب کن!\nتعداد تلاش‌ها: {attempts}",
+                "reply_markup": reply_markup
+            }
+    
+    async def rock_paper_scissors_game(self):
+        choices = ["سنگ", "کاغذ", "قیچی"]
+        bot_choice = random.choice(choices)
+        self.user_data['rps_bot_choice'] = bot_choice
+        
+        keyboard = []
+        for choice in choices:
+            keyboard.append([InlineKeyboardButton(choice, callback_data=f"rps_choice_{choice}")])
+        keyboard.append([InlineKeyboardButton("🏠 منوی اصلی", callback_data="back_to_main")])
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        return {
+            "message": "✂️ **سنگ کاغذ قیچی**\n\nانتخاب خود را انجام دهید:",
+            "reply_markup": reply_markup
+        }
+    
+    async def check_rps_choice(self, user_choice: str):
+        if 'rps_bot_choice' not in self.user_data:
+            return {"message": "❌ بازی شروع نشده! لطفاً دوباره بازی را شروع کنید."}
+        
+        bot_choice = self.user_data['rps_bot_choice']
+        del self.user_data['rps_bot_choice']
+        
+        keyboard = [
+            [InlineKeyboardButton("🔄 بازی دوباره", callback_data="rock_paper_scissors")],
+            [InlineKeyboardButton("🏠 منوی اصلی", callback_data="back_to_main")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        if user_choice == bot_choice:
+            return {
+                "message": f"🤝 **مساوی!**\n\nشما: {user_choice}\nربات: {bot_choice}",
+                "reply_markup": reply_markup
+            }
+        elif (
+            (user_choice == "سنگ" and bot_choice == "قیچی") or
+            (user_choice == "کاغذ" and bot_choice == "سنگ") or
+            (user_choice == "قیچی" and bot_choice == "کاغذ")
+        ):
+            return {
+                "message": f"🎉 **شما برنده شدید!**\n\nشما: {user_choice}\nربات: {bot_choice}",
+                "reply_markup": reply_markup
+            }
+        else:
+            return {
+                "message": f"😔 **ربات برنده شد!**\n\nشما: {user_choice}\nربات: {bot_choice}",
+                "reply_markup": reply_markup
+            }
+    
+    async def word_game(self):
+        words = [
+            {"word": "پردیس", "hint": "نام یک دانشگاه در تهران"},
+            {"word": "رود", "hint": "آب در حال حرکت"},
+            {"word": "کتاب", "hint": "وسیله مطالعه"},
+            {"word": "شمشیر", "hint": "سلاح سرد"},
+            {"word": "آفتاب", "hint": "منبع نور و گرما"},
+        ]
+        
+        word_data = random.choice(words)
+        self.user_data['word_game'] = word_data
+        
+        # نمایش کلمه با حروف مخفی
+        hidden_word = " ".join(["_" if char != " " else " " for char in word_data["word"]])
+        
+        keyboard = [
+            [InlineKeyboardButton("🔤 حدس حرف", callback_data="word_guess_letter")],
+            [InlineKeyboardButton("💡 راهنمایی", callback_data="word_hint")],
+            [InlineKeyboardButton("🏠 منوی اصلی", callback_data="back_to_main")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        return {
+            "message": f"📝 **بازی کلمات**\n\nکلمه: {hidden_word}\n\nراهنمایی: {word_data['hint']}\n\nحدس حرف مورد نظر خود را بزنید:",
+            "reply_markup": reply_markup
+        }
+    
+    async def memory_game(self):
+        # ایجاد کارت‌های حافظه
+        symbols = ["🎮", "🎨", "🎯", "🎲", "🎪", "🎭", "🎸", "🎺"]
+        cards = symbols * 2
+        random.shuffle(cards)
+        
+        self.user_data['memory_game'] = {
+            "cards": cards,
+            "revealed": [False] * len(cards),
+            "matched": [False] * len(cards),
+            "attempts": 0
+        }
+        
+        # نمایش کارت‌ها
+        board = ""
+        for i in range(0, len(cards), 4):
+            row = ""
+            for j in range(4):
+                if i + j < len(cards):
+                    row += f"❓{i+j+1} " if i + j < 9 else f"❓{i+j+1} "
+            board += row + "\n"
+        
+        keyboard = [
+            [InlineKeyboardButton("🔍 انتخاب کارت", callback_data="memory_pick_card")],
+            [InlineKeyboardButton("🏠 منوی اصلی", callback_data="back_to_main")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        return {
+            "message": f"🧠 **بازی حافظه**\n\n{board}\n\nتعداد تلاش‌ها: {self.user_data['memory_game']['attempts']}\n\nکارت مورد نظر خود را انتخاب کنید (1-16):",
+            "reply_markup": reply_markup
+        }
+    
+    async def custom_sticker_menu(self):
+        keyboard = [
+            [InlineKeyboardButton("⚪ سفید", callback_data="sticker_bg_white"),
+             InlineKeyboardButton("⚫ مشکی", callback_data="sticker_bg_black")],
+            [InlineKeyboardButton("🔵 آبی", callback_data="sticker_bg_blue"),
+             InlineKeyboardButton("🔴 قرمز", callback_data="sticker_bg_red")],
+            [InlineKeyboardButton("🟢 سبز", callback_data="sticker_bg_green"),
+             InlineKeyboardButton("🟡 زرد", callback_data="sticker_bg_yellow")],
+            [InlineKeyboardButton("✏️ نوشتن متن", callback_data="sticker_text")],
+            [InlineKeyboardButton("🏠 منوی اصلی", callback_data="back_to_main")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        return {
+            "message": "🎨 **استیکر ساز سفارشی**\n\nلطفاً رنگ پس‌زمینه را انتخاب کنید:",
+            "reply_markup": reply_markup
+        }
+    
+    async def random_game(self):
+        games = [
+            ("🎯 حدس عدد", "guess_number"),
+            ("✂️ سنگ کاغذ قیچی", "rock_paper_scissors"),
+            ("📝 بازی کلمات", "word_game"),
+            ("🧠 بازی حافظه", "memory_game")
+        ]
+        
+        game_name, game_callback = random.choice(games)
+        
+        keyboard = [
+            [InlineKeyboardButton(f"🎲 {game_name}", callback_data=game_callback)],
+            [InlineKeyboardButton("🔄 بازی دیگر", callback_data="random_game")],
+            [InlineKeyboardButton("🏠 منوی اصلی", callback_data="back_to_main")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        return {
+            "message": f"🎲 **بازی تصادفی انتخاب شد:**\n\n{game_name}\n\nبرای شروع بازی کلیک کنید:",
+            "reply_markup": reply_markup
+        }
 
 # ایجاد نمونه از کلاس
 bot_features = TelegramBotFeatures()
