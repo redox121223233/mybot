@@ -25,6 +25,9 @@ ADMIN_ID = 6053579919
 DAILY_LIMIT = 5
 BOT_USERNAME = ""
 
+# Initialize Telegram Application
+application = Application.builder().token(BOT_TOKEN).build()
+
 # Import handlers after setting up application
 try:
     # Add the parent directory to the path so we can import handlers
