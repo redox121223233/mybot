@@ -72,7 +72,15 @@ def webhook():
             logger.info(f"Received webhook data: {update_data}")
             
             update = Update.de_json(update_data, application.bot)
-            application.process_update(update)
+            
+            # Handle async function properly
+            import asyncio
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(application.process_update(update))
+            finally:
+                loop.close()
             
             return jsonify({"status": "ok"}), 200
         except Exception as e:
