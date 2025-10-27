@@ -15,12 +15,15 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 # Initialize Telegram bot
-TELEGRAM_TOKEN = os.getenv('BOT_TOKEN')
-if not TELEGRAM_TOKEN:
-    logger.error("BOT_TOKEN not found in environment variables")
-    sys.exit(1)
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+if not BOT_TOKEN:
+    raise RuntimeError("BOT_TOKEN را در تنظیمات Vercel قرار دهید.")
 
-application = Application.builder().token(BOT_TOKEN).build()
+CHANNEL_USERNAME = "@redoxbot_sticker"
+SUPPORT_USERNAME = "@onedaytoalive"
+ADMIN_ID = 6053579919
+DAILY_LIMIT = 5
+BOT_USERNAME = ""
 
 # Import handlers after setting up application
 try:
