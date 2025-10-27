@@ -14,7 +14,11 @@
   ],
   "functions": {
     "api/index.py": {
-      "runtime": "python3.11"
+      "runtime": "python3.11",
+      "maxDuration": 10
     }
+  },
+  "env": {
+    "PYTHON_VERSION": "3.11"
   }
 }
