@@ -292,5 +292,5 @@ def setup_handlers(application):
     # Callback Handler
     application.add_handler(CallbackQueryHandler(button_callback))
     
-    # Unknown Handler
+    # Unknown Handler - catch all commands
     application.add_handler(MessageHandler(filters.COMMAND, unknown))
