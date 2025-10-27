@@ -2,6 +2,7 @@ from flask import Flask, request, jsonify
 import logging
 import os
 import sys
+import traceback
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
@@ -71,6 +72,18 @@ def webhook():
             update_data = request.get_json()
             logger.info(f"Received webhook data: {update_data}")
             
+            # Initialize application if not already initialized
+            if not application.running:
+                logger.info("Initializing application...")
+                import asyncio
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    loop.run_until_complete(application.initialize())
+                    loop.run_until_complete(application.start())
+                finally:
+                    loop.close()
+            
             update = Update.de_json(update_data, application.bot)
             
             # Handle async function properly
@@ -85,6 +98,7 @@ def webhook():
             return jsonify({"status": "ok"}), 200
         except Exception as e:
             logger.error(f"Error processing webhook: {e}")
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             return jsonify({"status": "error", "message": str(e)}), 500
     return jsonify({"status": "error"}), 400
 
