@@ -17,11 +17,10 @@ app = Flask(__name__)
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_BOT_TOKEN')
 application = Application.builder().token(TELEGRAM_TOKEN).build()
 
-# Import handlers
-from handlers import *
-
-# Setup handlers
-setup_handlers(application)
+# Import and setup handlers
+from handlers import setup_handlers
+import asyncio
+asyncio.run(setup_handlers(application))
 
 @app.route('/')
 def home():

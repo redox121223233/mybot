@@ -1,296 +1,279 @@
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import CallbackContext, CommandHandler, MessageHandler, filters, CallbackQueryHandler
-from bot_features import bot_features
 import logging
+import asyncio
+from telegram import Update, InputFile
+from telegram.ext import CallbackContext
+from bot import bot_features
 
 logger = logging.getLogger(__name__)
 
-async def start(update: Update, context: CallbackContext):
-    await bot_features.start_command(update, context)
+# متغیرهای سراسری برای حالت کاربر
+user_states = {}
 
-async def help_command(update: Update, context: CallbackContext):
+async def setup_handlers(application):
+    """تنظیم handlerها برای ربات"""
+    from telegram.ext import CommandHandler, CallbackQueryHandler, MessageHandler, filters
+    
+    # دستورات اصلی
+    application.add_handler(CommandHandler("start", start_command))
+    application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("sticker", sticker_command))
+    application.add_handler(CommandHandler("guess", guess_command))
+    application.add_handler(CommandHandler("rps", rps_command))
+    application.add_handler(CommandHandler("word", word_command))
+    application.add_handler(CommandHandler("memory", memory_command))
+    application.add_handler(CommandHandler("random", random_command))
+    application.add_handler(CommandHandler("customsticker", customsticker_command))
+    
+    # handlerهای callback و پیام‌ها
+    application.add_handler(CallbackQueryHandler(button_callback))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+
+async def start_command(update: Update, context: CallbackContext) -> None:
+    """دستور /start"""
+    await bot_features.start_command(update, context)
+    user_id = update.effective_user.id
+    user_states[user_id] = {"mode": "main"}
+
+async def help_command(update: Update, context: CallbackContext) -> None:
+    """دستور /help"""
     await bot_features.help_command(update, context)
 
-async def search_command(update: Update, context: CallbackContext):
-    if not context.args:
-        await update.message.reply_text("❌ لطفاً عبارت مورد نظر برای جستجو را وارد کنید.\nمثال: /search تلگرام ربات")
-        return
-    
-    query = " ".join(context.args)
-    await update.message.reply_text("🔍 در حال جستجو...")
-    result = await bot_features.search_internet(query)
-    await update.message.reply_text(result)
-
-async def music_command(update: Update, context: CallbackContext):
-    if not context.args:
-        await update.message.reply_text("❌ لطفاً نام آهنگ یا هنرمند را وارد کنید.\nمثال: /music شاد")
-        return
-    
-    query = " ".join(context.args)
-    await update.message.reply_text("🎵 در حال جستجوی موسیقی...")
-    result = await bot_features.search_music(query)
-    await update.message.reply_text(result)
-
-async def weather_command(update: Update, context: CallbackContext):
-    if not context.args:
-        await update.message.reply_text("❌ لطفاً نام شهر را وارد کنید.\nمثال: /weather تهران")
-        return
-    
-    city = " ".join(context.args)
-    await update.message.reply_text("🌤️ در حال دریافت اطلاعات آب و هوا...")
-    result = await bot_features.get_weather(city)
-    await update.message.reply_text(result)
-
-async def crypto_command(update: Update, context: CallbackContext):
-    if not context.args:
-        await update.message.reply_text("❌ لطفاً نام ارز دیجیتال را وارد کنید.\nمثال: /crypto btc")
-        return
-    
-    symbol = context.args[0]
-    await update.message.reply_text("💰 در حال دریافت قیمت...")
-    result = await bot_features.get_crypto_price(symbol)
-    await update.message.reply_text(result)
-
-async def btc_command(update: Update, context: CallbackContext):
-    await update.message.reply_text("💰 در حال دریافت قیمت بیت‌کوین...")
-    result = await bot_features.get_crypto_price("btc")
-    await update.message.reply_text(result)
-
-async def eth_command(update: Update, context: CallbackContext):
-    await update.message.reply_text("💰 در حال دریافت قیمت اتریوم...")
-    result = await bot_features.get_crypto_price("eth")
-    await update.message.reply_text(result)
-
-async def sticker_command(update: Update, context: CallbackContext):
-    if not context.args:
-        await update.message.reply_text("❌ لطفاً متن استیکر را وارد کنید.\nمثال: /sticker سلام")
-        return
-    
-    text = " ".join(context.args)
-    await update.message.reply_text("🎨 در حال ساخت استیکر...")
-    
-    sticker_bytes = await bot_features.create_sticker(text)
-    if sticker_bytes:
-        await update.message.reply_sticker(sticker=sticker_bytes)
+async def sticker_command(update: Update, context: CallbackContext) -> None:
+    """دستور /sticker برای ساخت استیکر"""
+    if context.args:
+        text = ' '.join(context.args)
+        sticker_bytes = await bot_features.create_sticker(text)
+        
+        if sticker_bytes:
+            sticker_bytes.seek(0)
+            await update.message.reply_sticker(
+                sticker=InputFile(sticker_bytes, filename="sticker.png")
+            )
+        else:
+            await update.message.reply_text("❌ خطا در ساخت استیکر!")
     else:
-        await update.message.reply_text("❌ خطا در ساخت استیکر!")
+        await update.message.reply_text("❌ لطفاً متن استیکر را وارد کنید:\nمثال: /sticker سلام دنیا")
 
-async def game_command(update: Update, context: CallbackContext):
-    await update.message.reply_text("🎮 در حال آماده کردن بازی...")
-    game_data = await bot_features.play_game("quiz")
-    
-    if isinstance(game_data, dict):
-        keyboard = [
-            [InlineKeyboardButton(option, callback_data=f"quiz_answer_{i}")]
-            for i, option in enumerate(["تهران", "۴", "آرام"])  #临时使用固定选项
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(game_data["question"], reply_markup=reply_markup)
-    else:
-        await update.message.reply_text(game_data)
+async def guess_command(update: Update, context: CallbackContext) -> None:
+    """شروع بازی حدس عدد"""
+    game_data = await bot_features.guess_number_game()
+    await update.message.reply_text(
+        game_data["message"],
+        reply_markup=game_data["reply_markup"]
+    )
 
-async def quiz_command(update: Update, context: CallbackContext):
-    await game_command(update, context)
+async def rps_command(update: Update, context: CallbackContext) -> None:
+    """شروع بازی سنگ کاغذ قیچی"""
+    game_data = await bot_features.rock_paper_scissors_game()
+    await update.message.reply_text(
+        game_data["message"],
+        reply_markup=game_data["reply_markup"]
+    )
 
-async def price_command(update: Update, context: CallbackContext):
-    if not context.args:
-        await update.message.reply_text("❌ لطفاً نام کالا را وارد کنید.\nمثال: /price گوشی موبایل")
-        return
-    
-    product = " ".join(context.args)
-    await update.message.reply_text("🛍️ در حال جستجوی قیمت...")
-    result = await bot_features.search_products(product)
-    await update.message.reply_text(result)
+async def word_command(update: Update, context: CallbackContext) -> None:
+    """شروع بازی کلمات"""
+    game_data = await bot_features.word_game()
+    await update.message.reply_text(
+        game_data["message"],
+        reply_markup=game_data["reply_markup"]
+    )
 
-async def coupon_command(update: Update, context: CallbackContext):
-    await update.message.reply_text("🎫 در حال دریافت کوپن‌ها...")
-    result = await bot_features.get_coupons()
-    await update.message.reply_text(result)
+async def memory_command(update: Update, context: CallbackContext) -> None:
+    """شروع بازی حافظه"""
+    game_data = await bot_features.memory_game()
+    await update.message.reply_text(
+        game_data["message"],
+        reply_markup=game_data["reply_markup"]
+    )
 
-async def news_command(update: Update, context: CallbackContext):
-    await update.message.reply_text("📰 در حال دریافت اخبار...")
-    result = await bot_features.get_news("general")
-    await update.message.reply_text(result)
+async def random_command(update: Update, context: CallbackContext) -> None:
+    """بازی تصادفی"""
+    game_data = await bot_features.random_game()
+    await update.message.reply_text(
+        game_data["message"],
+        reply_markup=game_data["reply_markup"]
+    )
 
-async def technews_command(update: Update, context: CallbackContext):
-    await update.message.reply_text("💻 در حال دریافت اخبار تکنولوژی...")
-    result = await bot_features.get_news("tech")
-    await update.message.reply_text(result)
+async def customsticker_command(update: Update, context: CallbackContext) -> None:
+    """منوی استیکر ساز سفارشی"""
+    menu_data = await bot_features.custom_sticker_menu()
+    await update.message.reply_text(
+        menu_data["message"],
+        reply_markup=menu_data["reply_markup"]
+    )
 
-async def time_command(update: Update, context: CallbackContext):
-    from datetime import datetime
-    now = datetime.now()
-    time_str = now.strftime("%Y-%m-%d %H:%M:%S")
-    await update.message.reply_text(f"⏰ زمان فعلی:\n📅 {time_str}")
-
-async def calc_command(update: Update, context: CallbackContext):
-    if not context.args:
-        await update.message.reply_text("❌ لطفاً عبارت محاسباتی را وارد کنید.\nمثال: /calc 2+2*3")
-        return
+async def button_callback(update: Update, context: CallbackContext) -> None:
+    """مدیریت کلیک روی دکمه‌ها"""
+    from telegram import InlineKeyboardButton, InlineKeyboardMarkup
     
-    expression = " ".join(context.args)
-    result = await bot_features.calculate(expression)
-    await update.message.reply_text(result)
-
-async def translate_command(update: Update, context: CallbackContext):
-    if not context.args:
-        await update.message.reply_text("❌ لطفاً متن مورد نظر برای ترجمه را وارد کنید.\nمثال: /translate hello world")
-        return
-    
-    text = " ".join(context.args)
-    await update.message.reply_text("🌐 در حال ترجمه...")
-    result = await bot_features.translate_text(text)
-    await update.message.reply_text(result)
-
-async def ai_command(update: Update, context: CallbackContext):
-    if not context.args:
-        await update.message.reply_text("❌ لطفاً سوال خود را وارد کنید.\nمثال: /ai آب و هوا چطور است؟")
-        return
-    
-    question = " ".join(context.args)
-    await update.message.reply_text("🤖 در حال پردازش سوال شما...")
-    
-    # شبیه‌سازی پاسخ AI
-    response = f"پاسخ هوش مصنوعی به سوال شما:\n\n❓ {question}\n\n🤖 این یک پاسخ شبیه‌سازی شده است. در نسخه واقعی، اینجا پاسخ از سرویس هوش مصنوعی دریافت می‌شود."
-    await update.message.reply_text(response)
-
-async def chat_command(update: Update, context: CallbackContext):
-    if not context.args:
-        await update.message.reply_text("❌ لطفاً پیام خود را برای چت وارد کنید.\nمثال: /chat سلام، حالت چطوره؟")
-        return
-    
-    message = " ".join(context.args)
-    await update.message.reply_text("🤖 در حال پاسخگویی...")
-    
-    # شبیه‌سازی پاسخ چت
-    response = f"پاسخ ربات:\n\n👤 شما: {message}\n\n🤖 ربات: سلام! من یک ربات چندمنظوره هستم و می‌توانم به سوالات شما پاسخ دهم. چطور می‌توانم کمکتان کنم؟"
-    await update.message.reply_text(response)
-
-async def movie_command(update: Update, context: CallbackContext):
-    if not context.args:
-        await update.message.reply_text("❌ لطفاً نام فیلم را وارد کنید.\nمثال: /movie اینتراستلار")
-        return
-    
-    movie = " ".join(context.args)
-    await update.message.reply_text("🎬 در حال جستجوی فیلم...")
-    
-    # شبیه‌سازی جستجوی فیلم
-    result = f"🎬 نتایج جستجو برای '{movie}':\n\n📽️ {movie} (2023)\n⭐ امتیاز: 8.5/10\n📝 خلاصه: این یک فیلم عالی است...\n\n🔗 برای دانلود و مشاهده به لینک زیر مراجعه کنید:\nhttps://movies.example.com/{movie.replace(' ', '-')}"
-    await update.message.reply_text(result)
-
-async def series_command(update: Update, context: CallbackContext):
-    if not context.args:
-        await update.message.reply_text("❌ لطفاً نام سریال را وارد کنید.\nمثال: /series بازی تاج‌وتخت")
-        return
-    
-    series = " ".join(context.args)
-    await update.message.reply_text("📺 در حال جستجوی سریال...")
-    
-    # شبیه‌سازی جستجوی سریال
-    result = f"📺 نتایج جستجو برای '{series}':\n\n🎭 {series} (فصل 1-5)\n⭐ امتیاز: 9.2/10\n📝 خلاصه: این یک سریال فوق‌العاده است...\n\n🔗 برای دانلود و مشاهده به لینک زیر مراجعه کنید:\nhttps://series.example.com/{series.replace(' ', '-')}"
-    await update.message.reply_text(result)
-
-async def image_command(update: Update, context: CallbackContext):
-    if not context.args:
-        await update.message.reply_text("❌ لطفاً عبارت مورد نظر برای جستجوی تصویر را وارد کنید.\nمثال: /image گربه")
-        return
-    
-    query = " ".join(context.args)
-    await update.message.reply_text("🖼️ در حال جستجوی تصویر...")
-    
-    # شبیه‌سازی جستجوی تصویر
-    result = f"🖼️ تصاویر یافت شده برای '{query}':\n\n📸 تصویر 1: https://images.example.com/{query.replace(' ', '-')}-1.jpg\n📸 تصویر 2: https://images.example.com/{query.replace(' ', '-')}-2.jpg\n📸 تصویر 3: https://images.example.com/{query.replace(' ', '-')}-3.jpg"
-    await update.message.reply_text(result)
-
-async def download_command(update: Update, context: CallbackContext):
-    if not context.args:
-        await update.message.reply_text("❌ لطفاً لینک دانلود را وارد کنید.\nمثال: /download https://music.example.com/song.mp3")
-        return
-    
-    url = context.args[0]
-    await update.message.reply_text("⬇️ در حال آماده سازی دانلود...")
-    
-    # شبیه‌سازی دانلود
-    result = f"⬇️ لینک دانلود آماده شد:\n\n🔗 {url}\n\n📝 برای دانلود روی لینک بالا کلیک کنید."
-    await update.message.reply_text(result)
-
-async def meme_command(update: Update, context: CallbackContext):
-    if not context.args:
-        await update.message.reply_text("❌ لطفاً متن میم را وارد کنید.\nمثال: /meme این هم از زندگی")
-        return
-    
-    text = " ".join(context.args)
-    await update.message.reply_text("😄 در حال ساخت میم...")
-    
-    # شبیه‌سازی ساخت میم
-    result = f"😄 میم شما ساخته شد!\n\n💬 متن: {text}\n\n🖼️ برای دریافت تصویر میم، اینجا کلیک کنید:\nhttps://meme.example.com/generate?text={text.replace(' ', '%20')}"
-    await update.message.reply_text(result)
-
-async def button_callback(update: Update, context: CallbackContext):
     query = update.callback_query
     await query.answer()
     
-    data = query.data
+    user_id = update.effective_user.id
+    callback_data = query.data
     
-    if data == "search":
-        await query.message.reply_text("🔍 برای جستجو از دستور /search استفاده کنید:\nمثال: /search تلگرام ربات")
-    elif data == "music":
-        await query.message.reply_text("🎵 برای جستجوی موسیقی از دستور /music استفاده کنید:\nمثال: /music آهنگ شاد")
-    elif data == "movie":
-        await query.message.reply_text("🎬 برای جستجوی فیلم از دستور /movie استفاده کنید:\nمثال: /movie اینتراستلار")
-    elif data == "chat":
-        await query.message.reply_text("🤖 برای چت با AI از دستور /chat استفاده کنید:\nمثال: /chat سلام، حالت چطوره؟")
-    elif data == "weather":
-        await query.message.reply_text("🌦️ برای دریافت آب و هوا از دستور /weather استفاده کنید:\nمثال: /weather تهران")
-    elif data == "crypto":
-        await query.message.reply_text("💰 برای دریافت قیمت ارز از دستور /crypto استفاده کنید:\nمثال: /crypto btc")
-    elif data == "game":
-        await game_command(update, context)
-    elif data == "shopping":
-        await query.message.reply_text("🛍️ برای جستجوی کالا از دستور /price استفاده کنید:\nمثال: /price گوشی موبایل")
-    elif data.startswith("quiz_answer_"):
-        answer_index = int(data.split("_")[-1])
-        correct_answers = [0, 1, 2]  #答案索引
-        if answer_index in correct_answers:
-            await query.message.reply_text("✅ پاسخ صحیح! آفرین!")
+    if callback_data == "back_to_main":
+        await bot_features.start_command(update, context)
+        return
+    
+    elif callback_data == "guess_number":
+        game_data = await bot_features.guess_number_game()
+        await query.edit_message_text(
+            game_data["message"],
+            reply_markup=game_data["reply_markup"]
+        )
+    
+    elif callback_data == "guess_prompt":
+        keyboard = [[
+            InlineKeyboardButton("ارسال عدد", callback_data="guess_send_number")
+        ]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            "🔢 لطفاً عدد مورد نظر خود را به صورت پیام متنی ارسال کنید (بین 1 تا 100):",
+            reply_markup=reply_markup
+        )
+        if user_id not in user_states:
+            user_states[user_id] = {}
+        user_states[user_id]["waiting_for_guess"] = True
+    
+    elif callback_data == "guess_hint":
+        if 'guess_number' in bot_features.user_data:
+            number = bot_features.user_data['guess_number']
+            hint = "بزرگتر از 50" if number > 50 else "کوچکتر از 50"
+            await query.edit_message_text(
+                f"💡 **راهنمایی:** عدد {hint} است!\n\nدوباره تلاش کنید:",
+                reply_markup=query.message.reply_markup
+            )
+    
+    elif callback_data == "rock_paper_scissors":
+        game_data = await bot_features.rock_paper_scissors_game()
+        await query.edit_message_text(
+            game_data["message"],
+            reply_markup=game_data["reply_markup"]
+        )
+    
+    elif callback_data.startswith("rps_choice_"):
+        user_choice = callback_data.replace("rps_choice_", "")
+        result = await bot_features.check_rps_choice(user_choice)
+        await query.edit_message_text(
+            result["message"],
+            reply_markup=result["reply_markup"]
+        )
+    
+    elif callback_data == "word_game":
+        game_data = await bot_features.word_game()
+        await query.edit_message_text(
+            game_data["message"],
+            reply_markup=game_data["reply_markup"]
+        )
+    
+    elif callback_data == "word_hint":
+        if 'word_game' in bot_features.user_data:
+            word = bot_features.user_data['word_game']['word']
+            first_letter = word[0]
+            last_letter = word[-1]
+            await query.edit_message_text(
+                f"💡 **راهنمایی:**\n\nحرف اول: {first_letter}\nحرف آخر: {last_letter}\n\nتعداد حروف: {len(word)}",
+                reply_markup=query.message.reply_markup
+            )
+    
+    elif callback_data == "memory_game":
+        game_data = await bot_features.memory_game()
+        await query.edit_message_text(
+            game_data["message"],
+            reply_markup=game_data["reply_markup"]
+        )
+    
+    elif callback_data == "random_game":
+        game_data = await bot_features.random_game()
+        await query.edit_message_text(
+            game_data["message"],
+            reply_markup=game_data["reply_markup"]
+        )
+    
+    elif callback_data == "sticker_creator":
+        menu_data = await bot_features.custom_sticker_menu()
+        await query.edit_message_text(
+            menu_data["message"],
+            reply_markup=menu_data["reply_markup"]
+        )
+    
+    elif callback_data.startswith("sticker_bg_"):
+        color = callback_data.replace("sticker_bg_", "")
+        color_map = {
+            "white": "white",
+            "black": "black", 
+            "blue": "#3498db",
+            "red": "#e74c3c",
+            "green": "#2ecc71",
+            "yellow": "#f1c40f"
+        }
+        
+        bg_color = color_map.get(color, "white")
+        if user_id not in user_states:
+            user_states[user_id] = {}
+        user_states[user_id]["sticker_bg"] = bg_color
+        
+        keyboard = [[
+            InlineKeyboardButton("✏️ نوشتن متن", callback_data="sticker_text")
+        ]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await query.edit_message_text(
+            f"✅ رنگ پس‌زمینه انتخاب شد!\n\nحالا متن استیکر خود را بنویسید:",
+            reply_markup=reply_markup
+        )
+    
+    elif callback_data == "sticker_text":
+        if user_id not in user_states:
+            user_states[user_id] = {}
+        user_states[user_id]["waiting_for_sticker_text"] = True
+        
+        await query.edit_message_text(
+            "✏️ لطفاً متن مورد نظر خود را برای استیکر بنویسید:"
+        )
+
+async def handle_message(update: Update, context: CallbackContext) -> None:
+    """مدیریت پیام‌های متنی کاربر"""
+    user_id = update.effective_user.id
+    text = update.message.text
+    
+    # بررسی حالت انتظار برای حدس عدد
+    if user_id in user_states and user_states[user_id].get("waiting_for_guess"):
+        try:
+            guess = int(text)
+            result = await bot_features.check_guess(guess)
+            await update.message.reply_text(
+                result["message"],
+                reply_markup=result["reply_markup"]
+            )
+            user_states[user_id]["waiting_for_guess"] = False
+        except ValueError:
+            await update.message.reply_text("❌ لطفاً یک عدد صحیح وارد کنید!")
+    
+    # بررسی حالت انتظار برای متن استیکر
+    elif user_id in user_states and user_states[user_id].get("waiting_for_sticker_text"):
+        bg_color = user_states[user_id].get("sticker_bg", "white")
+        sticker_bytes = await bot_features.create_sticker(text, bg_color)
+        
+        if sticker_bytes:
+            sticker_bytes.seek(0)
+            await update.message.reply_sticker(
+                sticker=InputFile(sticker_bytes, filename="sticker.png")
+            )
+            await update.message.reply_text("✅ استیکر شما با موفقیت ساخته شد!")
         else:
-            await query.message.reply_text("❌ پاسخ اشتباه! دوباره تلاش کنید.")
-    else:
-        await query.message.reply_text("❌ دکمه نامعتبر است.")
-
-async def unknown(update: Update, context: CallbackContext):
-    await update.message.reply_text("❌ دستور نامعتبر است! برای دیدن لیست دستورات، /help را وارد کنید.")
-
-def setup_handlers(application):
-    # دکماندHandlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("search", search_command))
-    application.add_handler(CommandHandler("music", music_command))
-    application.add_handler(CommandHandler("weather", weather_command))
-    application.add_handler(CommandHandler("crypto", crypto_command))
-    application.add_handler(CommandHandler("btc", btc_command))
-    application.add_handler(CommandHandler("eth", eth_command))
-    application.add_handler(CommandHandler("sticker", sticker_command))
-    application.add_handler(CommandHandler("game", game_command))
-    application.add_handler(CommandHandler("quiz", quiz_command))
-    application.add_handler(CommandHandler("price", price_command))
-    application.add_handler(CommandHandler("coupon", coupon_command))
-    application.add_handler(CommandHandler("news", news_command))
-    application.add_handler(CommandHandler("technews", technews_command))
-    application.add_handler(CommandHandler("time", time_command))
-    application.add_handler(CommandHandler("calc", calc_command))
-    application.add_handler(CommandHandler("translate", translate_command))
-    application.add_handler(CommandHandler("ai", ai_command))
-    application.add_handler(CommandHandler("chat", chat_command))
-    application.add_handler(CommandHandler("movie", movie_command))
-    application.add_handler(CommandHandler("series", series_command))
-    application.add_handler(CommandHandler("image", image_command))
-    application.add_handler(CommandHandler("download", download_command))
-    application.add_handler(CommandHandler("meme", meme_command))
+            await update.message.reply_text("❌ خطا در ساخت استیکر!")
+        
+        user_states[user_id]["waiting_for_sticker_text"] = False
     
-    # Callback Handler
-    application.add_handler(CallbackQueryHandler(button_callback))
-    
-    # Unknown Handler - catch all commands
-    application.add_handler(MessageHandler(filters.COMMAND, unknown))
+    # ساخت استیکر سریع با دستور مستقیم
+    elif text.startswith("/sticker "):
+        sticker_text = text.replace("/sticker ", "")
+        sticker_bytes = await bot_features.create_sticker(sticker_text)
+        
+        if sticker_bytes:
+            sticker_bytes.seek(0)
+            await update.message.reply_sticker(
+                sticker=InputFile(sticker_bytes, filename="sticker.png")
+            )
