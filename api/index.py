@@ -2,6 +2,8 @@ from flask import Flask, request, jsonify
 import logging
 import os
 import sys
+import asyncio
+import traceback
 from telegram import Update
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
@@ -26,7 +28,7 @@ application = Application.builder().token(TELEGRAM_TOKEN).build()
 try:
     # Add the parent directory to the path so we can import handlers
     sys.path.append('/var/task')
-    from handlers import *
+    from simple_handlers import setup_handlers
     
     # Setup handlers
     setup_handlers(application)
@@ -66,11 +68,30 @@ def webhook():
             logger.info(f"Received webhook data: {update_data}")
             
             update = Update.de_json(update_data, application.bot)
-            application.process_update(update)
+            
+            # Initialize application if not already initialized
+            if not application.running:
+                logger.info("Initializing application...")
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    loop.run_until_complete(application.initialize())
+                    loop.run_until_complete(application.start())
+                finally:
+                    loop.close()
+            
+            # Handle async function properly
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(application.process_update(update))
+            finally:
+                loop.close()
             
             return jsonify({"status": "ok"}), 200
         except Exception as e:
             logger.error(f"Error processing webhook: {e}")
+            logger.error(f"Full traceback: {traceback.format_exc()}")
             return jsonify({"status": "error", "message": str(e)}), 500
     return jsonify({"status": "error"}), 400
 
