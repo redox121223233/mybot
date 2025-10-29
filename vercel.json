@@ -15,10 +15,12 @@
   "functions": {
     "api/index.py": {
       "runtime": "python3.11",
-      "maxDuration": 10
+      "maxDuration": 15
     }
   },
   "env": {
     "PYTHON_VERSION": "3.11"
-  }
+  },
+  "installCommand": "pip install -r requirements.txt",
+  "buildCommand": "echo 'Build completed'"
 }

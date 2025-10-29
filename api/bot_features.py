@@ -1,373 +1,444 @@
-import requests
-from bs4 import BeautifulSoup
-import random
-import json
-import os
-from datetime import datetime
+"""
+Bot Features with Glassmorphism Design
+تبدیل ربات به طراحی شیشه‌ای مدرن
+"""
+import logging
 import asyncio
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import CallbackContext
-import tempfile
-import shutil
-from PIL import Image, ImageDraw, ImageFont
-import io
+from io import BytesIO
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
+import arabic_reshaper
+from bidi.algorithm import get_display
+import re
 
-class TelegramBotFeatures:
-    def __init__(self):
-        self.user_data = {}
-        self.coupons = self.load_coupons()
-        self.music_data = self.load_music_data()
-        self.api_key = os.getenv('API_KEY', 'your_default_api_key')
+logger = logging.getLogger(__name__)
+
+# Global user data storage
+user_data = {}
+
+def _prepare_text(text: str) -> str:
+    """آماده‌سازی متن فارسی برای نمایش صحیح"""
+    if not text:
+        return ""
+    reshaped_text = arabic_reshaper.reshape(text)
+    bidi_text = get_display(reshaped_text)
+    return bidi_text
+
+def _create_glassmorphism_bg(size=(512, 512), color_scheme="blue") -> Image.Image:
+    """ایجاد پس‌زمینه شیشه‌ای با گرادیانت"""
+    w, h = size
     
-    def load_coupons(self):
-        return [
-            {"code": "SAVE10", "discount": "10%", "category": "electronics"},
-            {"code": "FOOD20", "discount": "20%", "category": "food"},
-            {"code": "STYLE15", "discount": "15%", "category": "fashion"},
-            {"code": "TECH25", "discount": "25%", "category": "technology"},
-            {"code": "HOME30", "discount": "30%", "category": "home"},
-        ]
+    # طرح‌های رنگی مختلف
+    schemes = {
+        "blue": [(56, 189, 248), (99, 102, 241)],
+        "purple": [(147, 51, 234), (79, 70, 229)],
+        "green": [(34, 197, 94), (16, 185, 129)],
+        "red": [(244, 63, 94), (239, 68, 68)],
+        "orange": [(251, 146, 60), (245, 158, 11)],
+        "pink": [(236, 72, 153), (219, 39, 119)]
+    }
     
-    def load_music_data(self):
-        return {
-            "pop": ["Artist1 - Song1", "Artist2 - Song2", "Artist3 - Song3"],
-            "rock": ["Band1 - Track1", "Band2 - Track2", "Band3 - Track3"],
-            "classical": ["Composer1 - Piece1", "Composer2 - Piece2", "Composer3 - Piece3"],
-            "jazz": ["JazzArtist1 - JazzSong1", "JazzArtist2 - JazzSong2", "JazzArtist3 - JazzSong3"],
-        }
+    top_color, bottom_color = schemes.get(color_scheme, schemes["blue"])
     
-    async def start_command(self, update: Update, context: CallbackContext):
-        welcome_message = """
-🎉 به ربات من خوش آمدید! 🎉
+    # ایجاد پس‌زمینه گرادیانتی
+    img = Image.new("RGBA", size, (20, 20, 35, 255))
+    draw = ImageDraw.Draw(img)
+    
+    for y in range(h):
+        t = y / (h - 1)
+        r = int(top_color[0] * (1 - t) + bottom_color[0] * t)
+        g = int(top_color[1] * (1 - t) + bottom_color[1] * t)
+        b = int(top_color[2] * (1 - t) + bottom_color[2] * t)
+        draw.line([(0, y), (w, y)], fill=(r, g, b, 255))
+    
+    # افزودن افکت شیشه‌ای
+    img = img.filter(ImageFilter.GaussianBlur(1))
+    
+    # افزودن لایه شیشه‌ای
+    glass_layer = Image.new("RGBA", size, (255, 255, 255, 15))
+    img.paste(glass_layer, (0, 0), glass_layer)
+    
+    return img
 
-من یک ربات چندمنظوره با قابلیت‌های زیر هستم:
+def _create_stylish_text_image(text: str, color_scheme="blue", font_size=48) -> Image.Image:
+    """ایجاد تصویر متنی با استایل مدرن"""
+    if not text:
+        text = "Hello!"
+    
+    bg = _create_glassmorphism_bg(color_scheme=color_scheme)
+    draw = ImageDraw.Draw(bg)
+    
+    # تلاش برای بارگذاری فونت فارسی
+    try:
+        font = ImageFont.truetype("fonts/Vazirmatn-Regular.ttf", font_size)
+    except:
+        try:
+            font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", font_size)
+        except:
+            font = ImageFont.load_default()
+    
+    # آماده‌سازی متن فارسی
+    prepared_text = _prepare_text(text)
+    
+    # محاسبه موقعیت متن
+    bbox = draw.textbbox((0, 0), prepared_text, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+    
+    x = (512 - text_width) // 2
+    y = (512 - text_height) // 2
+    
+    # رسم متن با سایه
+    draw.text((x+2, y+2), prepared_text, font=font, fill=(0, 0, 0, 180))
+    draw.text((x, y), prepared_text, font=font, fill=(255, 255, 255, 255))
+    
+    return bg
 
-📱 **قابلیت‌های اصلی:**
-• 🔍 جستجوی پیشرفته اینترنت
-• 🎵 دانلود و پخش موسیقی
-• 🎬 جستجوی فیلم و سریال
-• 💬 چت با هوش مصنوعی
-• 🌦️ اطلاعات آب و هوا
-• 📊 قیمت ارزهای دیجیتال
-• 🎮 بازی و سرگرمی
-• 🛍️ جستجوی کالا و قیمت‌ها
-• 📰 اخبار روز
-• 🎨 ساخت استیکر و تصاویر
+def create_glassmorphism_keyboard(buttons_data, color_scheme="blue"):
+    """ایجاد کیبورد شیشه‌ای"""
+    keyboard = []
+    
+    # طرح‌های رنگی برای دکمه‌ها
+    button_colors = {
+        "blue": "🔵",
+        "purple": "🟣", 
+        "green": "🟢",
+        "red": "🔴",
+        "orange": "🟠",
+        "pink": "🩷"
+    }
+    
+    color_emoji = button_colors.get(color_scheme, "🔵")
+    
+    for row_data in buttons_data:
+        row = []
+        for button_text, callback_data in row_data:
+            # افزودن ایموجی رنگی به ابتدای دکمه
+            styled_text = f"{color_emoji} {button_text}"
+            row.append(InlineKeyboardButton(styled_text, callback_data=callback_data))
+        keyboard.append(row)
+    
+    return InlineKeyboardMarkup(keyboard)
 
-برای شروع، دستور /help را وارد کنید یا یکی از گزینه‌های زیر را انتخاب کنید:
+# Functions for existing features
+async def start_command(update: Update, context: CallbackContext) -> None:
+    """دستور /start با طراحی شیشه‌ای"""
+    welcome_text = """
+🌟 **به ربات استیکر ساز شیشه‌ای خوش آمدید!**
+
+✨ با طراحی مدرن و زیبا
+🎨 امکانات بی‌نظیر و خلاقانه
+🚀 سرعت و کیفیت بالا
+
+لطفاً یکی از گزینه‌های زیر را انتخاب کنید:
+    """
+    
+    buttons_data = [
+        [("🎮 شروع بازی‌ها", "start_games"), ("🎨 ساخت استیکر", "create_sticker")],
+        [("📚 راهنما", "help_command"), ("⚙️ تنظیمات", "settings")],
+        [("🎲 بازی تصادفی", "random_game"), ("🏆 امتیازات", "scores")],
+        [("🔙 بازگشت به منو", "back_to_main")]
+    ]
+    
+    reply_markup = create_glassmorphism_keyboard(buttons_data, "blue")
+    await update.message.reply_text(welcome_text, reply_markup=reply_markup)
+
+async def help_command(update: Update, context: CallbackContext) -> None:
+    """دستور /help با طراحی شیشه‌ای"""
+    help_text = """
+📖 **راهنمای ربات شیشه‌ای**
+
+🎮 **بازی‌ها:**
+• حدس عدد - حدس عدد مورد نظر ربات
+• سنگ کاغذ قیچی - بازی کلاسیک
+• بازی کلمات - چالش هوش
+• بازی حافظه - تقویت حافظه
+
+🎨 **ساخت استیکر:**
+• استیکر متنی - با متن دلخواه شما
+• استیکر رنگی - با طرح‌های زیبا
+• استیکر شخصی‌سازی شده
+
+⚙️ **امکانات:**
+• سرعت بالا
+• طراحی مدرن
+• رابط کاربری ساده
+• پشتیبانی 24/7
+
+❓ **سوال دارید؟**
+از دکمه راهنما استفاده کنید یا با پشتیبانی تماس بگیرید.
+    """
+    
+    buttons_data = [
+        [("🎮 بازی‌ها", "games_menu"), ("🎨 استیکرها", "stickers_menu")],
+        [("🏠 منوی اصلی", "back_to_main")]
+    ]
+    
+    reply_markup = create_glassmorphism_keyboard(buttons_data, "green")
+    await update.message.reply_text(help_text, reply_markup=reply_markup)
+
+async def create_sticker(text: str, color_scheme="blue"):
+    """ساخت استیکر با طراحی شیشه‌ای"""
+    try:
+        # ساخت تصویر با طراحی شیشه‌ای
+        sticker_img = _create_stylish_text_image(text, color_scheme)
+        
+        # تبدیل به فرمت WEBP برای تلگرام
+        buffer = BytesIO()
+        sticker_img.save(buffer, format='WEBP')
+        buffer.seek(0)
+        
+        return buffer
+    except Exception as e:
+        logger.error(f"Error creating sticker: {e}")
+        return None
+
+async def sticker_color_menu():
+    """منوی انتخاب رنگ استیکر"""
+    text = """
+🎨 **انتخاب طرح رنگی استیکر**
+
+طرح مورد نظر خود را انتخاب کنید:
+    """
+    
+    buttons_data = [
+        [("🔵 آبی", "sticker_color_blue"), ("🟣 بنفش", "sticker_color_purple")],
+        [("🟢 سبز", "sticker_color_green"), ("🔴 قرمز", "sticker_color_red")],
+        [("🟠 نارنجی", "sticker_color_orange"), ("🩷 صورتی", "sticker_color_pink")],
+        [("🔙 بازگشت", "back_to_main")]
+    ]
+    
+    reply_markup = create_glassmorphism_keyboard(buttons_data, "blue")
+    return {"message": text, "reply_markup": reply_markup}
+
+# Game functions with glassmorphism design
+async def guess_number_game():
+    """بازی حدس عدد با طراحی شیشه‌ای"""
+    import random
+    number = random.randint(1, 100)
+    user_data['guess_number'] = number
+    
+    text = f"""
+🎮 **بازی حدس عدد**
+
+🎯 عددی بین 1 تا 100 انتخاب کرده‌ام!
+🔢 حدس خود را وارد کنید
+
+💡 برای راهنمایی از دکمه زیر استفاده کنید
+    """
+    
+    buttons_data = [
+        [("💡 راهنمایی", "guess_hint"), ("🔙 بازگشت", "back_to_main")],
+        [("📊 آمار بازی", "game_stats")]
+    ]
+    
+    reply_markup = create_glassmorphism_keyboard(buttons_data, "purple")
+    return {"message": text, "reply_markup": reply_markup}
+
+async def check_guess(guess: int):
+    """بررسی حدس کاربر"""
+    if 'guess_number' not in user_data:
+        return {"message": "❌ بازی شروع نشده است!", "reply_markup": None}
+    
+    number = user_data['guess_number']
+    
+    if guess == number:
+        text = f"""
+🎉 **تبریک! شما برنده شدید!**
+
+✅ عدد صحیح: {number}
+🏆 امتیاز شما +10
+
+🎮 برای بازی دوباره کلیک کنید
         """
-        
-        keyboard = [
-            [InlineKeyboardButton("🔍 جستجو", callback_data="search"),
-             InlineKeyboardButton("🎵 موسیقی", callback_data="music")],
-            [InlineKeyboardButton("🎬 فیلم", callback_data="movie"),
-             InlineKeyboardButton("🤖 چت با AI", callback_data="chat")],
-            [InlineKeyboardButton("🌦️ آب و هوا", callback_data="weather"),
-             InlineKeyboardButton("💰 قیمت ارز", callback_data="crypto")],
-            [InlineKeyboardButton("🎮 بازی", callback_data="game"),
-             InlineKeyboardButton("🛍️ خرید", callback_data="shopping")],
+        buttons_data = [
+            [("🔄 بازی دوباره", "guess_number"), ("🏠 منوی اصلی", "back_to_main")]
         ]
-        
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(welcome_message, reply_markup=reply_markup)
-    
-    async def help_command(self, update: Update, context: CallbackContext):
-        help_text = """
-📖 **راهنمای کامل ربات:**
+        color_scheme = "green"
+    elif guess < number:
+        text = f"""
+🔼 **عدد بزرگتری انتخاب کنید**
 
-🔍 **جستجوی اینترنت:**
-• /search <متن> - جستجوی گوگل
-• /image <متن> - جستجوی تصویر
+❌ حدس شما: {guess}
+📈 عدد مورد نظر بزرگتر است
 
-🎵 **موسیقی:**
-• /music <نام آهنگ> - جستجوی موسیقی
-• /download <لینک> - دانلود موسیقی
-
-🎬 **فیلم و سریال:**
-• /movie <نام فیلم> - جستجوی فیلم
-• /series <نام سریال> - جستجوی سریال
-
-🤖 **هوش مصنوعی:**
-• /ai <سوال> - پرسش از AI
-• /chat <متن> - چت با هوش مصنوعی
-
-🌦️ **آب و هوا:**
-• /weather <شهر> - آب و هوای شهر
-
-💰 **ارز دیجیتال:**
-• /crypto <نام ارز> - قیمت ارز دیجیتال
-• /btc - قیمت بیت‌کوین
-• /eth - قیمت اتریوم
-
-🎮 **بازی:**
-• /game - شروع بازی
-• /quiz - مسابقه
-
-🛍️ **خرید:**
-• /price <کالا> - قیمت کالا
-• /coupon - کوپن‌های تخفیف
-
-🎨 **سازندگان:**
-• /sticker <متن> - ساخت استیکر
-• /meme <متن> - ساخت میم
-
-📰 **اخبار:**
-• /news - اخبار روز
-• /technews - اخبار تکنولوژی
-
-📊 **سایر:**
-• /time - زمان فعلی
-• /calc <محاسبه> - ماشین حساب
-• /translate <متن> - ترجمه
-
-برای هر دستور می‌توانید از منوی هم استفاده کنید!
+🎯 دوباره تلاش کنید
         """
-        await update.message.reply_text(help_text)
-    
-    async def search_internet(self, query: str):
-        try:
-            url = f"https://duckduckgo.com/html/?q={query}"
-            headers = {'User-Agent': 'Mozilla/5.0'}
-            response = requests.get(url, headers=headers, timeout=10)
-            soup = BeautifulSoup(response.content, 'html.parser')
-            
-            results = []
-            for result in soup.find_all('div', class_='result')[:5]:
-                title = result.find('a', class_='result__a')
-                snippet = result.find('a', class_='result__snippet')
-                
-                if title:
-                    title_text = title.get_text(strip=True)
-                    link = title.get('href', '')
-                    snippet_text = snippet.get_text(strip=True) if snippet else "بدون توضیحات"
-                    results.append(f"🔗 {title_text}\n📝 {snippet_text}\n🌐 {link}\n")
-            
-            return "\n".join(results) if results else "نتیجه‌ای یافت نشد!"
-        except Exception as e:
-            return f"خطا در جستجو: {str(e)}"
-    
-    async def search_music(self, query: str):
-        try:
-            # شبیه‌سازی جستجوی موسیقی
-            results = [
-                f"🎵 {query} -Artist 1\n🔗 https://music.example.com/{query.replace(' ', '-')}-1",
-                f"🎵 {query} -Artist 2\n🔗 https://music.example.com/{query.replace(' ', '-')}-2",
-                f"🎵 {query} -Artist 3\n🔗 https://music.example.com/{query.replace(' ', '-')}-3",
-            ]
-            return "\n\n".join(results)
-        except Exception as e:
-            return f"خطا در جستجوی موسیقی: {str(e)}"
-    
-    async def get_weather(self, city: str):
-        try:
-            # شبیه‌سازی دریافت آب و هوا
-            weather_data = {
-                "tehran": {"temp": "28°C", "condition": "آفتابی", "humidity": "30%"},
-                "mashhad": {"temp": "25°C", "condition": "نیمه‌ابری", "humidity": "40%"},
-                "isfahan": {"temp": "26°C", "condition": "آفتابی", "humidity": "35%"},
-                "shiraz": {"temp": "30°C", "condition": "آفتابی", "humidity": "25%"},
-            }
-            
-            city_lower = city.lower()
-            if city_lower in weather_data:
-                data = weather_data[city_lower]
-                return f"🌤️ **آب و هوای {city.title()}**\n\n🌡️ دما: {data['temp']}\n☁️ وضعیت: {data['condition']}\n💧 رطوبت: {data['humidity']}"
-            else:
-                return f"❌ شهر {city} یافت نشد. لطفاً شهر معتبر وارد کنید."
-        except Exception as e:
-            return f"خطا در دریافت آب و هوا: {str(e)}"
-    
-    async def get_crypto_price(self, symbol: str):
-        try:
-            # شبیه‌سازی قیمت ارز دیجیتال
-            prices = {
-                "btc": {"price": "$45,000", "change": "+2.5%"},
-                "eth": {"price": "$3,200", "change": "+1.8%"},
-                "bnb": {"price": "$320", "change": "-0.5%"},
-                "ada": {"price": "$1.20", "change": "+3.2%"},
-                "sol": {"price": "$120", "change": "+4.1%"},
-            }
-            
-            symbol_lower = symbol.lower()
-            if symbol_lower in prices:
-                data = prices[symbol_lower]
-                return f"💰 **{symbol.upper()}**\n\n💵 قیمت: {data['price']}\n📈 تغییر: {data['change']}"
-            else:
-                return f"❌ ارز {symbol.upper()} یافت نشد. ارزهای موجود: BTC, ETH, BNB, ADA, SOL"
-        except Exception as e:
-            return f"خطا در دریافت قیمت: {str(e)}"
-    
-    async def create_sticker(self, text: str):
-        try:
-            # ایجاد تصویر استیکر
-            img = Image.new('RGBA', (512, 512), (255, 255, 255, 0))
-            draw = ImageDraw.Draw(img)
-            
-            # تلاش برای استفاده از فونت فارسی
-            try:
-                font = ImageFont.truetype("fonts/arial.ttf", 40)
-            except:
-                font = ImageFont.load_default()
-            
-            # محاسبه موقعیت متن
-            bbox = draw.textbbox((0, 0), text, font=font)
-            text_width = bbox[2] - bbox[0]
-            text_height = bbox[3] - bbox[1]
-            
-            x = (512 - text_width) // 2
-            y = (512 - text_height) // 2
-            
-            # رسم متن
-            draw.text((x, y), text, fill=(0, 0, 0, 255), font=font)
-            
-            # ذخیره تصویر
-            img_bytes = io.BytesIO()
-            img.save(img_bytes, format='PNG')
-            img_bytes.seek(0)
-            
-            return img_bytes
-        except Exception as e:
-            print(f"Error creating sticker: {e}")
-            return None
-    
-    async def play_game(self, game_type: str = "quiz"):
-        if game_type == "quiz":
-            questions = [
-                {"question": "پایتخت ایران کجاست؟", "options": ["تهران", "اصفهان", "مشهد", "شیراز"], "answer": 0},
-                {"question": "۲+۲ چند می‌شود؟", "options": ["۳", "۴", "۵", "۶"], "answer": 1},
-                {"question": "بزرگ‌ترین اقیانوس کدام است؟", "options": ["اطلس", "هند", "آرام", "منجمد شمالی"], "answer": 2},
-            ]
-            
-            question = random.choice(questions)
-            keyboard = []
-            
-            for i, option in enumerate(question["options"]):
-                keyboard.append([InlineKeyboardButton(option, callback_data=f"quiz_answer_{i}")])
-            
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            return {
-                "question": question["question"],
-                "reply_markup": reply_markup,
-                "answer": question["answer"]
-            }
-        
-        elif game_type == "riddle":
-            riddles = [
-                {"riddle": "چه چیزی دم در است اما خانه نیست؟", "answer": "کلید"},
-                {"riddle": "چه چیزی همیشه به سمت بالا می‌رود اما هرگز پایین نمی‌آید؟", "answer": "سن"},
-                {"riddle": "چه چیزی چشم دارد اما نمی‌بیند؟", "answer": "سوزن"},
-            ]
-            
-            riddle = random.choice(riddles)
-            return f"🧩 معما: {riddle['riddle']}\n\n💭 برای دیدن جواب، روی دکمه زیر کلیک کنید:"
-    
-    async def search_products(self, product_name: str):
-        try:
-            # شبیه‌سازی جستجوی محصول
-            products = [
-                {
-                    "name": f"{product_name} - برند A",
-                    "price": "۱,۵۰۰,۰۰۰ تومان",
-                    "rating": "۴.۵",
-                    "link": f"https://shop.example.com/{product_name.replace(' ', '-')}-a"
-                },
-                {
-                    "name": f"{product_name} - برند B",
-                    "price": "۱,۲۰۰,۰۰۰ تومان",
-                    "rating": "۴.۲",
-                    "link": f"https://shop.example.com/{product_name.replace(' ', '-')}-b"
-                },
-                {
-                    "name": f"{product_name} - برند C",
-                    "price": "۱,۸۰۰,۰۰۰ تومان",
-                    "rating": "۴.۸",
-                    "link": f"https://shop.example.com/{product_name.replace(' ', '-')}-c"
-                },
-            ]
-            
-            results = []
-            for product in products:
-                results.append(f"🛍️ {product['name']}\n💰 قیمت: {product['price']}\n⭐ امتیاز: {product['rating']}\n🔗 {product['link']}\n")
-            
-            return "\n".join(results)
-        except Exception as e:
-            return f"خطا در جستجوی محصول: {str(e)}"
-    
-    async def get_coupons(self, category: str = None):
-        try:
-            if category:
-                filtered_coupons = [c for c in self.coupons if c["category"] == category.lower()]
-            else:
-                filtered_coupons = self.coupons
-            
-            if not filtered_coupons:
-                return "❌ کوپنی برای این دسته یافت نشد!"
-            
-            results = []
-            for coupon in filtered_coupons:
-                results.append(f"🎫 کد: {coupon['code']}\n💰 تخفیف: {coupon['discount']}\n📂 دسته: {coupon['category']}\n")
-            
-            return "\n".join(results)
-        except Exception as e:
-            return f"خطا در دریافت کوپن‌ها: {str(e)}"
-    
-    async def translate_text(self, text: str, target_lang: str = "en"):
-        try:
-            # شبیه‌سازی ترجمه
-            translations = {
-                "en": f"Translation of '{text}' to English",
-                "fa": f"ترجمه '{text}' به فارسی",
-                "ar": f"ترجمة '{text}' إلى العربية",
-                "es": f"Traducción de '{text}' al español",
-            }
-            
-            if target_lang in translations:
-                return translations[target_lang]
-            else:
-                return f"❌ زبان {target_lang} پشتیبانی نمی‌شود. زبان‌های موجود: en, fa, ar, es"
-        except Exception as e:
-            return f"خطا در ترجمه: {str(e)}"
-    
-    async def calculate(self, expression: str):
-        try:
-            # محاسبه امن
-            allowed_chars = set('0123456789+-*/(). ')
-            if not all(c in allowed_chars for c in expression):
-                return "❌ عبارت نامعتبر است!"
-            
-            result = eval(expression)
-            return f"🧮 نتیجه: {expression} = {result}"
-        except Exception as e:
-            return f"❌ خطا در محاسبه: {str(e)}"
-    
-    async def get_news(self, category: str = "general"):
-        try:
-            # شبیه‌سازی دریافت اخبار
-            news = {
-                "general": [
-                    "📰 خبر مهم: اتفاق جدید در جهان رخ داده است",
-                    "📰 تکنولوژی: شرکت بزرگ فناوری محصول جدیدی را عرضه کرد",
-                    "📰 ورزشی: تیم مهمی در مسابقات پیروز شد",
-                ],
-                "tech": [
-                    "💻 هوش مصنوعی: پیشرفت‌های جدید در زمینه AI",
-                    "📱 موبایل: گوشی جدید با قابلیت‌های فوق‌العاده",
-                    "🌐 اینترنت: شبکه‌های اجتماعی با تغییرات جدید",
-                ],
-                "sports": [
-                    "⚽ فوتبال: نتایج مهم هفته گذشته",
-                    "🏀 بسکتبال: بازیکن ستاره رکورد جدید زد",
-                    "🎾 تنیس: قهرمانی جدید مشخص شد",
-                ],
-            }
-            
-            if category in news:
-                articles = news[category]
-                return "\n\n".join(articles)
-            else:
-                return f"❌ دسته {category} یافت نشد. دسته‌های موجود: general, tech, sports"
-        except Exception as e:
-            return f"خطا در دریافت اخبار: {str(e)}"
+        buttons_data = [
+            [("💡 راهنمایی", "guess_hint"), ("🔙 بازگشت", "back_to_main")]
+        ]
+        color_scheme = "orange"
+    else:
+        text = f"""
+🔽 **عدد کوچکتر انتخاب کنید**
 
-# ایجاد نمونه از کلاس
-bot_features = TelegramBotFeatures()
+❌ حدس شما: {guess}
+📉 عدد مورد نظر کوچکتر است
+
+🎯 دوباره تلاش کنید
+        """
+        buttons_data = [
+            [("💡 راهنمایی", "guess_hint"), ("🔙 بازگشت", "back_to_main")]
+        ]
+        color_scheme = "red"
+    
+    reply_markup = create_glassmorphism_keyboard(buttons_data, color_scheme)
+    return {"message": text, "reply_markup": reply_markup}
+
+async def rock_paper_scissors_game():
+    """بازی سنگ کاغذ قیچی با طراحی شیشه‌ای"""
+    text = """
+🎮 **بازی سنگ کاغذ قیچی**
+
+✊ سنگ
+📄 کاغذ
+✂️ قیچی
+
+🎯 انتخاب خود را کنید:
+    """
+    
+    buttons_data = [
+        [("✊ سنگ", "rps_choice_rock"), ("📄 کاغذ", "rps_choice_paper"), ("✂️ قیچی", "rps_choice_scissors")],
+        [("📊 آمار بازی", "rps_stats"), ("🔙 بازگشت", "back_to_main")]
+    ]
+    
+    reply_markup = create_glassmorphism_keyboard(buttons_data, "blue")
+    return {"message": text, "reply_markup": reply_markup}
+
+async def check_rps_choice(user_choice: str):
+    """بررسی انتخاب کاربر در بازی سنگ کاغذ قیچی"""
+    import random
+    
+    choices = {"rock": "✊ سنگ", "paper": "📄 کاغذ", "scissors": "✂️ قیچی"}
+    bot_choice = random.choice(list(choices.keys()))
+    
+    # منطق بازی
+    if user_choice == bot_choice:
+        result_text = "🤝 مساوی!"
+        color_scheme = "orange"
+    elif (
+        (user_choice == "rock" and bot_choice == "scissors") or
+        (user_choice == "paper" and bot_choice == "rock") or
+        (user_choice == "scissors" and bot_choice == "paper")
+    ):
+        result_text = "🎉 شما برنده شدید!"
+        color_scheme = "green"
+    else:
+        result_text = "😔 ربات برنده شد!"
+        color_scheme = "red"
+    
+    text = f"""
+🎮 **نتیجه بازی**
+
+انتخاب شما: {choices[user_choice]}
+انتخاب ربات: {choices[bot_choice]}
+
+{result_text}
+
+🔄 برای بازی دوباره کلیک کنید
+    """
+    
+    buttons_data = [
+        [("🔄 بازی دوباره", "rock_paper_scissors"), ("🏠 منوی اصلی", "back_to_main")]
+    ]
+    
+    reply_markup = create_glassmorphism_keyboard(buttons_data, color_scheme)
+    return {"message": text, "reply_markup": reply_markup}
+
+async def word_game():
+    """بازی کلمات با طراحی شیشه‌ای"""
+    words = ["پایتون", "برنامه‌نویسی", "تلگرام", "ربات", "موبایل", "کامپیوتر", "هوش مصنوعی", "اینترنت"]
+    import random
+    
+    word = random.choice(words)
+    user_data['word_game'] = {'word': word, 'hints': 0}
+    
+    text = f"""
+🎮 **بازی حدس کلمه**
+
+📝 یک کلمه انتخاب کرده‌ام
+🔤 تعداد حروف: {len(word)}
+💭 حدس خود را وارد کنید
+
+💡 برای راهنمایی از دکمه زیر استفاده کنید
+    """
+    
+    buttons_data = [
+        [("💡 راهنمایی", "word_hint"), ("🔙 بازگشت", "back_to_main")],
+        [("📊 امار بازی", "word_stats")]
+    ]
+    
+    reply_markup = create_glassmorphism_keyboard(buttons_data, "purple")
+    return {"message": text, "reply_markup": reply_markup}
+
+async def memory_game():
+    """بازی حافظه با طراحی شیشه‌ای"""
+    text = """
+🧠 **بازی حافظه**
+
+🎯 چند عدد به شما نشان می‌دهم
+⏰ 3 ثانیه فرصت دارید
+🧠 سپس باید آن‌ها را به خاطر بیاورید
+
+🚀 آماده‌اید؟
+    """
+    
+    buttons_data = [
+        [("🚀 شروع بازی", "memory_start"), ("🔙 بازگشت", "back_to_main")],
+        [("📊 آمار بازی", "memory_stats")]
+    ]
+    
+    reply_markup = create_glassmorphism_keyboard(buttons_data, "green")
+    return {"message": text, "reply_markup": reply_markup}
+
+async def random_game():
+    """بازی تصادفی با طراحی شیشه‌ای"""
+    import random
+    
+    games = [
+        ("guess_number", "🎯 حدس عدد"),
+        ("rock_paper_scissors", "✂️ سنگ کاغذ قیچی"),
+        ("word_game", "📝 حدس کلمه"),
+        ("memory_game", "🧠 بازی حافظه")
+    ]
+    
+    game_name, game_emoji = random.choice(games)
+    
+    text = f"""
+🎲 **بازی تصادفی**
+
+🎯 بازی انتخاب شده: {game_emoji} {game_name.replace('_', ' ').title()}
+
+🚀 آماده شروع هستید؟
+    """
+    
+    buttons_data = [
+        [("🚀 شروع بازی", game_name), ("🎲 دوباره انتخاب", "random_game")],
+        [("🏠 منوی اصلی", "back_to_main")]
+    ]
+    
+    reply_markup = create_glassmorphism_keyboard(buttons_data, "orange")
+    return {"message": text, "reply_markup": reply_markup}
+
+async def custom_sticker_menu():
+    """منوی استیکر ساز سفارشی با طراحی شیشه‌ای"""
+    text = """
+🎨 **استیکر ساز شیشه‌ای**
+
+✨ با طراحی مدرن و زیبا
+🎫 متن دلخواه خود را وارد کنید
+🌈 رنگ مورد نظر را انتخاب کنید
+
+🚀 ساخت استیکر شروع می‌شود...
+    """
+    
+    buttons_data = [
+        [("🔵 طرح آبی", "sticker_bg_blue"), ("🟣 طرح بنفش", "sticker_bg_purple")],
+        [("🟢 طرح سبز", "sticker_bg_green"), ("🔴 طرح قرمز", "sticker_bg_red")],
+        [("🟠 طرح نارنجی", "sticker_bg_orange"), ("🩷 طرح صورتی", "sticker_bg_pink")],
+        [("✏️ نوشتن متن", "sticker_text"), ("🔙 بازگشت", "back_to_main")]
+    ]
+    
+    reply_markup = create_glassmorphism_keyboard(buttons_data, "blue")
+    return {"message": text, "reply_markup": reply_markup}
