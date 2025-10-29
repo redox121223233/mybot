@@ -3,6 +3,7 @@ from telegram.ext import CommandHandler, MessageHandler, filters, CallbackQueryH
 from bot_features import bot_features
 from security import security_manager
 from user_manager import user_manager
+from games import get_games_router
 import logging
 
 logger = logging.getLogger(__name__)
