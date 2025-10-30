@@ -627,140 +627,39 @@ if TELEGRAM_TOKEN:
 else:
     logger.error("No Telegram token found in environment variables")
 
-# Flask app for webhook
-try:
-    from flask import Flask, request, jsonify
-    
-    app = Flask(__name__)
-    
-    @app.route('/')
-    def home():
-        return "Telegram Bot is running! All handlers are active."
-    
-    @app.route('/webhook', methods=['POST'])
-    def webhook():
-        if request.method == 'POST':
-            try:
-                update_data = request.get_json()
-                logger.info(f"Received webhook data: {update_data}")
-                
-                if application:
-                    update = Update.de_json(update_data, application.bot)
-                    application.process_update(update)
-                else:
-                    logger.warning("Telegram application not initialized")
-                
-                return jsonify({"status": "ok"}), 200
-            except Exception as e:
-                logger.error(f"Error processing webhook: {e}")
-                return jsonify({"status": "error", "message": str(e)}), 500
-        return jsonify({"status": "error"}), 400
-    
-    @app.route('/health')
-    def health():
-        return jsonify({"status": "healthy", "handlers": "active", "telegram_app": application is not None})
-    
-    # Vercel serverless handler
-    def handler(environ, start_response):
-        """Vercel serverless function handler"""
-        return app(environ, start_response)
-    
-    # Export for Vercel
-    app_handler = handler
-    
-except ImportError:
-    # Fallback if Flask is not available
-    def handler(environ, start_response):
-        """Simple WSGI handler for Vercel without Flask"""
+# Import Flask
+from flask import Flask, request, jsonify
+
+# Create Flask app
+app = Flask(__name__)
+
+@app.route('/')
+def home():
+    return "Telegram Bot is running! All handlers are active."
+
+@app.route('/webhook', methods=['POST'])
+async def webhook():
+    if request.method == 'POST':
         try:
-            method = environ.get('REQUEST_METHOD', 'GET')
-            path = environ.get('PATH_INFO', '/')
+            update_data = request.get_json()
+            logger.info(f"Received webhook data: {update_data}")
             
-            if path == '/' and method == 'GET':
-                response_data = {
-                    'status': 'ok',
-                    'message': 'Telegram Bot API is running',
-                    'version': '1.0.0',
-                    'telegram_app': application is not None
-                }
-                body = json.dumps(response_data, indent=2)
-                
-                status = '200 OK'
-                headers = [('Content-Type', 'application/json')]
-                start_response(status, headers)
-                return [body.encode('utf-8')]
-            
-            elif path == '/health' and method == 'GET':
-                health_data = {
-                    'status': 'healthy',
-                    'timestamp': str(datetime.now()),
-                    'telegram_app': application is not None
-                }
-                body = json.dumps(health_data, indent=2)
-                
-                status = '200 OK'
-                headers = [('Content-Type', 'application/json')]
-                start_response(status, headers)
-                return [body.encode('utf-8')]
-            
-            elif path == '/webhook' and method == 'POST':
-                try:
-                    content_length = int(environ.get('CONTENT_LENGTH', 0))
-                    if content_length > 0:
-                        body_bytes = environ['wsgi.input'].read(content_length)
-                        body_str = body_bytes.decode('utf-8')
-                        
-                        webhook_data = json.loads(body_str)
-                        logger.info(f"Webhook received: {webhook_data}")
-                        
-                        if application:
-                            update = Update.de_json(webhook_data, application.bot)
-                            application.process_update(update)
-                        
-                        response_data = {'status': 'ok', 'processed': True}
-                    else:
-                        response_data = {'error': 'No data received'}
-                    
-                    body = json.dumps(response_data)
-                    status = '200 OK'
-                    headers = [('Content-Type', 'application/json')]
-                    start_response(status, headers)
-                    return [body.encode('utf-8')]
-                    
-                except Exception as e:
-                    logger.error(f"Webhook error: {e}")
-                    error_data = {'error': 'Processing failed'}
-                    body = json.dumps(error_data)
-                    status = '500 Internal Server Error'
-                    headers = [('Content-Type', 'application/json')]
-                    start_response(status, headers)
-                    return [body.encode('utf-8')]
-            
+            if application:
+                update = Update.de_json(update_data, application.bot)
+                await application.process_update(update)
             else:
-                error_data = {'error': 'Not found'}
-                body = json.dumps(error_data)
-                status = '404 Not Found'
-                headers = [('Content-Type', 'application/json')]
-                start_response(status, headers)
-                return [body.encode('utf-8')]
-        
+                logger.warning("Telegram application not initialized")
+
+            return jsonify({"status": "ok"}), 200
         except Exception as e:
-            logger.error(f"Handler error: {e}")
-            error_data = {'error': 'Internal server error'}
-            body = json.dumps(error_data)
-            status = '500 Internal Server Error'
-            headers = [('Content-Type', 'application/json')]
-            start_response(status, headers)
-            return [body.encode('utf-8')]
-    
-    app_handler = handler
+            logger.error(f"Error processing webhook: {e}")
+            return jsonify({"status": "error", "message": str(e)}), 500
+    return jsonify({"status": "error"}), 400
 
-# For Vercel compatibility
-app = app_handler if 'app_handler' in locals() else handler
+@app.route('/health')
+def health():
+    return jsonify({"status": "healthy", "handlers": "active", "telegram_app": application is not None})
 
+# For local testing
 if __name__ == '__main__':
-    # For local testing
-    if 'app' in globals() and hasattr(app, 'run'):
-        app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
-    else:
-        print("Handler ready for deployment")
+    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
