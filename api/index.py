@@ -829,7 +829,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         try:
-            sticker_file = await query.bot.upload_sticker_file(user_id=user_id, sticker=InputFile(img_bytes, "sticker.png"))
+            sticker_file = await query.bot.upload_sticker_file(user_id=user_id, sticker=InputFile(img_bytes, "sticker.png"), sticker_format="static")
             sticker_to_add = InputSticker(sticker=sticker_file.file_id, emoji_list=["😃"])
             await query.bot.add_sticker_to_set(user_id=user_id, name=pack_short_name, sticker=sticker_to_add)
 
@@ -949,7 +949,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         try:
             # Upload the sticker to get a file_id
-            sticker_file = await context.bot.upload_sticker_file(user_id=user_id, sticker=InputFile(dummy_sticker_bytes, "dummy.png"))
+            sticker_file = await context.bot.upload_sticker_file(user_id=user_id, sticker=InputFile(dummy_sticker_bytes, "dummy.png"), sticker_format="static")
 
             await context.bot.create_new_sticker_set(
                 user_id=user_id,
