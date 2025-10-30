@@ -829,7 +829,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         try:
-            sticker_to_add = InputSticker(sticker=InputFile(img_bytes_png, "sticker.png"), emoji_list=["😃"])
+            uploaded_sticker = await query.bot.upload_sticker_file(
+                user_id=user_id,
+                sticker=InputFile(img_bytes_png, "sticker.png"),
+                sticker_format="static"
+            )
+            sticker_to_add = InputSticker(sticker=uploaded_sticker.file_id, emoji_list=["😃"])
             await query.bot.add_sticker_to_set(user_id=user_id, name=pack_short_name, sticker=sticker_to_add)
 
             pack_link = f"https://t.me/addstickers/{pack_short_name}"
@@ -957,11 +962,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         dummy_sticker_bytes = await render_image("اولین", "center", "center", "Default", "#FFFFFF", "medium", as_webp=False)
 
         try:
+            uploaded_sticker = await context.bot.upload_sticker_file(
+                user_id=user_id,
+                sticker=InputFile(dummy_sticker_bytes, "dummy.png"),
+                sticker_format="static"
+            )
             await context.bot.create_new_sticker_set(
                 user_id=user_id,
                 name=pack_short_name,
                 title=text,
-                stickers=[InputSticker(sticker=InputFile(dummy_sticker_bytes, "dummy.png"), emoji_list=["🎉"])],
+                stickers=[InputSticker(sticker=uploaded_sticker.file_id, emoji_list=["🎉"])],
                 sticker_format="static"
             )
             add_user_pack(user_id, text, pack_short_name)
