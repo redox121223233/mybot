@@ -13,6 +13,7 @@ import tempfile
 import io
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, InputSticker
+from telegram.utils.keyboard import InlineKeyboardBuilder
 import re
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
@@ -282,10 +283,8 @@ class TelegramBotFeatures:
         if update.effective_user.id == ADMIN_ID:
             kb.button(text="👑 پنل ادمین", callback_data="admin:panel")
         kb.adjust(1, 2, 2)
-
-        reply_markup = kb.as_markup()
         
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        reply_markup = kb.as_markup()
 
         # Check if the message is from a callback query
         if update.callback_query:
