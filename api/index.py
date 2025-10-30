@@ -13,8 +13,11 @@ import tempfile
 import io
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
+import re
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
+import arabic_reshaper
+from bidi.algorithm import get_display
 
 # Configure logging
 logging.basicConfig(
@@ -26,6 +29,101 @@ logger = logging.getLogger(__name__)
 # Global variables for user states
 user_states = {}
 
+# ============ Font and Rendering Logic ============
+FONT_DIR = os.path.join(os.path.dirname(__file__), "..", "fonts")
+LOCAL_FONT_FILES = {
+    "Vazirmatn": "Vazirmatn-Regular.ttf",
+    "Sahel": "Sahel.ttf",
+    "IRANSans": "IRANSans.ttf",
+    "Roboto": "Roboto-Regular.ttf",
+    "Default": "Vazirmatn-Regular.ttf",
+}
+
+_LOCAL_FONTS = {
+    key: os.path.join(FONT_DIR, path)
+    for key, path in LOCAL_FONT_FILES.items()
+    if os.path.isfile(os.path.join(FONT_DIR, path))
+}
+
+def _prepare_text(text: str) -> str:
+    if not text:
+        return ""
+    reshaped_text = arabic_reshaper.reshape(text)
+    bidi_text = get_display(reshaped_text)
+    return bidi_text
+
+def resolve_font_path(font_key: str, text: str = "") -> str:
+    return _LOCAL_FONTS.get(font_key, _LOCAL_FONTS.get("Default", ""))
+
+def fit_font_size(draw: ImageDraw.ImageDraw, text: str, font_path: str, base: int, max_w: int, max_h: int) -> int:
+    size = base
+    while size > 12:
+        try:
+            font = ImageFont.truetype(font_path, size=size) if font_path else ImageFont.load_default()
+        except Exception:
+            font = ImageFont.load_default()
+        bbox = draw.textbbox((0, 0), text, font=font)
+        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+        if tw <= max_w and th <= max_h:
+            return size
+        size -= 1
+    return max(size, 12)
+
+def _parse_hex(hx: str) -> tuple[int, int, int, int]:
+    hx = (hx or "#ffffff").strip().lstrip("#")
+    if len(hx) == 3:
+        r, g, b = [int(c * 2, 16) for c in hx]
+    else:
+        r = int(hx[0:2], 16)
+        g = int(hx[2:4], 16)
+        b = int(hx[4:6], 16)
+    return (r, g, b, 255)
+
+async def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: str, size_key: str, bg_mode: str = "transparent", bg_photo: bytes | None = None, as_webp: bool = False) -> bytes:
+    W, H = (512, 512)
+    if bg_photo:
+        try:
+            img = Image.open(io.BytesIO(bg_photo)).convert("RGBA").resize((W, H))
+        except Exception:
+            img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    else:
+        img = Image.new("RGBA", (W, H), (0, 0, 0, 0) if bg_mode == "transparent" else (255, 255, 255, 255))
+
+    draw = ImageDraw.Draw(img)
+    color = _parse_hex(color_hex)
+    padding = 40
+    box_w, box_h = W - 2 * padding, H - 2 * padding
+    size_map = {"small": 64, "medium": 96, "large": 128}
+    base_size = size_map.get(size_key, 96)
+
+    font_path = resolve_font_path(font_key, text)
+    txt = _prepare_text(text)
+    final_size = fit_font_size(draw, txt, font_path, base_size, box_w, box_h)
+
+    try:
+        font = ImageFont.truetype(font_path, size=final_size) if font_path else ImageFont.load_default()
+    except Exception:
+        font = ImageFont.load_default()
+
+    bbox = draw.textbbox((0, 0), txt, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+
+    if v_pos == "top": y = padding
+    elif v_pos == "bottom": y = H - padding - text_height
+    else: y = (H - text_height) / 2
+
+    if h_pos == "left": x = padding
+    elif h_pos == "right": x = W - padding - text_width
+    else: x = W / 2
+
+    draw.text((x, y), txt, font=font, fill=color, anchor="mm" if h_pos == "center" else "lm", stroke_width=2, stroke_fill=(0, 0, 0, 220))
+
+    buf = io.BytesIO()
+    img.save(buf, format="WEBP" if as_webp else "PNG")
+    return buf.getvalue()
+
+# ============ Bot Features Class ============
 class TelegramBotFeatures:
     """Complete bot features class"""
     
@@ -54,35 +152,22 @@ class TelegramBotFeatures:
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         welcome_text = """🎉 به ربات من خوش آمدید! 🎉
 
-🎮 **بازی‌ها و سرگرمی‌ها:**
-• 🔢 حدس عدد - یک عدد بین ۱ تا ۱۰۰ را حدس بزنید
-• ✂️ سنگ کاغذ قیچی - بازی کلاسیک
-• 📝 بازی کلمات - حدس کلمات
-• 🧠 بازی حافظه - تست حافظه شما
-• 🎲 بازی تصادفی - شانس خود را امتحان کنید
-
-🎨 **سازنده استیکر:**
-• 🖼️ استیکر سریع با دستور /sticker <متن>
-• 🎨 استیکر سفارشی با دستور /customsticker
-
-📚 **راهنما:**
-/help - دیدن تمام دستورات
-
-انتخاب کنید:
+از منوی زیر یکی از گزینه‌ها را انتخاب کنید:
 """
         
         keyboard = [
-            [InlineKeyboardButton("🔢 حدس عدد", callback_data="guess_number")],
-            [InlineKeyboardButton("✂️ سنگ کاغذ قیچی", callback_data="rock_paper_scissors")],
-            [InlineKeyboardButton("📝 بازی کلمات", callback_data="word_game")],
-            [InlineKeyboardButton("🧠 بازی حافظه", callback_data="memory_game")],
-            [InlineKeyboardButton("🎲 بازی تصادفی", callback_data="random_game")],
             [InlineKeyboardButton("🎨 استیکر ساز", callback_data="sticker_creator")],
+            [InlineKeyboardButton("🎮 بازی و سرگرمی", callback_data="games_menu")],
             [InlineKeyboardButton("📚 راهنما", callback_data="help")]
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(welcome_text, reply_markup=reply_markup)
+
+        # Check if the message is from a callback query
+        if update.callback_query:
+            await update.callback_query.edit_message_text(welcome_text, reply_markup=reply_markup)
+        else:
+            await update.message.reply_text(welcome_text, reply_markup=reply_markup)
     
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         help_text = """📚 **راهنمای کامل ربات:**
@@ -108,47 +193,6 @@ class TelegramBotFeatures:
 ❓ برای هر سوالی از منوی اصلی استفاده کنید!"""
         
         await update.message.reply_text(help_text)
-    
-    async def create_sticker(self, text, bg_color="white"):
-        """Create a simple text sticker"""
-        try:
-            # Create image
-            img_size = (512, 512)
-            img = Image.new('RGB', img_size, bg_color)
-            draw = ImageDraw.Draw(img)
-            
-            # Try to use default font
-            try:
-                font = ImageFont.load_default()
-            except:
-                font = None
-            
-            # Calculate text position
-            if font:
-                bbox = draw.textbbox((0, 0), text, font=font)
-                text_width = bbox[2] - bbox[0]
-                text_height = bbox[3] - bbox[1]
-            else:
-                text_width = len(text) * 10
-                text_height = 20
-            
-            x = (img_size[0] - text_width) // 2
-            y = (img_size[1] - text_height) // 2
-            
-            # Draw text
-            text_color = "black" if bg_color == "white" else "white"
-            draw.text((x, y), text, fill=text_color, font=font)
-            
-            # Save to bytes
-            img_bytes = io.BytesIO()
-            img.save(img_bytes, format='PNG')
-            img_bytes.seek(0)
-            
-            return img_bytes
-            
-        except Exception as e:
-            logger.error(f"Error creating sticker: {e}")
-            return None
     
     async def guess_number_game(self):
         """Setup guess number game"""
@@ -407,6 +451,20 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if callback_data == "back_to_main":
         await bot_features.start_command(update, context)
         return
+
+    elif callback_data == "games_menu":
+        games_text = "🎮 **بازی‌ها و سرگرمی‌ها** 🎮\n\nیکی از بازی‌های زیر را انتخاب کنید:"
+        keyboard = [
+            [InlineKeyboardButton("🔢 حدس عدد", callback_data="guess_number")],
+            [InlineKeyboardButton("✂️ سنگ کاغذ قیچی", callback_data="rock_paper_scissors")],
+            [InlineKeyboardButton("📝 بازی کلمات", callback_data="word_game")],
+            [InlineKeyboardButton("🧠 بازی حافظه", callback_data="memory_game")],
+            [InlineKeyboardButton("🎲 بازی تصادفی", callback_data="random_game")],
+            [InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="back_to_main")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(games_text, reply_markup=reply_markup)
+        return
     
     elif callback_data == "guess_number":
         game_data = await bot_features.guess_number_game()
@@ -484,46 +542,110 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     
     elif callback_data == "sticker_creator":
-        menu_data = await bot_features.custom_sticker_menu()
-        await query.edit_message_text(
-            menu_data["message"],
-            reply_markup=menu_data["reply_markup"]
-        )
-    
-    elif callback_data.startswith("sticker_bg_"):
-        color = callback_data.replace("sticker_bg_", "")
-        color_map = {
-            "white": "white",
-            "black": "black", 
-            "blue": "#3498db",
-            "red": "#e74c3c",
-            "green": "#2ecc71",
-            "yellow": "#f1c40f"
-        }
+        # Reset any previous sticker state
+        user_states[user_id] = {"mode": "sticker_creator"}
         
-        bg_color = color_map.get(color, "white")
-        if user_id not in user_states:
-            user_states[user_id] = {}
-        user_states[user_id]["sticker_bg"] = bg_color
-        
-        keyboard = [[
-            InlineKeyboardButton("✏️ نوشتن متن", callback_data="sticker_text")
-        ]]
+        keyboard = [
+            [InlineKeyboardButton("🖼 استیکر ساده", callback_data="sticker:simple")],
+            [InlineKeyboardButton("✨ استیکر پیشرفته", callback_data="sticker:advanced")],
+            [InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="back_to_main")]
+        ]
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         await query.edit_message_text(
-            f"✅ رنگ پس‌زمینه انتخاب شد!\n\nحالا متن استیکر خود را بنویسید:",
+            "🎨 **استیکر ساز** 🎨\n\nکدام نوع استیکر را می‌خواهید بسازید؟",
             reply_markup=reply_markup
         )
-    
-    elif callback_data == "sticker_text":
-        if user_id not in user_states:
-            user_states[user_id] = {}
-        user_states[user_id]["waiting_for_sticker_text"] = True
-        
-        await query.edit_message_text(
-            "✏️ لطفاً متن مورد نظر خود را برای استیکر بنویسید:"
+
+    # --- Sticker Simple Flow ---
+    elif callback_data == "sticker:simple":
+        user_states[user_id]['sticker_mode'] = 'simple'
+        user_states[user_id]['sticker_data'] = {}
+        await query.edit_message_text("لطفاً متن استیکر ساده را ارسال کنید:")
+
+    # --- Sticker Advanced Flow ---
+    elif callback_data == "sticker:advanced":
+        user_states[user_id]['sticker_mode'] = 'advanced'
+        user_states[user_id]['sticker_data'] = {
+            "v_pos": "center", "h_pos": "center", "font": "Default",
+            "color": "#FFFFFF", "size": "large", "bg_photo_bytes": None
+        }
+        await query.edit_message_text("لطفاً متن استیکر پیشرفته را ارسال کنید:")
+
+    elif callback_data.startswith("sticker_av_"): # Advanced Sticker Options
+        parts = callback_data.split(':')
+        action = parts[1]
+
+        if 'sticker_data' not in user_states[user_id]:
+             user_states[user_id]['sticker_data'] = {}
+
+        sticker_data = user_states[user_id]['sticker_data']
+
+        if action == 'vpos':
+            sticker_data['v_pos'] = parts[2]
+            # Next step: Horizontal position
+            keyboard = [
+                [InlineKeyboardButton("چپ", callback_data="sticker_av:hpos:left")],
+                [InlineKeyboardButton("وسط", callback_data="sticker_av:hpos:center")],
+                [InlineKeyboardButton("راست", callback_data="sticker_av:hpos:right")]
+            ]
+            await query.edit_message_text("موقعیت افقی متن را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+        elif action == 'hpos':
+            sticker_data['h_pos'] = parts[2]
+            # Next step: Color
+            keyboard = [
+                [InlineKeyboardButton("سفید", callback_data="sticker_av:color:#FFFFFF"), InlineKeyboardButton("مشکی", callback_data="sticker_av:color:#000000")],
+                [InlineKeyboardButton("قرمز", callback_data="sticker_av:color:#F43F5E"), InlineKeyboardButton("آبی", callback_data="sticker_av:color:#3B82F6")]
+            ]
+            await query.edit_message_text("رنگ متن را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+        elif action == 'color':
+            sticker_data['color'] = parts[2]
+            # Next step: Size
+            keyboard = [
+                [InlineKeyboardButton("کوچک", callback_data="sticker_av:size:small")],
+                [InlineKeyboardButton("متوسط", callback_data="sticker_av:size:medium")],
+                [InlineKeyboardButton("بزرگ", callback_data="sticker_av:size:large")]
+            ]
+            await query.edit_message_text("اندازه فونت را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+        elif action == 'size':
+            sticker_data['size'] = parts[2]
+            # Final step: Preview
+            img_bytes = await render_image(
+                text=sticker_data.get("text", "پیش‌نمایش"),
+                v_pos=sticker_data["v_pos"],
+                h_pos=sticker_data["h_pos"],
+                font_key=sticker_data["font"],
+                color_hex=sticker_data["color"],
+                size_key=sticker_data["size"],
+                as_webp=False
+            )
+            await query.message.reply_photo(
+                photo=InputFile(img_bytes, filename="preview.png"),
+                caption="این هم پیش‌نمایش استیکر شما. آیا آن را تایید می‌کنید؟",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("✅ بله، تایید می‌کنم", callback_data="sticker:confirm"),
+                    InlineKeyboardButton("✏️ نه، ویرایش می‌کنم", callback_data="sticker:advanced:edit")
+                ]])
+            )
+
+    elif callback_data == "sticker:confirm":
+        sticker_data = user_states[user_id].get('sticker_data', {})
+        img_bytes = await render_image(
+            text=sticker_data.get("text", "استیکر"),
+            v_pos=sticker_data.get("v_pos", "center"),
+            h_pos=sticker_data.get("h_pos", "center"),
+            font_key=sticker_data.get("font", "Default"),
+            color_hex=sticker_data.get("color", "#FFFFFF"),
+            size_key=sticker_data.get("size", "medium"),
+            as_webp=True
         )
+        await query.message.reply_sticker(sticker=InputFile(img_bytes, filename="sticker.webp"))
+        await query.edit_message_text("استیکر شما با موفقیت ساخته شد!")
+        # Reset state
+        user_states[user_id] = {"mode": "main"}
     
     elif callback_data == "help":
         await bot_features.help_command(update, context)
@@ -549,34 +671,38 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             await update.message.reply_text("❌ لطفاً یک عدد صحیح وارد کنید!")
     
-    # Handle waiting for sticker text
-    elif user_id in user_states and user_states[user_id].get("waiting_for_sticker_text"):
-        bg_color = user_states[user_id].get("sticker_bg", "white")
-        sticker_bytes = await bot_features.create_sticker(text, bg_color)
-        
-        if sticker_bytes:
-            sticker_bytes.seek(0)
-            await update.message.reply_sticker(
-                sticker=InputFile(sticker_bytes, filename="sticker.png")
+    # Handle sticker creation text input
+    elif user_id in user_states and user_states[user_id].get("sticker_mode") in ["simple", "advanced"]:
+        mode = user_states[user_id]["sticker_mode"]
+        sticker_data = user_states[user_id].get("sticker_data", {})
+        sticker_data["text"] = text
+        user_states[user_id]["sticker_data"] = sticker_data
+
+        if mode == "simple":
+            # For simple mode, generate preview immediately
+            img_bytes = await render_image(
+                text=text, v_pos="center", h_pos="center", font_key="Default",
+                color_hex="#FFFFFF", size_key="medium", as_webp=False
             )
-            await update.message.reply_text("✅ استیکر شما با موفقیت ساخته شد!")
-        else:
-            await update.message.reply_text("❌ خطا در ساخت استیکر!")
-        
-        user_states[user_id]["waiting_for_sticker_text"] = False
-    
-    # Handle quick sticker command
-    elif text.startswith("/sticker "):
-        sticker_text = text.replace("/sticker ", "")
-        sticker_bytes = await bot_features.create_sticker(sticker_text)
-        
-        if sticker_bytes:
-            sticker_bytes.seek(0)
-            await update.message.reply_sticker(
-                sticker=InputFile(sticker_bytes, filename="sticker.png")
+            await update.message.reply_photo(
+                photo=InputFile(img_bytes, filename="preview.png"),
+                caption="این هم پیش‌نمایش استیکر شما. آیا آن را تایید می‌کنید؟",
+                reply_markup=InlineKeyboardMarkup([[
+                    InlineKeyboardButton("✅ بله، تایید می‌کنم", callback_data="sticker:confirm"),
+                    InlineKeyboardButton("✏️ نه، ویرایش می‌کنم", callback_data="sticker:simple:edit")
+                ]])
             )
-        else:
-            await update.message.reply_text("❌ خطا در ساخت استیکر!")
+        elif mode == "advanced":
+            # For advanced mode, start the customization flow
+            keyboard = [
+                [InlineKeyboardButton("بالا", callback_data="sticker_av:vpos:top")],
+                [InlineKeyboardButton("وسط", callback_data="sticker_av:vpos:center")],
+                [InlineKeyboardButton("پایین", callback_data="sticker_av:vpos:bottom")]
+            ]
+            await update.message.reply_text(
+                "متن دریافت شد. حالا موقعیت عمودی متن را انتخاب کنید:",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
     
     # Default message
     else:
@@ -600,7 +726,6 @@ def setup_application(application):
     # Command handlers
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("sticker", sticker_command))
     application.add_handler(CommandHandler("guess", guess_command))
     application.add_handler(CommandHandler("rps", rps_command))
     application.add_handler(CommandHandler("word", word_command))

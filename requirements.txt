@@ -3,3 +3,5 @@ requests==2.31.0
 beautifulsoup4==4.12.2
 Pillow==10.1.0
 Flask[async]==2.3.3
+arabic_reshaper
+python-bidi
