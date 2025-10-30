@@ -2,12 +2,22 @@ import logging
 import asyncio
 from telegram import Update, InputFile
 from telegram.ext import CallbackContext
-from bot import bot_features
+import bot_features
 
 logger = logging.getLogger(__name__)
 
 # متغیرهای سراسری برای حالت کاربر
 user_states = {}
+
+# ایجاد نمونه سراسری از ویژگی‌های ربات
+bot_features_instance = None
+
+def get_bot_features():
+    """Get or create bot features instance"""
+    global bot_features_instance
+    if bot_features_instance is None:
+        bot_features_instance = bot_features.TelegramBotFeatures()
+    return bot_features_instance
 
 async def setup_handlers(application):
     """تنظیم handlerها برای ربات"""
@@ -30,19 +40,22 @@ async def setup_handlers(application):
 
 async def start_command(update: Update, context: CallbackContext) -> None:
     """دستور /start"""
-    await bot_features.start_command(update, context)
+    features = get_bot_features()
+    await features.start_command(update, context)
     user_id = update.effective_user.id
     user_states[user_id] = {"mode": "main"}
 
 async def help_command(update: Update, context: CallbackContext) -> None:
     """دستور /help"""
-    await bot_features.help_command(update, context)
+    features = get_bot_features()
+    await features.help_command(update, context)
 
 async def sticker_command(update: Update, context: CallbackContext) -> None:
     """دستور /sticker برای ساخت استیکر"""
     if context.args:
         text = ' '.join(context.args)
-        sticker_bytes = await bot_features.create_sticker(text)
+        features = get_bot_features()
+        sticker_bytes = await features.create_sticker(text)
         
         if sticker_bytes:
             sticker_bytes.seek(0)
@@ -56,7 +69,8 @@ async def sticker_command(update: Update, context: CallbackContext) -> None:
 
 async def guess_command(update: Update, context: CallbackContext) -> None:
     """شروع بازی حدس عدد"""
-    game_data = await bot_features.guess_number_game()
+    features = get_bot_features()
+    game_data = await features.guess_number_game()
     await update.message.reply_text(
         game_data["message"],
         reply_markup=game_data["reply_markup"]
@@ -64,7 +78,8 @@ async def guess_command(update: Update, context: CallbackContext) -> None:
 
 async def rps_command(update: Update, context: CallbackContext) -> None:
     """شروع بازی سنگ کاغذ قیچی"""
-    game_data = await bot_features.rock_paper_scissors_game()
+    features = get_bot_features()
+    game_data = await features.rock_paper_scissors_game()
     await update.message.reply_text(
         game_data["message"],
         reply_markup=game_data["reply_markup"]
@@ -72,7 +87,8 @@ async def rps_command(update: Update, context: CallbackContext) -> None:
 
 async def word_command(update: Update, context: CallbackContext) -> None:
     """شروع بازی کلمات"""
-    game_data = await bot_features.word_game()
+    features = get_bot_features()
+    game_data = await features.word_game()
     await update.message.reply_text(
         game_data["message"],
         reply_markup=game_data["reply_markup"]
@@ -80,7 +96,8 @@ async def word_command(update: Update, context: CallbackContext) -> None:
 
 async def memory_command(update: Update, context: CallbackContext) -> None:
     """شروع بازی حافظه"""
-    game_data = await bot_features.memory_game()
+    features = get_bot_features()
+    game_data = await features.memory_game()
     await update.message.reply_text(
         game_data["message"],
         reply_markup=game_data["reply_markup"]
@@ -88,7 +105,8 @@ async def memory_command(update: Update, context: CallbackContext) -> None:
 
 async def random_command(update: Update, context: CallbackContext) -> None:
     """بازی تصادفی"""
-    game_data = await bot_features.random_game()
+    features = get_bot_features()
+    game_data = await features.random_game()
     await update.message.reply_text(
         game_data["message"],
         reply_markup=game_data["reply_markup"]
@@ -96,7 +114,8 @@ async def random_command(update: Update, context: CallbackContext) -> None:
 
 async def customsticker_command(update: Update, context: CallbackContext) -> None:
     """منوی استیکر ساز سفارشی"""
-    menu_data = await bot_features.custom_sticker_menu()
+    features = get_bot_features()
+    menu_data = await features.custom_sticker_menu()
     await update.message.reply_text(
         menu_data["message"],
         reply_markup=menu_data["reply_markup"]
@@ -113,11 +132,13 @@ async def button_callback(update: Update, context: CallbackContext) -> None:
     callback_data = query.data
     
     if callback_data == "back_to_main":
-        await bot_features.start_command(update, context)
+        features = get_bot_features()
+        await features.start_command(update, context)
         return
     
     elif callback_data == "guess_number":
-        game_data = await bot_features.guess_number_game()
+        features = get_bot_features()
+        game_data = await features.guess_number_game()
         await query.edit_message_text(
             game_data["message"],
             reply_markup=game_data["reply_markup"]
@@ -137,8 +158,9 @@ async def button_callback(update: Update, context: CallbackContext) -> None:
         user_states[user_id]["waiting_for_guess"] = True
     
     elif callback_data == "guess_hint":
-        if 'guess_number' in bot_features.user_data:
-            number = bot_features.user_data['guess_number']
+        features = get_bot_features()
+        if 'guess_number' in features.user_data:
+            number = features.user_data['guess_number']
             hint = "بزرگتر از 50" if number > 50 else "کوچکتر از 50"
             await query.edit_message_text(
                 f"💡 **راهنمایی:** عدد {hint} است!\n\nدوباره تلاش کنید:",
@@ -146,7 +168,8 @@ async def button_callback(update: Update, context: CallbackContext) -> None:
             )
     
     elif callback_data == "rock_paper_scissors":
-        game_data = await bot_features.rock_paper_scissors_game()
+        features = get_bot_features()
+        game_data = await features.rock_paper_scissors_game()
         await query.edit_message_text(
             game_data["message"],
             reply_markup=game_data["reply_markup"]
@@ -154,22 +177,25 @@ async def button_callback(update: Update, context: CallbackContext) -> None:
     
     elif callback_data.startswith("rps_choice_"):
         user_choice = callback_data.replace("rps_choice_", "")
-        result = await bot_features.check_rps_choice(user_choice)
+        features = get_bot_features()
+        result = await features.check_rps_choice(user_choice)
         await query.edit_message_text(
             result["message"],
             reply_markup=result["reply_markup"]
         )
     
     elif callback_data == "word_game":
-        game_data = await bot_features.word_game()
+        features = get_bot_features()
+        game_data = await features.word_game()
         await query.edit_message_text(
             game_data["message"],
             reply_markup=game_data["reply_markup"]
         )
     
     elif callback_data == "word_hint":
-        if 'word_game' in bot_features.user_data:
-            word = bot_features.user_data['word_game']['word']
+        features = get_bot_features()
+        if 'word_game' in features.user_data:
+            word = features.user_data['word_game']['word']
             first_letter = word[0]
             last_letter = word[-1]
             await query.edit_message_text(
@@ -178,21 +204,24 @@ async def button_callback(update: Update, context: CallbackContext) -> None:
             )
     
     elif callback_data == "memory_game":
-        game_data = await bot_features.memory_game()
+        features = get_bot_features()
+        game_data = await features.memory_game()
         await query.edit_message_text(
             game_data["message"],
             reply_markup=game_data["reply_markup"]
         )
     
     elif callback_data == "random_game":
-        game_data = await bot_features.random_game()
+        features = get_bot_features()
+        game_data = await features.random_game()
         await query.edit_message_text(
             game_data["message"],
             reply_markup=game_data["reply_markup"]
         )
     
     elif callback_data == "sticker_creator":
-        menu_data = await bot_features.custom_sticker_menu()
+        features = get_bot_features()
+        menu_data = await features.custom_sticker_menu()
         await query.edit_message_text(
             menu_data["message"],
             reply_markup=menu_data["reply_markup"]
@@ -242,7 +271,8 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
     if user_id in user_states and user_states[user_id].get("waiting_for_guess"):
         try:
             guess = int(text)
-            result = await bot_features.check_guess(guess)
+            features = get_bot_features()
+            result = await features.check_guess(guess)
             await update.message.reply_text(
                 result["message"],
                 reply_markup=result["reply_markup"]
@@ -254,7 +284,8 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
     # بررسی حالت انتظار برای متن استیکر
     elif user_id in user_states and user_states[user_id].get("waiting_for_sticker_text"):
         bg_color = user_states[user_id].get("sticker_bg", "white")
-        sticker_bytes = await bot_features.create_sticker(text, bg_color)
+        features = get_bot_features()
+        sticker_bytes = await features.create_sticker(text, bg_color)
         
         if sticker_bytes:
             sticker_bytes.seek(0)
@@ -270,7 +301,8 @@ async def handle_message(update: Update, context: CallbackContext) -> None:
     # ساخت استیکر سریع با دستور مستقیم
     elif text.startswith("/sticker "):
         sticker_text = text.replace("/sticker ", "")
-        sticker_bytes = await bot_features.create_sticker(sticker_text)
+        features = get_bot_features()
+        sticker_bytes = await features.create_sticker(sticker_text)
         
         if sticker_bytes:
             sticker_bytes.seek(0)
