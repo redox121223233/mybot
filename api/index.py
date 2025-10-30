@@ -29,11 +29,8 @@ try:
     try:
         from handlers import setup_handlers
         import asyncio
-        # Use asyncio.create_task instead of asyncio.run for better compatibility
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-        loop.run_until_complete(setup_handlers(application))
-        loop.close()
+        # Use asyncio.run() which is more compatible
+        asyncio.run(setup_handlers(application))
         logger.info("Handlers setup completed successfully")
     except ImportError as e:
         logger.warning(f"Handlers not available: {e}")
@@ -47,6 +44,18 @@ try:
         application.add_handler(CommandHandler("start", start_command))
         application.add_handler(CommandHandler("help", help_command))
         logger.info("Basic handlers setup completed")
+    except Exception as e:
+        logger.error(f"Error setting up handlers: {e}")
+        # Add basic handlers as fallback
+        async def start_command(update, context):
+            await update.message.reply_text("🤖 ربات شما فعال است!")
+        
+        async def help_command(update, context):
+            await update.message.reply_text("/start - شروع\n/help - راهنما")
+        
+        application.add_handler(CommandHandler("start", start_command))
+        application.add_handler(CommandHandler("help", help_command))
+        logger.info("Fallback handlers setup completed")
     
     # Add a default message handler
     async def handle_all_messages(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -100,14 +109,14 @@ def health():
     return jsonify({"status": "healthy", "handlers": "active", "telegram_app": application is not None})
 
 # Vercel serverless handler
-def handler(request):
+def handler(environ, start_response):
     """
     Vercel serverless function handler
     """
-    return app
+    return app(environ, start_response)
 
-# Export for Vercel
-app = app
+# Export handler for Vercel
+app_handler = handler
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
