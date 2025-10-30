@@ -26,6 +26,9 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+ADMIN_ID = 6053579919
+SUPPORT_USERNAME = "@onedaytoalive"
+
 # ============ In-memory Storage ============
 USERS: dict[int, dict] = {}
 SESSIONS: dict[int, dict] = {}
@@ -76,6 +79,21 @@ def _quota_left(uid: int) -> int:
     _reset_daily_if_needed(u)
     limit = u.get("daily_limit", 3)
     return max(0, limit - u.get("ai_used", 0))
+
+def _seconds_to_reset(uid: int) -> int:
+    u = user(uid)
+    _reset_daily_if_needed(u)
+    now = int(datetime.now(timezone.utc).timestamp())
+    end = u.get("day_start", 0) + 86400
+    return max(0, end - now)
+
+def _fmt_eta(secs: int) -> str:
+    h = secs // 3600
+    m = (secs % 3600) // 60
+    if h <= 0 and m <= 0: return "کمتر از ۱ دقیقه"
+    if h <= 0: return f"{m} دقیقه"
+    if m == 0: return f"{h} ساعت"
+    return f"{h} ساعت و {m} دقیقه"
 
 CHANNEL_USERNAME = "@redoxbot_sticker"
 
@@ -255,11 +273,17 @@ class TelegramBotFeatures:
 از منوی زیر یکی از گزینه‌ها را انتخاب کنید:
 """
         
-        keyboard = [
-            [InlineKeyboardButton("🎨 استیکر ساز", callback_data="sticker_creator")],
-            [InlineKeyboardButton("🎮 بازی و سرگرمی", callback_data="games_menu")],
-            [InlineKeyboardButton("📚 راهنما", callback_data="help"), InlineKeyboardButton("📞 پشتیبانی", callback_data="support")]
-        ]
+        kb = InlineKeyboardBuilder()
+        kb.button(text="🎨 استیکر ساز", callback_data="sticker_creator")
+        kb.button(text="📊 سهمیه من", callback_data="my_quota")
+        kb.button(text="🎮 بازی و سرگرمی", callback_data="games_menu")
+        kb.button(text="📚 راهنما", callback_data="help")
+        kb.button(text="📞 پشتیبانی", callback_data="support")
+        if update.effective_user.id == ADMIN_ID:
+            kb.button(text="👑 پنل ادمین", callback_data="admin:panel")
+        kb.adjust(1, 2, 2)
+
+        reply_markup = kb.as_markup()
         
         reply_markup = InlineKeyboardMarkup(keyboard)
 
@@ -812,7 +836,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         try:
-            sticker_to_add = InputSticker(sticker=InputFile(img_bytes, filename="sticker.webp"), emoji_list=["😃"])
+            sticker_file = await query.bot.upload_sticker_file(user_id=user_id, sticker=InputFile(img_bytes, "sticker.png"))
+            sticker_to_add = InputSticker(sticker=sticker_file.file_id, emoji_list=["😃"])
             await query.bot.add_sticker_to_set(user_id=user_id, name=pack_short_name, sticker=sticker_to_add)
 
             pack_link = f"https://t.me/addstickers/{pack_short_name}"
@@ -828,7 +853,44 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await bot_features.help_command(update, context)
 
     elif callback_data == "support":
-        await query.answer("@onedaytoalive :پشتیبانی", show_alert=True)
+        keyboard = [[InlineKeyboardButton("تماس با پشتیبانی", url=f"https://t.me/{SUPPORT_USERNAME.replace('@', '')}")]]
+        await query.edit_message_text("برای تماس با پشتیبانی، از دکمه زیر استفاده کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    # --- Admin Panel Flow ---
+    elif callback_data == "admin:panel":
+        if user_id != ADMIN_ID: return
+        keyboard = [
+            [InlineKeyboardButton("ارسال پیام همگانی", callback_data="admin:broadcast_prompt")],
+            [InlineKeyboardButton("ارسال پیام به کاربر", callback_data="admin:dm_prompt")],
+            [InlineKeyboardButton("تغییر سهمیه کاربر", callback_data="admin:quota_prompt")]
+        ]
+        await query.edit_message_text("👑 **پنل ادمین** 👑", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif callback_data == "admin:broadcast_prompt":
+        if user_id != ADMIN_ID: return
+        sess(user_id)["mode"] = "admin_broadcast"
+        await query.edit_message_text("پیام همگانی را ارسال کنید:")
+
+    elif callback_data == "admin:dm_prompt":
+        if user_id != ADMIN_ID: return
+        sess(user_id)["mode"] = "admin_dm_id"
+        await query.edit_message_text("آیدی عددی کاربر مورد نظر را ارسال کنید:")
+
+    elif callback_data == "admin:quota_prompt":
+        if user_id != ADMIN_ID: return
+        sess(user_id)["mode"] = "admin_quota_id"
+        await query.edit_message_text("آیدی عددی کاربر مورد نظر را ارسال کنید:")
+
+    elif callback_data == "my_quota":
+        left = _quota_left(user_id)
+        total = user(user_id).get("daily_limit", 3)
+        eta_str = _fmt_eta(_seconds_to_reset(user_id))
+
+        text = f"📊 **سهمیه شما** 📊\n\n"
+        text += f"شما **{left}** از **{total}** سهمیه ساخت استیکر پیشرفته خود را برای امروز باقی دارید.\n\n"
+        text += f"زمان بازنشانی بعدی: **{eta_str}**"
+
+        await query.edit_message_text(text)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text messages"""
@@ -836,6 +898,45 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     
     current_mode = sess(user_id).get("mode")
+
+    # --- Admin Actions ---
+    if user_id == ADMIN_ID:
+        if current_mode == "admin_broadcast":
+            success_count = 0
+            for uid in USERS:
+                try:
+                    await context.bot.send_message(uid, text)
+                    success_count += 1
+                except Exception:
+                    pass
+            await update.message.reply_text(f"پیام به {success_count} کاربر ارسال شد.")
+            reset_mode(user_id)
+            return
+        elif current_mode == "admin_dm_id":
+            sess(user_id)["admin_target_id"] = int(text)
+            sess(user_id)["mode"] = "admin_dm_text"
+            await update.message.reply_text("پیام را برای ارسال بنویسید:")
+            return
+        elif current_mode == "admin_dm_text":
+            target_id = sess(user_id).get("admin_target_id")
+            try:
+                await context.bot.send_message(target_id, text)
+                await update.message.reply_text("پیام با موفقیت ارسال شد.")
+            except Exception as e:
+                await update.message.reply_text(f"خطا در ارسال پیام: {e}")
+            reset_mode(user_id)
+            return
+        elif current_mode == "admin_quota_id":
+            sess(user_id)["admin_target_id"] = int(text)
+            sess(user_id)["mode"] = "admin_quota_value"
+            await update.message.reply_text("مقدار سهمیه جدید را وارد کنید:")
+            return
+        elif current_mode == "admin_quota_value":
+            target_id = sess(user_id).get("admin_target_id")
+            user(target_id)["daily_limit"] = int(text)
+            await update.message.reply_text(f"سهمیه کاربر {target_id} به {text} تغییر یافت.")
+            reset_mode(user_id)
+            return
 
     # --- Pack Creation Flow ---
     if current_mode == "pack_create_start":
@@ -851,14 +952,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # Create a dummy sticker to create the pack
-        dummy_sticker = await render_image("اولین", "center", "center", "Default", "#FFFFFF", "medium", as_webp=True)
+        dummy_sticker_bytes = await render_image("اولین", "center", "center", "Default", "#FFFFFF", "medium", as_webp=True)
 
         try:
+            # Upload the sticker to get a file_id
+            sticker_file = await context.bot.upload_sticker_file(user_id=user_id, sticker=InputFile(dummy_sticker_bytes, "dummy.png"))
+
             await context.bot.create_new_sticker_set(
                 user_id=user_id,
                 name=pack_short_name,
                 title=text,
-                stickers=[InputSticker(sticker=InputFile(dummy_sticker, "dummy.webp"), emoji_list=["🎉"])],
+                stickers=[InputSticker(sticker=sticker_file.file_id, emoji_list=["🎉"])],
                 sticker_format="static"
             )
             add_user_pack(user_id, text, pack_short_name)
