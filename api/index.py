@@ -818,23 +818,32 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             u = user(user_id)
             u["ai_used"] = u.get("ai_used", 0) + 1
 
-        img_bytes = await render_image(
+        img_bytes_png = await render_image(
             text=sticker_data.get("text", "استیکر"),
             v_pos=sticker_data.get("v_pos", "center"),
             h_pos=sticker_data.get("h_pos", "center"),
             font_key=sticker_data.get("font", "Default"),
             color_hex=sticker_data.get("color", "#FFFFFF"),
             size_key=sticker_data.get("size", "medium"),
-            as_webp=True
+            as_webp=False
         )
 
         try:
-            sticker_file = await query.bot.upload_sticker_file(user_id=user_id, sticker=InputFile(img_bytes, "sticker.png"), sticker_format="static")
-            sticker_to_add = InputSticker(sticker=sticker_file.file_id, emoji_list=["😃"])
+            sticker_to_add = InputSticker(sticker=InputFile(img_bytes_png, "sticker.png"), emoji_list=["😃"])
             await query.bot.add_sticker_to_set(user_id=user_id, name=pack_short_name, sticker=sticker_to_add)
 
             pack_link = f"https://t.me/addstickers/{pack_short_name}"
-            await query.message.reply_sticker(sticker=InputFile(img_bytes, filename="sticker.webp"))
+            # Still send the webp version to the user for display
+            img_bytes_webp = await render_image(
+                text=sticker_data.get("text", "استیکر"),
+                v_pos=sticker_data.get("v_pos", "center"),
+                h_pos=sticker_data.get("h_pos", "center"),
+                font_key=sticker_data.get("font", "Default"),
+                color_hex=sticker_data.get("color", "#FFFFFF"),
+                size_key=sticker_data.get("size", "medium"),
+                as_webp=True
+            )
+            await query.message.reply_sticker(sticker=InputFile(img_bytes_webp, filename="sticker.webp"))
             await query.edit_message_text(f"استیکر با موفقیت به پک اضافه شد!\n\n{pack_link}")
         except Exception as e:
             await query.edit_message_text(f"خطا در اضافه کردن استیکر به پک: {e}")
@@ -945,17 +954,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # Create a dummy sticker to create the pack
-        dummy_sticker_bytes = await render_image("اولین", "center", "center", "Default", "#FFFFFF", "medium", as_webp=True)
+        dummy_sticker_bytes = await render_image("اولین", "center", "center", "Default", "#FFFFFF", "medium", as_webp=False)
 
         try:
-            # Upload the sticker to get a file_id
-            sticker_file = await context.bot.upload_sticker_file(user_id=user_id, sticker=InputFile(dummy_sticker_bytes, "dummy.png"), sticker_format="static")
-
             await context.bot.create_new_sticker_set(
                 user_id=user_id,
                 name=pack_short_name,
                 title=text,
-                stickers=[InputSticker(sticker=sticker_file.file_id, emoji_list=["🎉"])],
+                stickers=[InputSticker(sticker=InputFile(dummy_sticker_bytes, "dummy.png"), emoji_list=["🎉"])],
                 sticker_format="static"
             )
             add_user_pack(user_id, text, pack_short_name)
