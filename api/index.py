@@ -849,12 +849,18 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 as_webp=True
             )
             await query.message.reply_sticker(sticker=InputFile(img_bytes_webp, filename="sticker.webp"))
-            await query.edit_message_text(f"استیکر با موفقیت به پک اضافه شد!\n\n{pack_link}")
+
+            poll_keyboard = [
+                [InlineKeyboardButton("✅ بله", callback_data="rate:yes")],
+                [InlineKeyboardButton("❌ خیر", callback_data="rate:no")]
+            ]
+            await query.edit_message_text(
+                f"استیکر با موفقیت به پک اضافه شد!\n\n{pack_link}\n\nآیا از نتیجه راضی بودید؟",
+                reply_markup=InlineKeyboardMarkup(poll_keyboard)
+            )
         except Exception as e:
             await query.edit_message_text(f"خطا در اضافه کردن استیکر به پک: {e}")
-
-        # Reset state
-        reset_mode(user_id)
+            reset_mode(user_id)
     
     elif callback_data == "help":
         await bot_features.help_command(update, context)
@@ -887,6 +893,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_id != ADMIN_ID: return
         sess(user_id)["mode"] = "admin_quota_id"
         await query.edit_message_text("آیدی عددی کاربر مورد نظر را ارسال کنید:")
+
+    elif callback_data == "rate:yes":
+        await query.edit_message_text("از بازخورد شما متشکریم!")
+        reset_mode(user_id)
+
+    elif callback_data == "rate:no":
+        await query.edit_message_text("از بازخورد شما متشکریم! نظرات شما به ما در بهبود ربات کمک می‌کند.")
+        reset_mode(user_id)
 
     elif callback_data == "my_quota":
         left = _quota_left(user_id)
