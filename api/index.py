@@ -12,7 +12,7 @@ import random
 import tempfile
 import io
 from datetime import datetime
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, InputSticker
 import re
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
@@ -77,6 +77,31 @@ def _quota_left(uid: int) -> int:
     limit = u.get("daily_limit", 3)
     return max(0, limit - u.get("ai_used", 0))
 
+CHANNEL_USERNAME = "@redoxbot_sticker"
+
+async def require_channel_membership(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
+    user_id = update.effective_user.id
+    try:
+        member = await context.bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
+        if member.status in ["member", "administrator", "creator"]:
+            return True
+    except Exception:
+        pass  # Ignore errors (e.g., bot not admin in channel)
+
+    keyboard = [
+        [InlineKeyboardButton("عضویت در کانال", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}")],
+        [InlineKeyboardButton("✅ بررسی عضویت", callback_data="check_membership")]
+    ]
+
+    text = f"برای استفاده از ربات، لطفاً ابتدا در کانال ما عضو شوید:\n{CHANNEL_USERNAME}"
+
+    if update.callback_query:
+        await update.callback_query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+    else:
+        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+    return False
+
+
 def get_current_pack_short_name(uid: int) -> str | None:
     return user(uid).get("current_pack")
 
@@ -88,7 +113,18 @@ async def check_pack_exists(bot, short_name: str) -> bool:
         return False
 
 def is_valid_pack_name(name: str) -> bool:
-    return re.match(r"^[a-zA-Z0-9_]{1,64}$", name) and not name.endswith("_by_")
+    if not (1 <= len(name) <= 50):
+        return False
+    if not name[0].isalpha():
+        return False
+    if name.endswith('_'):
+        return False
+    if '__' in name:
+        return False
+    for char in name:
+        if not (char.isalnum() or char == '_'):
+            return False
+    return True
 
 # Global variables for user states
 user_states = {}
@@ -431,12 +467,16 @@ bot_features = TelegramBotFeatures()
 # Handler functions
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command"""
+    if not await require_channel_membership(update, context):
+        return
     user_id = update.effective_user.id
-    user_states[user_id] = {"mode": "main"}
+    reset_mode(user_id)
     await bot_features.start_command(update, context)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /help command"""
+    if not await require_channel_membership(update, context):
+        return
     await bot_features.help_command(update, context)
 
 async def sticker_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -510,6 +550,17 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     user_id = update.effective_user.id
     callback_data = query.data
+
+    if callback_data == "check_membership":
+        if await require_channel_membership(update, context):
+            await query.message.delete()
+            await bot_features.start_command(update, context)
+        else:
+            await query.answer("شما هنوز عضو کانال نیستید.", show_alert=True)
+        return
+
+    if not await require_channel_membership(update, context):
+        return
     
     if callback_data == "back_to_main":
         await bot_features.start_command(update, context)
@@ -620,7 +671,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             sess(user_id)["mode"] = "pack_create_start"
             await query.edit_message_text(
-                "شما هنوز هیچ پک استیکری نساخته‌اید. لطفاً یک نام برای اولین پک خود ارسال کنید (فقط حروف انگلیسی و اعداد):"
+                """نام پک را بنویس (مثال: my_stickers):
+
+• فقط حروف انگلیسی، عدد و زیرخط
+• باید با حرف شروع شود
+• نباید با زیرخط تمام شود
+• نباید دو زیرخط پشت سر هم داشته باشد
+• حداکثر ۵۰ کاراکتر (به خاطر اضافه شدن نام ربات)"""
             )
 
     # --- Sticker Pack Flow ---
@@ -636,7 +693,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif callback_data == "pack:new":
         sess(user_id)["mode"] = "pack_create_start"
-        await query.edit_message_text("لطفاً یک نام برای پک جدید خود ارسال کنید (فقط حروف انگلیسی و اعداد):")
+        await query.edit_message_text("""نام پک را بنویس (مثال: my_stickers):
+
+• فقط حروف انگلیسی، عدد و زیرخط
+• باید با حرف شروع شود
+• نباید با زیرخط تمام شود
+• نباید دو زیرخط پشت سر هم داشته باشد
+• حداکثر ۵۰ کاراکتر (به خاطر اضافه شدن نام ربات)""")
 
     # --- Sticker Simple Flow ---
     elif callback_data == "sticker:simple":
@@ -712,6 +775,18 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     InlineKeyboardButton("✏️ نه، ویرایش می‌کنم", callback_data="sticker:advanced:edit")
                 ]])
             )
+
+    elif callback_data == "sticker:advanced:edit":
+        # Go back to the first step of advanced customization
+        keyboard = [
+            [InlineKeyboardButton("بالا", callback_data="sticker_adv:vpos:top")],
+            [InlineKeyboardButton("وسط", callback_data="sticker_adv:vpos:center")],
+            [InlineKeyboardButton("پایین", callback_data="sticker_adv:vpos:bottom")]
+        ]
+        await query.edit_message_text(
+            "موقعیت عمودی متن را انتخاب کنید:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
 
     elif callback_data == "sticker:confirm":
         sticker_data = sess(user_id).get('sticker_data', {})
