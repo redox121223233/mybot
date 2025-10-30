@@ -26,6 +26,70 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# ============ In-memory Storage ============
+USERS: dict[int, dict] = {}
+SESSIONS: dict[int, dict] = {}
+
+def user(uid: int) -> dict:
+    if uid not in USERS:
+        USERS[uid] = { "packs": [], "current_pack": None, "daily_limit": 3, "ai_used": 0, "day_start": 0 }
+    return USERS[uid]
+
+def sess(uid: int) -> dict:
+    if uid not in SESSIONS:
+        SESSIONS[uid] = { "mode": "main", "sticker_data": {} }
+    return SESSIONS[uid]
+
+def reset_mode(uid: int):
+    SESSIONS[uid] = { "mode": "main", "sticker_data": {} }
+
+# ============ Sticker Pack Management ============
+def get_user_packs(uid: int) -> list:
+    return user(uid).get("packs", [])
+
+def add_user_pack(uid: int, pack_name: str, pack_short_name: str):
+    packs = user(uid).get("packs", [])
+    if not any(p['short_name'] == pack_short_name for p in packs):
+        packs.append({"name": pack_name, "short_name": pack_short_name})
+    user(uid)["packs"] = packs
+    user(uid)["current_pack"] = pack_short_name
+
+def set_current_pack(uid: int, pack_short_name: str):
+    user(uid)["current_pack"] = pack_short_name
+
+from datetime import datetime, timezone
+
+def _today_start_ts() -> int:
+    now = datetime.now(timezone.utc)
+    midnight = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
+    return int(midnight.timestamp())
+
+def _reset_daily_if_needed(u: dict):
+    day_start = u.get("day_start", 0)
+    today = _today_start_ts()
+    if day_start < today:
+        u["day_start"] = today
+        u["ai_used"] = 0
+
+def _quota_left(uid: int) -> int:
+    u = user(uid)
+    _reset_daily_if_needed(u)
+    limit = u.get("daily_limit", 3)
+    return max(0, limit - u.get("ai_used", 0))
+
+def get_current_pack_short_name(uid: int) -> str | None:
+    return user(uid).get("current_pack")
+
+async def check_pack_exists(bot, short_name: str) -> bool:
+    try:
+        await bot.get_sticker_set(name=short_name)
+        return True
+    except Exception:
+        return False
+
+def is_valid_pack_name(name: str) -> bool:
+    return re.match(r"^[a-zA-Z0-9_]{1,64}$", name) and not name.endswith("_by_")
+
 # Global variables for user states
 user_states = {}
 
@@ -150,7 +214,7 @@ class TelegramBotFeatures:
         }
     
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        welcome_text = """🎉 به ربات من خوش آمدید! 🎉
+        welcome_text = """🎉 به ربات استیکر ساز خوش آمدید! 🎉
 
 از منوی زیر یکی از گزینه‌ها را انتخاب کنید:
 """
@@ -158,7 +222,7 @@ class TelegramBotFeatures:
         keyboard = [
             [InlineKeyboardButton("🎨 استیکر ساز", callback_data="sticker_creator")],
             [InlineKeyboardButton("🎮 بازی و سرگرمی", callback_data="games_menu")],
-            [InlineKeyboardButton("📚 راهنما", callback_data="help")]
+            [InlineKeyboardButton("📚 راهنما", callback_data="help"), InlineKeyboardButton("📞 پشتیبانی", callback_data="support")]
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -172,27 +236,26 @@ class TelegramBotFeatures:
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         help_text = """📚 **راهنمای کامل ربات:**
 
-🎮 **بازی‌ها:**
-/guess - شروع بازی حدس عدد
-/rps - سنگ کاغذ قیچی
-/word - بازی کلمات
-/memory - بازی حافظه
-/random - بازی تصادفی
-
 🎨 **استیکر ساز:**
-/sticker <متن> - ساخت استیکر سریع
-/customsticker - منوی استیکر ساز سفارشی
+برای ساخت استیکر، از دکمه "استیکر ساز" در منوی اصلی استفاده کنید. شما باید یک پک استیکر بسازید یا یکی از پک‌های موجود خود را انتخاب کنید. سپس می‌توانید استیکرهای ساده یا پیشرفته بسازید.
 
-💬 **سایر:**
-/start - منوی اصلی
-/help - این راهنما
+🎮 **بازی‌ها:**
+برای سرگرمی، می‌توانید از منوی "بازی و سرگرمی" یکی از بازی‌های موجود را انتخاب کنید.
 
-مثال استیکر:
-/sticker سلام دنیا! 🌍
+ پشتیبانی:**
+در صورت بروز مشکل، با پشتیبانی در تماس باشید.
 
-❓ برای هر سوالی از منوی اصلی استفاده کنید!"""
+"""
         
-        await update.message.reply_text(help_text)
+        keyboard = [
+            [InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="back_to_main")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        if update.callback_query:
+            await update.callback_query.edit_message_text(help_text, reply_markup=reply_markup)
+        else:
+            await update.message.reply_text(help_text, reply_markup=reply_markup)
     
     async def guess_number_game(self):
         """Setup guess number game"""
@@ -542,52 +605,71 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     
     elif callback_data == "sticker_creator":
-        # Reset any previous sticker state
-        user_states[user_id] = {"mode": "sticker_creator"}
-        
+        # Start the pack selection/creation flow
+        packs = get_user_packs(user_id)
+        if packs:
+            kb = InlineKeyboardBuilder()
+            for pack in packs:
+                kb.button(text=f"📦 {pack['name']}", callback_data=f"pack:select:{pack['short_name']}")
+            kb.button(text="➕ ساخت پک جدید", callback_data="pack:new")
+            kb.adjust(1)
+            await query.edit_message_text(
+                "یک پک استیکر را برای اضافه کردن انتخاب کنید، یا یک پک جدید بسازید:",
+                reply_markup=kb.as_markup()
+            )
+        else:
+            sess(user_id)["mode"] = "pack_create_start"
+            await query.edit_message_text(
+                "شما هنوز هیچ پک استیکری نساخته‌اید. لطفاً یک نام برای اولین پک خود ارسال کنید (فقط حروف انگلیسی و اعداد):"
+            )
+
+    # --- Sticker Pack Flow ---
+    elif callback_data.startswith("pack:select:"):
+        pack_short_name = callback_data.split(":")[-1]
+        set_current_pack(user_id, pack_short_name)
+        # Now ask for sticker type
         keyboard = [
             [InlineKeyboardButton("🖼 استیکر ساده", callback_data="sticker:simple")],
-            [InlineKeyboardButton("✨ استیکر پیشرفته", callback_data="sticker:advanced")],
-            [InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="back_to_main")]
+            [InlineKeyboardButton("✨ استیکر پیشرفته", callback_data="sticker:advanced")]
         ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        await query.edit_message_text(
-            "🎨 **استیکر ساز** 🎨\n\nکدام نوع استیکر را می‌خواهید بسازید؟",
-            reply_markup=reply_markup
-        )
+        await query.edit_message_text("نوع استیکر را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+    elif callback_data == "pack:new":
+        sess(user_id)["mode"] = "pack_create_start"
+        await query.edit_message_text("لطفاً یک نام برای پک جدید خود ارسال کنید (فقط حروف انگلیسی و اعداد):")
 
     # --- Sticker Simple Flow ---
     elif callback_data == "sticker:simple":
-        user_states[user_id]['sticker_mode'] = 'simple'
-        user_states[user_id]['sticker_data'] = {}
+        sess(user_id)['sticker_mode'] = 'simple'
+        sess(user_id)['sticker_data'] = {}
         await query.edit_message_text("لطفاً متن استیکر ساده را ارسال کنید:")
 
     # --- Sticker Advanced Flow ---
     elif callback_data == "sticker:advanced":
-        user_states[user_id]['sticker_mode'] = 'advanced'
-        user_states[user_id]['sticker_data'] = {
+        if _quota_left(user_id) <= 0:
+            await query.answer("سهمیه استیکر پیشرفته شما برای امروز به پایان رسیده است.", show_alert=True)
+            return
+
+        sess(user_id)['sticker_mode'] = 'advanced'
+        sess(user_id)['sticker_data'] = {
             "v_pos": "center", "h_pos": "center", "font": "Default",
             "color": "#FFFFFF", "size": "large", "bg_photo_bytes": None
         }
         await query.edit_message_text("لطفاً متن استیکر پیشرفته را ارسال کنید:")
 
-    elif callback_data.startswith("sticker_av_"): # Advanced Sticker Options
+    elif callback_data.startswith("sticker_adv:"): # Advanced Sticker Options
         parts = callback_data.split(':')
         action = parts[1]
 
-        if 'sticker_data' not in user_states[user_id]:
-             user_states[user_id]['sticker_data'] = {}
-
-        sticker_data = user_states[user_id]['sticker_data']
+        sticker_data = sess(user_id).get('sticker_data', {})
 
         if action == 'vpos':
             sticker_data['v_pos'] = parts[2]
             # Next step: Horizontal position
             keyboard = [
-                [InlineKeyboardButton("چپ", callback_data="sticker_av:hpos:left")],
-                [InlineKeyboardButton("وسط", callback_data="sticker_av:hpos:center")],
-                [InlineKeyboardButton("راست", callback_data="sticker_av:hpos:right")]
+                [InlineKeyboardButton("چپ", callback_data="sticker_adv:hpos:left")],
+                [InlineKeyboardButton("وسط", callback_data="sticker_adv:hpos:center")],
+                [InlineKeyboardButton("راست", callback_data="sticker_adv:hpos:right")]
             ]
             await query.edit_message_text("موقعیت افقی متن را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -595,8 +677,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             sticker_data['h_pos'] = parts[2]
             # Next step: Color
             keyboard = [
-                [InlineKeyboardButton("سفید", callback_data="sticker_av:color:#FFFFFF"), InlineKeyboardButton("مشکی", callback_data="sticker_av:color:#000000")],
-                [InlineKeyboardButton("قرمز", callback_data="sticker_av:color:#F43F5E"), InlineKeyboardButton("آبی", callback_data="sticker_av:color:#3B82F6")]
+                [InlineKeyboardButton("سفید", callback_data="sticker_adv:color:#FFFFFF"), InlineKeyboardButton("مشکی", callback_data="sticker_adv:color:#000000")],
+                [InlineKeyboardButton("قرمز", callback_data="sticker_adv:color:#F43F5E"), InlineKeyboardButton("آبی", callback_data="sticker_adv:color:#3B82F6")]
             ]
             await query.edit_message_text("رنگ متن را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -604,9 +686,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             sticker_data['color'] = parts[2]
             # Next step: Size
             keyboard = [
-                [InlineKeyboardButton("کوچک", callback_data="sticker_av:size:small")],
-                [InlineKeyboardButton("متوسط", callback_data="sticker_av:size:medium")],
-                [InlineKeyboardButton("بزرگ", callback_data="sticker_av:size:large")]
+                [InlineKeyboardButton("کوچک", callback_data="sticker_adv:size:small")],
+                [InlineKeyboardButton("متوسط", callback_data="sticker_adv:size:medium")],
+                [InlineKeyboardButton("بزرگ", callback_data="sticker_adv:size:large")]
             ]
             await query.edit_message_text("اندازه فونت را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
 
@@ -632,7 +714,18 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
     elif callback_data == "sticker:confirm":
-        sticker_data = user_states[user_id].get('sticker_data', {})
+        sticker_data = sess(user_id).get('sticker_data', {})
+        pack_short_name = get_current_pack_short_name(user_id)
+
+        if not pack_short_name:
+            await query.edit_message_text("خطا: پکی انتخاب نشده است. لطفاً دوباره شروع کنید.")
+            return
+
+        # Decrement quota if it was an advanced sticker
+        if sess(user_id).get("sticker_mode") == "advanced":
+            u = user(user_id)
+            u["ai_used"] = u.get("ai_used", 0) + 1
+
         img_bytes = await render_image(
             text=sticker_data.get("text", "استیکر"),
             v_pos=sticker_data.get("v_pos", "center"),
@@ -642,19 +735,73 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             size_key=sticker_data.get("size", "medium"),
             as_webp=True
         )
-        await query.message.reply_sticker(sticker=InputFile(img_bytes, filename="sticker.webp"))
-        await query.edit_message_text("استیکر شما با موفقیت ساخته شد!")
+
+        try:
+            sticker_to_add = InputSticker(sticker=InputFile(img_bytes, filename="sticker.webp"), emoji_list=["😃"])
+            await query.bot.add_sticker_to_set(user_id=user_id, name=pack_short_name, sticker=sticker_to_add)
+
+            pack_link = f"https://t.me/addstickers/{pack_short_name}"
+            await query.message.reply_sticker(sticker=InputFile(img_bytes, filename="sticker.webp"))
+            await query.edit_message_text(f"استیکر با موفقیت به پک اضافه شد!\n\n{pack_link}")
+        except Exception as e:
+            await query.edit_message_text(f"خطا در اضافه کردن استیکر به پک: {e}")
+
         # Reset state
-        user_states[user_id] = {"mode": "main"}
+        reset_mode(user_id)
     
     elif callback_data == "help":
         await bot_features.help_command(update, context)
+
+    elif callback_data == "support":
+        await query.answer("@onedaytoalive :پشتیبانی", show_alert=True)
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text messages"""
     user_id = update.effective_user.id
     text = update.message.text
     
+    current_mode = sess(user_id).get("mode")
+
+    # --- Pack Creation Flow ---
+    if current_mode == "pack_create_start":
+        if not is_valid_pack_name(text):
+            await update.message.reply_text("نام پک نامعتبر است. لطفاً دوباره تلاش کنید.")
+            return
+
+        bot_username = (await context.bot.get_me()).username
+        pack_short_name = f"{text}_by_{bot_username}"
+
+        if await check_pack_exists(context.bot, pack_short_name):
+            await update.message.reply_text("این پک قبلاً وجود دارد. لطفاً یک نام دیگر انتخاب کنید.")
+            return
+
+        # Create a dummy sticker to create the pack
+        dummy_sticker = await render_image("اولین", "center", "center", "Default", "#FFFFFF", "medium", as_webp=True)
+
+        try:
+            await context.bot.create_new_sticker_set(
+                user_id=user_id,
+                name=pack_short_name,
+                title=text,
+                stickers=[InputSticker(sticker=InputFile(dummy_sticker, "dummy.webp"), emoji_list=["🎉"])],
+                sticker_format="static"
+            )
+            add_user_pack(user_id, text, pack_short_name)
+            set_current_pack(user_id, pack_short_name)
+
+            keyboard = [
+                [InlineKeyboardButton("🖼 استیکر ساده", callback_data="sticker:simple")],
+                [InlineKeyboardButton("✨ استیکر پیشرفته", callback_data="sticker:advanced")]
+            ]
+            await update.message.reply_text(
+                f"پک «{text}» با موفقیت ساخته شد! حالا نوع استیکر را انتخاب کنید:",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+            reset_mode(user_id)
+        except Exception as e:
+            await update.message.reply_text(f"خطا در ساخت پک: {e}")
+        return
+
     # Handle waiting for guess
     if user_id in user_states and user_states[user_id].get("waiting_for_guess"):
         try:
@@ -672,11 +819,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("❌ لطفاً یک عدد صحیح وارد کنید!")
     
     # Handle sticker creation text input
-    elif user_id in user_states and user_states[user_id].get("sticker_mode") in ["simple", "advanced"]:
-        mode = user_states[user_id]["sticker_mode"]
-        sticker_data = user_states[user_id].get("sticker_data", {})
+    elif sess(user_id).get("sticker_mode") in ["simple", "advanced"]:
+        mode = sess(user_id)["sticker_mode"]
+        sticker_data = sess(user_id).get("sticker_data", {})
         sticker_data["text"] = text
-        user_states[user_id]["sticker_data"] = sticker_data
+        sess(user_id)["sticker_data"] = sticker_data
 
         if mode == "simple":
             # For simple mode, generate preview immediately
@@ -695,14 +842,19 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif mode == "advanced":
             # For advanced mode, start the customization flow
             keyboard = [
-                [InlineKeyboardButton("بالا", callback_data="sticker_av:vpos:top")],
-                [InlineKeyboardButton("وسط", callback_data="sticker_av:vpos:center")],
-                [InlineKeyboardButton("پایین", callback_data="sticker_av:vpos:bottom")]
+                [InlineKeyboardButton("بالا", callback_data="sticker_adv:vpos:top")],
+                [InlineKeyboardButton("وسط", callback_data="sticker_adv:vpos:center")],
+                [InlineKeyboardButton("پایین", callback_data="sticker_adv:vpos:bottom")]
             ]
             await update.message.reply_text(
                 "متن دریافت شد. حالا موقعیت عمودی متن را انتخاب کنید:",
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
+
+    # ... inside button_callback ...
+    elif callback_data == "sticker:simple:edit":
+        sess(user_id)['sticker_mode'] = 'simple'
+        await query.edit_message_text("لطفاً متن جدید استیکر ساده را ارسال کنید:")
     
     # Default message
     else:
