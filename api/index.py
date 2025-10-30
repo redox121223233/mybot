@@ -612,23 +612,11 @@ def setup_application(application):
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-# Initialize Telegram application
-TELEGRAM_TOKEN = os.getenv('BOT_TOKEN') or os.getenv('TELEGRAM_BOT_TOKEN')
-application = None
-
-if TELEGRAM_TOKEN:
-    try:
-        application = Application.builder().token(TELEGRAM_TOKEN).build()
-        setup_application(application)
-        logger.info("Handlers setup completed successfully")
-    except Exception as e:
-        logger.error(f"Error setting up application: {e}")
-        application = None
-else:
-    logger.error("No Telegram token found in environment variables")
-
 # Import Flask
 from flask import Flask, request, jsonify
+
+# Get Telegram token from environment variables
+TELEGRAM_TOKEN = os.getenv('BOT_TOKEN') or os.getenv('TELEGRAM_BOT_TOKEN')
 
 # Create Flask app
 app = Flask(__name__)
@@ -639,26 +627,42 @@ def home():
 
 @app.route('/webhook', methods=['POST'])
 async def webhook():
-    if request.method == 'POST':
-        try:
-            update_data = request.get_json()
-            logger.info(f"Received webhook data: {update_data}")
-            
-            if application:
-                update = Update.de_json(update_data, application.bot)
-                await application.process_update(update)
-            else:
-                logger.warning("Telegram application not initialized")
+    """Handles incoming Telegram updates."""
+    if not TELEGRAM_TOKEN:
+        logger.error("No Telegram token found!")
+        return jsonify({"status": "error", "message": "Bot token not configured"}), 500
 
-            return jsonify({"status": "ok"}), 200
-        except Exception as e:
-            logger.error(f"Error processing webhook: {e}")
-            return jsonify({"status": "error", "message": str(e)}), 500
-    return jsonify({"status": "error"}), 400
+    application = Application.builder().token(TELEGRAM_TOKEN).build()
+    setup_application(application)
+
+    try:
+        await application.initialize()
+
+        update_data = request.get_json()
+        logger.info(f"Received webhook data: {update_data}")
+
+        update = Update.de_json(update_data, application.bot)
+        await application.process_update(update)
+
+        await application.shutdown()
+
+        return jsonify({"status": "ok"}), 200
+    except Exception as e:
+        logger.error(f"Error processing webhook: {e}")
+        # Ensure shutdown is called even on error
+        if application.is_initialized:
+            await application.shutdown()
+        return jsonify({"status": "error", "message": str(e)}), 500
 
 @app.route('/health')
 def health():
-    return jsonify({"status": "healthy", "handlers": "active", "telegram_app": application is not None})
+    """Health check endpoint."""
+    is_token_present = TELEGRAM_TOKEN is not None
+    return jsonify({
+        "status": "healthy",
+        "handlers": "active",
+        "telegram_token_present": is_token_present
+    })
 
 # For local testing
 if __name__ == '__main__':
