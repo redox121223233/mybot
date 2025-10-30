@@ -2,14 +2,22 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/index.py",
+      "src": "api/main.py",
       "use": "@vercel/python"
     }
   ],
   "routes": [
     {
-      "src": "/(.*)",
-      "dest": "/api/index.py"
+      "src": "/",
+      "dest": "/api/main.py"
+    },
+    {
+      "src": "/webhook",
+      "dest": "/api/main.py"
+    },
+    {
+      "src": "/health",
+      "dest": "/api/main.py"
     }
   ]
 }
