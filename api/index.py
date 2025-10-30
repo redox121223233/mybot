@@ -743,6 +743,24 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         sticker_data = sess(user_id).get('sticker_data', {})
 
+        if action == 'custom_bg':
+            choice = parts[2]
+            if choice == 'yes':
+                sess(user_id)['mode'] = 'awaiting_custom_bg'
+                await query.edit_message_text("لطفاً عکس پس‌زمینه را ارسال کنید.")
+            else: # 'no'
+                # Continue with the normal flow
+                keyboard = [
+                    [InlineKeyboardButton("بالا", callback_data="sticker_adv:vpos:top")],
+                    [InlineKeyboardButton("وسط", callback_data="sticker_adv:vpos:center")],
+                    [InlineKeyboardButton("پایین", callback_data="sticker_adv:vpos:bottom")]
+                ]
+                await query.edit_message_text(
+                    "موقعیت عمودی متن را انتخاب کنید:",
+                    reply_markup=InlineKeyboardMarkup(keyboard)
+                )
+            return
+
         if action == 'vpos':
             sticker_data['v_pos'] = parts[2]
             # Next step: Horizontal position
@@ -782,6 +800,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 font_key=sticker_data["font"],
                 color_hex=sticker_data["color"],
                 size_key=sticker_data["size"],
+                bg_photo=sticker_data.get("bg_photo_bytes"),
                 as_webp=False
             )
             await query.message.reply_photo(
@@ -825,6 +844,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             font_key=sticker_data.get("font", "Default"),
             color_hex=sticker_data.get("color", "#FFFFFF"),
             size_key=sticker_data.get("size", "medium"),
+            bg_photo=sticker_data.get("bg_photo_bytes"),
             as_webp=False
         )
 
@@ -846,20 +866,22 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 font_key=sticker_data.get("font", "Default"),
                 color_hex=sticker_data.get("color", "#FFFFFF"),
                 size_key=sticker_data.get("size", "medium"),
+                bg_photo=sticker_data.get("bg_photo_bytes"),
                 as_webp=True
             )
+            await query.message.delete()
             await query.message.reply_sticker(sticker=InputFile(img_bytes_webp, filename="sticker.webp"))
 
             poll_keyboard = [
                 [InlineKeyboardButton("✅ بله", callback_data="rate:yes")],
                 [InlineKeyboardButton("❌ خیر", callback_data="rate:no")]
             ]
-            await query.edit_message_text(
+            await query.message.reply_text(
                 f"استیکر با موفقیت به پک اضافه شد!\n\n{pack_link}\n\nآیا از نتیجه راضی بودید؟",
                 reply_markup=InlineKeyboardMarkup(poll_keyboard)
             )
         except Exception as e:
-            await query.edit_message_text(f"خطا در اضافه کردن استیکر به پک: {e}")
+            await query.message.reply_text(f"خطا در اضافه کردن استیکر به پک: {e}")
             reset_mode(user_id)
     
     elif callback_data == "help":
@@ -895,11 +917,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("آیدی عددی کاربر مورد نظر را ارسال کنید:")
 
     elif callback_data == "rate:yes":
-        await query.edit_message_text("از بازخورد شما متشکریم!")
+        await query.edit_message_text("از بازخورد شما متشکریم!", reply_markup=None)
         reset_mode(user_id)
 
     elif callback_data == "rate:no":
-        await query.edit_message_text("از بازخورد شما متشکریم! نظرات شما به ما در بهبود ربات کمک می‌کند.")
+        await query.edit_message_text("از بازخورد شما متشکریم! نظرات شما به ما در بهبود ربات کمک می‌کند.", reply_markup=None)
         reset_mode(user_id)
 
     elif callback_data == "my_quota":
@@ -913,11 +935,41 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         await query.edit_message_text(text)
 
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle incoming photos for custom backgrounds."""
+    user_id = update.effective_user.id
+
+    if sess(user_id).get("mode") == "awaiting_custom_bg":
+        photo_file = await update.message.photo[-1].get_file()
+        photo_bytes = await photo_file.download_as_bytearray()
+
+        sticker_data = sess(user_id).get("sticker_data", {})
+        sticker_data["bg_photo_bytes"] = bytes(photo_bytes)
+        sess(user_id)["sticker_data"] = sticker_data
+
+        # Reset mode and continue the advanced sticker flow
+        sess(user_id)["mode"] = "main" # Or whatever the normal mode is
+
+        keyboard = [
+            [InlineKeyboardButton("بالا", callback_data="sticker_adv:vpos:top")],
+            [InlineKeyboardButton("وسط", callback_data="sticker_adv:vpos:center")],
+            [InlineKeyboardButton("پایین", callback_data="sticker_adv:vpos:bottom")]
+        ]
+        await update.message.reply_text(
+            "عکس پس‌زمینه دریافت شد. حالا موقعیت عمودی متن را انتخاب کنید:",
+            reply_markup=InlineKeyboardMarkup(keyboard)
+        )
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text messages"""
     user_id = update.effective_user.id
-    text = update.message.text
     
+    # Check if the message is a photo, and if so, delegate to handle_photo
+    if update.message.photo:
+        await handle_photo(update, context)
+        return
+
+    text = update.message.text
     current_mode = sess(user_id).get("mode")
 
     # --- Admin Actions ---
@@ -1042,14 +1094,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ]])
             )
         elif mode == "advanced":
-            # For advanced mode, start the customization flow
+            # For advanced mode, ask about custom background
             keyboard = [
-                [InlineKeyboardButton("بالا", callback_data="sticker_adv:vpos:top")],
-                [InlineKeyboardButton("وسط", callback_data="sticker_adv:vpos:center")],
-                [InlineKeyboardButton("پایین", callback_data="sticker_adv:vpos:bottom")]
+                [InlineKeyboardButton("🏞 بله، عکس ارسال می‌کنم", callback_data="sticker_adv:custom_bg:yes")],
+                [InlineKeyboardButton(" خیر، ادامه می‌دهم", callback_data="sticker_adv:custom_bg:no")]
             ]
             await update.message.reply_text(
-                "متن دریافت شد. حالا موقعیت عمودی متن را انتخاب کنید:",
+                "آیا می‌خواهید از عکس دلخواه به عنوان پس‌زمینه استفاده کنید؟",
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
 
@@ -1090,6 +1141,7 @@ def setup_application(application):
     # Callback and message handlers
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
 # Import Flask
 from flask import Flask, request, jsonify
