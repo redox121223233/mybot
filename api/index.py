@@ -13,7 +13,6 @@ import tempfile
 import io
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, InputSticker
-from telegram.utils.keyboard import InlineKeyboardBuilder
 import re
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
@@ -274,17 +273,15 @@ class TelegramBotFeatures:
 از منوی زیر یکی از گزینه‌ها را انتخاب کنید:
 """
         
-        kb = InlineKeyboardBuilder()
-        kb.button(text="🎨 استیکر ساز", callback_data="sticker_creator")
-        kb.button(text="📊 سهمیه من", callback_data="my_quota")
-        kb.button(text="🎮 بازی و سرگرمی", callback_data="games_menu")
-        kb.button(text="📚 راهنما", callback_data="help")
-        kb.button(text="📞 پشتیبانی", callback_data="support")
+        keyboard = [
+            [InlineKeyboardButton("🎨 استیکر ساز", callback_data="sticker_creator")],
+            [InlineKeyboardButton("📊 سهمیه من", callback_data="my_quota"), InlineKeyboardButton("🎮 بازی و سرگرمی", callback_data="games_menu")],
+            [InlineKeyboardButton("📚 راهنما", callback_data="help"), InlineKeyboardButton("📞 پشتیبانی", callback_data="support")]
+        ]
         if update.effective_user.id == ADMIN_ID:
-            kb.button(text="👑 پنل ادمین", callback_data="admin:panel")
-        kb.adjust(1, 2, 2)
+            keyboard.append([InlineKeyboardButton("👑 پنل ادمین", callback_data="admin:panel")])
         
-        reply_markup = kb.as_markup()
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
         # Check if the message is from a callback query
         if update.callback_query:
@@ -682,14 +679,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # Start the pack selection/creation flow
         packs = get_user_packs(user_id)
         if packs:
-            kb = InlineKeyboardBuilder()
-            for pack in packs:
-                kb.button(text=f"📦 {pack['name']}", callback_data=f"pack:select:{pack['short_name']}")
-            kb.button(text="➕ ساخت پک جدید", callback_data="pack:new")
-            kb.adjust(1)
+            keyboard = [[InlineKeyboardButton(f"📦 {p['name']}", callback_data=f"pack:select:{p['short_name']}")] for p in packs]
+            keyboard.append([InlineKeyboardButton("➕ ساخت پک جدید", callback_data="pack:new")])
             await query.edit_message_text(
                 "یک پک استیکر را برای اضافه کردن انتخاب کنید، یا یک پک جدید بسازید:",
-                reply_markup=kb.as_markup()
+                reply_markup=InlineKeyboardMarkup(keyboard)
             )
         else:
             sess(user_id)["mode"] = "pack_create_start"
