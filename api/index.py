@@ -274,7 +274,7 @@ class TelegramBotFeatures:
 """
         
         keyboard = [
-            [InlineKeyboardButton("🎨 استیکر ساز", callback_data="sticker_creator")],
+            [InlineKeyboardButton("🎨 استیکر ساز", callback_data="sticker_creator"), InlineKeyboardButton("🗂 پک‌های من", callback_data="my_packs")],
             [InlineKeyboardButton("📊 سهمیه من", callback_data="my_quota"), InlineKeyboardButton("🎮 بازی و سرگرمی", callback_data="games_menu")],
             [InlineKeyboardButton("📚 راهنما", callback_data="help"), InlineKeyboardButton("📞 پشتیبانی", callback_data="support")]
         ]
@@ -880,6 +880,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"استیکر با موفقیت به پک اضافه شد!\n\n{pack_link}\n\nآیا از نتیجه راضی بودید؟",
                 reply_markup=InlineKeyboardMarkup(poll_keyboard)
             )
+            # Reset mode here to prevent issues with the next sticker
+            reset_mode(user_id)
         except Exception as e:
             await query.message.reply_text(f"خطا در اضافه کردن استیکر به پک: {e}")
             reset_mode(user_id)
@@ -917,12 +919,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("آیدی عددی کاربر مورد نظر را ارسال کنید:")
 
     elif callback_data == "rate:yes":
-        await query.edit_message_text("از بازخورد شما متشکریم!", reply_markup=None)
+        await query.message.reply_text("از بازخورد شما متشکریم!")
         reset_mode(user_id)
+        await bot_features.start_command(update, context)
 
     elif callback_data == "rate:no":
-        await query.edit_message_text("از بازخورد شما متشکریم! نظرات شما به ما در بهبود ربات کمک می‌کند.", reply_markup=None)
+        await query.message.reply_text("از بازخورد شما متشکریم! نظرات شما به ما در بهبود ربات کمک می‌کند.")
         reset_mode(user_id)
+        await bot_features.start_command(update, context)
 
     elif callback_data == "my_quota":
         left = _quota_left(user_id)
@@ -934,6 +938,24 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text += f"زمان بازنشانی بعدی: **{eta_str}**"
 
         await query.edit_message_text(text)
+
+    elif callback_data == "my_packs":
+        packs = get_user_packs(user_id)
+        if not packs:
+            await query.edit_message_text("شما هنوز هیچ پکی نساخته‌اید.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]]))
+            return
+
+        message_text = "🗂 **پک‌های استیکر شما:**\n\n"
+        for pack in packs:
+            pack_link = f"https://t.me/addstickers/{pack['short_name']}"
+            message_text += f"• <a href='{pack_link}'>{pack['name']}</a>\n"
+
+        await query.edit_message_text(
+            message_text,
+            parse_mode='HTML',
+            reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]]),
+            disable_web_page_preview=True
+        )
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle incoming photos for custom backgrounds."""
