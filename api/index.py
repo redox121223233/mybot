@@ -34,8 +34,25 @@ SUPPORT_USERNAME = "@onedaytoalive"
 # Vercel's writable directory is /tmp
 DATA_DIR = "/tmp"
 USER_DATA_FILE = os.path.join(DATA_DIR, "userdata.json")
+SESSION_DATA_FILE = os.path.join(DATA_DIR, "sessions.json")
 USERS: dict[int, dict] = {}
 SESSIONS: dict[int, dict] = {}
+
+def load_sessions():
+    global SESSIONS
+    try:
+        with open(SESSION_DATA_FILE, 'r') as f:
+            data = json.load(f)
+            SESSIONS = {int(k): v for k, v in data.items()}
+    except (FileNotFoundError, json.JSONDecodeError):
+        SESSIONS = {}
+
+def save_sessions():
+    try:
+        with open(SESSION_DATA_FILE, 'w') as f:
+            json.dump(SESSIONS, f, indent=4)
+    except Exception as e:
+        logger.error(f"Failed to save session data: {e}")
 
 def load_data():
     global USERS
@@ -63,10 +80,12 @@ def user(uid: int) -> dict:
 def sess(uid: int) -> dict:
     if uid not in SESSIONS:
         SESSIONS[uid] = { "mode": "main", "sticker_data": {} }
+        save_sessions()
     return SESSIONS[uid]
 
 def reset_mode(uid: int):
     SESSIONS[uid] = { "mode": "main", "sticker_data": {} }
+    save_sessions()
 
 # ============ Sticker Pack Management ============
 def get_user_packs(uid: int) -> list:
@@ -720,6 +739,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • نباید دو زیرخط پشت سر هم داشته باشد
 • حداکثر ۵۰ کاراکتر (به خاطر اضافه شدن نام ربات)"""
             )
+            save_sessions()
 
     # --- Sticker Pack Flow ---
     elif callback_data.startswith("pack:select:"):
@@ -734,6 +754,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif callback_data == "pack:new":
         sess(user_id)["mode"] = "pack_create_start"
+        save_sessions()
         await query.edit_message_text("""نام پک را بنویس (مثال: my_stickers):
 
 • فقط حروف انگلیسی، عدد و زیرخط
@@ -747,6 +768,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reset_mode(user_id) # Aggressive reset
         sess(user_id)['sticker_mode'] = 'simple'
         sess(user_id)['sticker_data'] = {}
+        save_sessions()
         await query.edit_message_text("لطفاً متن استیکر ساده را ارسال کنید:")
 
     # --- Sticker Advanced Flow ---
@@ -761,6 +783,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "v_pos": "center", "h_pos": "center", "font": "Default",
             "color": "#FFFFFF", "size": "large", "bg_photo_bytes": None
         }
+        save_sessions()
         await query.edit_message_text("لطفاً متن استیکر پیشرفته را ارسال کنید:")
 
     elif callback_data.startswith("sticker_adv:"): # Advanced Sticker Options
@@ -773,6 +796,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             choice = parts[2]
             if choice == 'yes':
                 sess(user_id)['mode'] = 'awaiting_custom_bg'
+                save_sessions()
                 await query.edit_message_text("لطفاً عکس پس‌زمینه را ارسال کنید.")
             else: # 'no'
                 # Continue with the normal flow
@@ -933,16 +957,19 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif callback_data == "admin:broadcast_prompt":
         if user_id != ADMIN_ID: return
         sess(user_id)["mode"] = "admin_broadcast"
+        save_sessions()
         await query.edit_message_text("پیام همگانی را ارسال کنید:")
 
     elif callback_data == "admin:dm_prompt":
         if user_id != ADMIN_ID: return
         sess(user_id)["mode"] = "admin_dm_id"
+        save_sessions()
         await query.edit_message_text("آیدی عددی کاربر مورد نظر را ارسال کنید:")
 
     elif callback_data == "admin:quota_prompt":
         if user_id != ADMIN_ID: return
         sess(user_id)["mode"] = "admin_quota_id"
+        save_sessions()
         await query.edit_message_text("آیدی عددی کاربر مورد نظر را ارسال کنید:")
 
     elif callback_data == "rate:yes":
@@ -1037,6 +1064,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif current_mode == "admin_dm_id":
             sess(user_id)["admin_target_id"] = int(text)
             sess(user_id)["mode"] = "admin_dm_text"
+            save_sessions()
             await update.message.reply_text("پیام را برای ارسال بنویسید:")
             return
         elif current_mode == "admin_dm_text":
@@ -1051,6 +1079,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif current_mode == "admin_quota_id":
             sess(user_id)["admin_target_id"] = int(text)
             sess(user_id)["mode"] = "admin_quota_value"
+            save_sessions()
             await update.message.reply_text("مقدار سهمیه جدید را وارد کنید:")
             return
         elif current_mode == "admin_quota_value":
@@ -1103,8 +1132,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             reset_mode(user_id)
         except BadRequest as e:
-            if "Sticker set name is already occupied" in str(e):
+            error_message = str(e)
+            if "Sticker set name is already occupied" in error_message:
                 await update.message.reply_text("این نام قبلاً گرفته شده است. لطفاً یک نام دیگر انتخاب کنید.")
+                # User remains in 'pack_create_start' mode
+            elif "Invalid sticker set name is specified" in error_message:
+                await update.message.reply_text(
+                    """نامی که وارد کردید نامعتبر است. لطفاً نام را طبق قوانین زیر دوباره وارد کنید:
+
+• فقط حروف انگلیسی، عدد و زیرخط
+• باید با حرف شروع شود
+• نباید با زیرخط تمام شود
+• نباید دو زیرخط پشت سر هم داشته باشد
+• حداکثر ۵۰ کاراکتر (به خاطر اضافه شدن نام ربات)"""
+                )
                 # User remains in 'pack_create_start' mode
             else:
                 await update.message.reply_text(f"خطا در ساخت پک: {e}")
@@ -1217,7 +1258,8 @@ def home():
 @app.route('/webhook', methods=['POST'])
 async def webhook():
     """Handles incoming Telegram updates."""
-    load_data()  # Load data at the beginning of each request
+    load_data()  # Load persistent user data
+    load_sessions() # Load temporary session data
     if not TELEGRAM_TOKEN:
         logger.error("No Telegram token found!")
         return jsonify({"status": "error", "message": "Bot token not configured"}), 500
