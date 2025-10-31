@@ -30,7 +30,8 @@ ADMIN_ID = 6053579919
 SUPPORT_USERNAME = "@onedaytoalive"
 
 # ============ Data Persistence ============
-DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
+# Vercel's writable directory is /tmp
+DATA_DIR = "/tmp"
 USER_DATA_FILE = os.path.join(DATA_DIR, "userdata.json")
 USERS: dict[int, dict] = {}
 SESSIONS: dict[int, dict] = {}
@@ -38,8 +39,6 @@ SESSIONS: dict[int, dict] = {}
 def load_data():
     global USERS
     try:
-        if not os.path.exists(DATA_DIR):
-            os.makedirs(DATA_DIR)
         with open(USER_DATA_FILE, 'r') as f:
             # JSON keys are strings, so convert them back to int
             data = json.load(f)
