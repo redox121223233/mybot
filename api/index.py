@@ -13,6 +13,7 @@ import tempfile
 import io
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, InputSticker
+from telegram.error import BadRequest
 import re
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
@@ -1101,8 +1102,16 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
             reset_mode(user_id)
+        except BadRequest as e:
+            if "Sticker set name is already occupied" in str(e):
+                await update.message.reply_text("این نام قبلاً گرفته شده است. لطفاً یک نام دیگر انتخاب کنید.")
+                # User remains in 'pack_create_start' mode
+            else:
+                await update.message.reply_text(f"خطا در ساخت پک: {e}")
+                reset_mode(user_id)
         except Exception as e:
-            await update.message.reply_text(f"خطا در ساخت پک: {e}")
+            await update.message.reply_text(f"یک خطای غیرمنتظره رخ داد: {e}")
+            reset_mode(user_id)
         return
 
     # Handle waiting for guess
