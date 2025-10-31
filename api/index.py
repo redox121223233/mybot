@@ -849,13 +849,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
         try:
-            uploaded_sticker = await query.bot.upload_sticker_file(
+            uploaded_sticker = await context.bot.upload_sticker_file(
                 user_id=user_id,
                 sticker=InputFile(img_bytes_png, "sticker.png"),
                 sticker_format="static"
             )
             sticker_to_add = InputSticker(sticker=uploaded_sticker.file_id, emoji_list=["😃"])
-            await query.bot.add_sticker_to_set(user_id=user_id, name=pack_short_name, sticker=sticker_to_add)
+            await context.bot.add_sticker_to_set(user_id=user_id, name=pack_short_name, sticker=sticker_to_add)
 
             pack_link = f"https://t.me/addstickers/{pack_short_name}"
             # Still send the webp version to the user for display
