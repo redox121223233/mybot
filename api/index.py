@@ -29,13 +29,35 @@ logger = logging.getLogger(__name__)
 ADMIN_ID = 6053579919
 SUPPORT_USERNAME = "@onedaytoalive"
 
-# ============ In-memory Storage ============
+# ============ Data Persistence ============
+DATA_DIR = os.path.join(os.path.dirname(__file__), "..", "data")
+USER_DATA_FILE = os.path.join(DATA_DIR, "userdata.json")
 USERS: dict[int, dict] = {}
 SESSIONS: dict[int, dict] = {}
+
+def load_data():
+    global USERS
+    try:
+        if not os.path.exists(DATA_DIR):
+            os.makedirs(DATA_DIR)
+        with open(USER_DATA_FILE, 'r') as f:
+            # JSON keys are strings, so convert them back to int
+            data = json.load(f)
+            USERS = {int(k): v for k, v in data.items()}
+    except (FileNotFoundError, json.JSONDecodeError):
+        USERS = {}
+
+def save_data():
+    try:
+        with open(USER_DATA_FILE, 'w') as f:
+            json.dump(USERS, f, indent=4)
+    except Exception as e:
+        logger.error(f"Failed to save user data: {e}")
 
 def user(uid: int) -> dict:
     if uid not in USERS:
         USERS[uid] = { "packs": [], "current_pack": None, "daily_limit": 3, "ai_used": 0, "day_start": 0 }
+        save_data()
     return USERS[uid]
 
 def sess(uid: int) -> dict:
@@ -56,9 +78,11 @@ def add_user_pack(uid: int, pack_name: str, pack_short_name: str):
         packs.append({"name": pack_name, "short_name": pack_short_name})
     user(uid)["packs"] = packs
     user(uid)["current_pack"] = pack_short_name
+    save_data()
 
 def set_current_pack(uid: int, pack_short_name: str):
     user(uid)["current_pack"] = pack_short_name
+    save_data()
 
 from datetime import datetime, timezone
 
@@ -720,12 +744,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # --- Sticker Simple Flow ---
     elif callback_data == "sticker:simple":
+        reset_mode(user_id) # Aggressive reset
         sess(user_id)['sticker_mode'] = 'simple'
         sess(user_id)['sticker_data'] = {}
         await query.edit_message_text("لطفاً متن استیکر ساده را ارسال کنید:")
 
     # --- Sticker Advanced Flow ---
     elif callback_data == "sticker:advanced":
+        reset_mode(user_id) # Aggressive reset
         if _quota_left(user_id) <= 0:
             await query.answer("سهمیه استیکر پیشرفته شما برای امروز به پایان رسیده است.", show_alert=True)
             return
@@ -836,6 +862,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if sess(user_id).get("sticker_mode") == "advanced":
             u = user(user_id)
             u["ai_used"] = u.get("ai_used", 0) + 1
+            save_data()
 
         img_bytes_png = await render_image(
             text=sticker_data.get("text", "استیکر"),
@@ -1029,6 +1056,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif current_mode == "admin_quota_value":
             target_id = sess(user_id).get("admin_target_id")
             user(target_id)["daily_limit"] = int(text)
+            save_data()
             await update.message.reply_text(f"سهمیه کاربر {target_id} به {text} تغییر یافت.")
             reset_mode(user_id)
             return
@@ -1181,6 +1209,7 @@ def home():
 @app.route('/webhook', methods=['POST'])
 async def webhook():
     """Handles incoming Telegram updates."""
+    load_data()  # Load data at the beginning of each request
     if not TELEGRAM_TOKEN:
         logger.error("No Telegram token found!")
         return jsonify({"status": "error", "message": "Bot token not configured"}), 500
