@@ -36,28 +36,36 @@ class TelegramBotFeatures:
         self.user_data = {}
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        welcome_text = """🎉 به ربات من خوش آمدید! 🎉
+        welcome_text = """🎉 به ربات استیکر ساز خوش آمدید! 🎉
 
-🎨 **سازنده استیکر:**
-برای ساخت استیکر، یک عکس برای من ارسال کنید.
-
-🎮 **بازی‌ها و سرگرمی‌ها:**
-• 🔢 حدس عدد - یک عدد بین ۱ تا ۱۰۰ را حدس بزنید
-• ✂️ سنگ کاغذ قیچی - بازی کلاسیک
-
-📚 **راهنما:**
-/help - دیدن تمام دستورات
+از منوی زیر یکی از گزینه‌ها را انتخاب کنید:
 """
 
         keyboard = [
-            [InlineKeyboardButton("🎨 استیکر ساز", callback_data="sticker_creator")],
-            [InlineKeyboardButton("🔢 حدس عدد", callback_data="guess_number")],
-            [InlineKeyboardButton("✂️ سنگ کاغذ قیچی", callback_data="rock_paper_scissors")],
-            [InlineKeyboardButton("📚 راهنما", callback_data="help")]
+            [
+                InlineKeyboardButton("🎨 استیکر ساز", callback_data="sticker_creator"),
+                InlineKeyboardButton("🛍️ پک‌های من", callback_data="my_packs")
+            ],
+            [
+                InlineKeyboardButton("🎮 بازی و سرگرمی", callback_data="games_menu"),
+                InlineKeyboardButton("📊 سهمیه من", callback_data="my_quota")
+            ],
+            [
+                InlineKeyboardButton("📚 راهنما", callback_data="help"),
+                InlineKeyboardButton("📞 پشتیبانی", callback_data="support")
+            ],
+            [
+                InlineKeyboardButton("👑 پنل ادمین", callback_data="admin_panel")
+            ]
         ]
 
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(welcome_text, reply_markup=reply_markup)
+
+        # Check if the command was triggered by a message or a callback query
+        if update.callback_query:
+            await update.callback_query.edit_message_text(welcome_text, reply_markup=reply_markup)
+        else:
+            await update.message.reply_text(welcome_text, reply_markup=reply_markup)
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         help_text = """📚 **راهنمای کامل ربات:**
@@ -155,6 +163,20 @@ class TelegramBotFeatures:
 
         await update.message.reply_text(message)
 
+    async def show_games_menu(self, query: Update.callback_query):
+        """Shows the games submenu"""
+        keyboard = [
+            [
+                InlineKeyboardButton("🔢 حدس عدد", callback_data="guess_number"),
+                InlineKeyboardButton("✂️ سنگ کاغذ قیچی", callback_data="rock_paper_scissors")
+            ],
+            [
+                InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="start_menu")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text("🎮 **بازی و سرگرمی**\n\nیک بازی را انتخاب کنید:", reply_markup=reply_markup)
+
     async def rock_paper_scissors_game(self, update_or_query):
         """Setup rock paper scissors game"""
         keyboard = [
@@ -162,6 +184,9 @@ class TelegramBotFeatures:
                 InlineKeyboardButton("✊ سنگ", callback_data="rps_rock"),
                 InlineKeyboardButton("📄 کاغذ", callback_data="rps_paper"),
                 InlineKeyboardButton("✂️ قیچی", callback_data="rps_scissors")
+            ],
+            [
+                InlineKeyboardButton("🔙 بازگشت به منوی بازی‌ها", callback_data="games_menu")
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
@@ -257,6 +282,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if callback_data == "sticker_creator":
         await query.message.reply_text("🖼️ برای ساخت استیکر، یک عکس برای من ارسال کنید.")
+
+    elif callback_data in ["my_packs", "my_quota", "support", "admin_panel"]:
+        await query.answer(f"این بخش ({callback_data}) در حال حاضر در دست ساخت است.", show_alert=True)
+
+    elif callback_data == "start_menu":
+        await bot_features.start_command(update, context)
+
+    elif callback_data == "games_menu":
+        await bot_features.show_games_menu(query)
 
     elif callback_data == "guess_number":
         await bot_features.guess_number_game(update.callback_query)
