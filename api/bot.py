@@ -324,8 +324,10 @@ def wsgi_app(environ, start_response):
             webhook_data = json.loads(body_bytes)
 
             async def process():
+                await application.initialize()
                 update = Update.de_json(webhook_data, application.bot)
                 await application.process_update(update)
+                await application.shutdown()
 
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
