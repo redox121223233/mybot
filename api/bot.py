@@ -345,12 +345,11 @@ def wsgi_app(environ, start_response):
 
 class handler(BaseHTTPRequestHandler):
     def do_GET(self):
-        self.handle_request()
+        environ = self.get_environ()
+        result = wsgi_app(environ, self.start_response)
+        self.finish_response(result)
 
     def do_POST(self):
-        self.handle_request()
-
-    def handle_request(self):
         environ = self.get_environ()
         result = wsgi_app(environ, self.start_response)
         self.finish_response(result)
