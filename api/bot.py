@@ -38,6 +38,18 @@ class TelegramBotFeatures:
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_id = update.effective_user.id
+
+        is_member = await self.check_channel_membership(context, user_id)
+        if not is_member:
+            keyboard = [[InlineKeyboardButton("عضویت در کانال", url="https://t.me/redoxbot_sticker")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            message_text = "برای استفاده از ربات، لطفاً ابتدا در کانال ما عضو شوید و سپس دکمه /start را بزنید."
+            if update.callback_query:
+                await update.callback_query.edit_message_text(message_text, reply_markup=reply_markup)
+            else:
+                await update.message.reply_text(message_text, reply_markup=reply_markup)
+            return
+
         welcome_text = """🎉 به ربات استیکر ساز خوش آمدید! 🎉
 
 از منوی زیر یکی از گزینه‌ها را انتخاب کنید:
@@ -149,8 +161,12 @@ class TelegramBotFeatures:
         try:
             member = await context.bot.get_chat_member(chat_id="@redoxbot_sticker", user_id=user_id)
             return member.status in [ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR]
-        except BadRequest:
-            # This can happen if the bot is not an admin in the channel
+        except BadRequest as e:
+            if "user not found" in e.message.lower():
+                # This is expected for new users, not an error.
+                pass
+            else:
+                logger.error(f"Error checking channel membership (BadRequest): {e}. Is the bot an admin in the channel?")
             return False
         except Exception as e:
             logger.error(f"Error checking channel membership: {e}")
