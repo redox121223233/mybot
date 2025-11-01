@@ -28,9 +28,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Global variables for user states
-user_states = {}
-user_packs = {}
-user_quotas = {}
 ADMIN_ID = 6053579919
 SIMPLE_QUOTA = 10
 ADVANCED_QUOTA = 3
@@ -198,11 +195,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await bot_features.help_command(update, context)
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    if user_id in user_states and user_states[user_id]["state"] == "awaiting_sticker_image":
-        state_data = user_states[user_id]
-        pack_name = state_data["pack_name"]
-        sticker_type = state_data["type"]
+    user_data = context.user_data
+    if user_data.get("state") == "awaiting_sticker_image":
+        sticker_type = user_data.get("type")
 
         if sticker_type == "simple":
             photo_file = await update.message.photo[-1].get_file()
@@ -213,7 +208,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             sticker_bytes = await bot_features.create_simple_sticker(photo_stream)
 
             if sticker_bytes:
-                user_states[user_id].update({"state": "awaiting_satisfaction", "sticker_bytes": sticker_bytes.getvalue()})
+                user_data["state"] = "awaiting_satisfaction"
+                user_data["sticker_bytes"] = sticker_bytes.getvalue()
                 keyboard = [
                     [
                         InlineKeyboardButton("👍 بله", callback_data="satisfaction_yes"),
@@ -228,127 +224,152 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif sticker_type == "advanced":
             # Store the photo and wait for the text
             photo_file_id = update.message.photo[-1].file_id
-            user_states[user_id].update({"state": "awaiting_text", "photo_id": photo_file_id})
+            user_data["state"] = "awaiting_text"
+            user_data["photo_id"] = photo_file_id
             await update.message.reply_text("تصویر دریافت شد. لطفاً متنی که می‌خواهید روی استیکر باشد را ارسال کنید:")
 
 # Initialize bot_features object
 bot_features = TelegramBotFeatures()
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.message.from_user.id
-    if user_id in user_states:
-        current_state = user_states[user_id]
+    user_data = context.user_data
+    user_id = update.effective_user.id
+    current_state = user_data.get("state")
 
-        if current_state["state"] == "awaiting_pack_name":
-            pack_name = update.message.text
-            if not bot_features.is_valid_pack_name(pack_name):
-                await update.message.reply_text("نام بسته نامعتبر است. لطفاً با توجه به قوانین، نام دیگری انتخاب کنید.")
-                return
+    if current_state == "awaiting_pack_name":
+        pack_name = update.message.text
+        if not bot_features.is_valid_pack_name(pack_name):
+            await update.message.reply_text("نام بسته نامعتبر است. لطفاً با توجه به قوانین، نام دیگری انتخاب کنید.")
+            return
 
-            user_states[user_id].update({"state": "awaiting_sticker_image", "pack_name": pack_name})
-            await update.message.reply_text(f"نام بسته '{pack_name}' انتخاب شد. لطفاً اولین تصویر را برای استیکر خود ارسال کنید.")
+        user_data["state"] = "awaiting_sticker_image"
+        user_data["pack_name"] = pack_name
+        await update.message.reply_text(f"نام بسته '{pack_name}' انتخاب شد. لطفاً اولین تصویر را برای استیکر خود ارسال کنید.")
 
-        elif current_state.get("state") == "awaiting_text":
-            text = update.message.text
-            photo_id = current_state["photo_id"]
+    elif current_state == "awaiting_text":
+        text = update.message.text
+        photo_id = user_data.get("photo_id")
 
-            photo_file = await context.bot.get_file(photo_id)
-            photo_stream = io.BytesIO()
-            await photo_file.download_to_memory(photo_stream)
-            photo_stream.seek(0)
+        photo_file = await context.bot.get_file(photo_id)
+        photo_stream = io.BytesIO()
+        await photo_file.download_to_memory(photo_stream)
+        photo_stream.seek(0)
 
-            sticker_bytes = await bot_features.create_sticker_with_text(photo_stream, text)
-            if sticker_bytes:
-                user_states[user_id].update({"state": "awaiting_satisfaction", "sticker_bytes": sticker_bytes.getvalue()})
-                keyboard = [
-                    [
-                        InlineKeyboardButton("👍 بله", callback_data="satisfaction_yes"),
-                        InlineKeyboardButton("👎 خیر", callback_data="satisfaction_no")
-                    ]
+        sticker_bytes = await bot_features.create_sticker_with_text(photo_stream, text)
+        if sticker_bytes:
+            user_data["state"] = "awaiting_satisfaction"
+            user_data["sticker_bytes"] = sticker_bytes.getvalue()
+            keyboard = [
+                [
+                    InlineKeyboardButton("👍 بله", callback_data="satisfaction_yes"),
+                    InlineKeyboardButton("👎 خیر", callback_data="satisfaction_no")
                 ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                await update.message.reply_document(sticker_bytes, filename="sticker_preview.png", caption="آیا از نتیجه راضی هستید؟", reply_markup=reply_markup)
-            else:
-                await update.message.reply_text("خطا در ساخت استیکر.")
-
-        # Admin states
-        elif user_id == ADMIN_ID:
-            if current_state["state"] == "awaiting_admin_user_id_for_message":
-                target_user_id = int(update.message.text)
-                user_states[user_id] = {"state": "awaiting_admin_message_to_send", "target_user_id": target_user_id}
-                await update.message.reply_text(f"پیام خود را برای کاربر {target_user_id} وارد کنید:")
-
-            elif current_state["state"] == "awaiting_admin_message_to_send":
-                target_user_id = current_state["target_user_id"]
-                message_text = update.message.text
-                try:
-                    await context.bot.send_message(chat_id=target_user_id, text=message_text)
-                    await update.message.reply_text("پیام با موفقیت ارسال شد.")
-                except Exception as e:
-                    await update.message.reply_text(f"خطا در ارسال پیام: {e}")
-                del user_states[user_id]
-
-            elif current_state["state"] == "awaiting_admin_broadcast_message":
-                message_text = update.message.text
-                # A proper broadcast to all users would require a user database.
-                # This is a placeholder for now.
-                await update.message.reply_text(f"پیام همگانی (نمایشی): {message_text}")
-                del user_states[user_id]
-
-            elif current_state["state"] == "awaiting_admin_user_id_for_quota_increase":
-                target_user_id = int(update.message.text)
-                user_states[user_id] = {"state": "awaiting_admin_quota_increase_amount", "target_user_id": target_user_id}
-                await update.message.reply_text(f"مقدار افزایش سهمیه برای کاربر {target_user_id} را وارد کنید:")
-
-            elif current_state["state"] == "awaiting_admin_quota_increase_amount":
-                target_user_id = current_state["target_user_id"]
-                amount = int(update.message.text)
-                if target_user_id not in user_quotas:
-                    user_quotas[target_user_id] = {"simple": SIMPLE_QUOTA, "advanced": ADVANCED_QUOTA, "reset_time": datetime.utcnow() + timedelta(hours=24)}
-                user_quotas[target_user_id]["simple"] += amount
-                user_quotas[target_user_id]["advanced"] += amount
-                await update.message.reply_text(f"سهمیه کاربر {target_user_id} افزایش یافت.")
-                del user_states[user_id]
-
-            elif current_state["state"] == "awaiting_admin_user_id_for_quota_decrease":
-                target_user_id = int(update.message.text)
-                user_states[user_id] = {"state": "awaiting_admin_quota_decrease_amount", "target_user_id": target_user_id}
-                await update.message.reply_text(f"مقدار کاهش سهمیه برای کاربر {target_user_id} را وارد کنید:")
-
-            elif current_state["state"] == "awaiting_admin_quota_decrease_amount":
-                target_user_id = current_state["target_user_id"]
-                amount = int(update.message.text)
-                if target_user_id not in user_quotas:
-                    user_quotas[target_user_id] = {"simple": SIMPLE_QUOTA, "advanced": ADVANCED_QUOTA, "reset_time": datetime.utcnow() + timedelta(hours=24)}
-                user_quotas[target_user_id]["simple"] = max(0, user_quotas[target_user_id]["simple"] - amount)
-                user_quotas[target_user_id]["advanced"] = max(0, user_quotas[target_user_id]["advanced"] - amount)
-                await update.message.reply_text(f"سهمیه کاربر {target_user_id} کاهش یافت.")
-                del user_states[user_id]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await update.message.reply_document(sticker_bytes, filename="sticker_preview.png", caption="آیا از نتیجه راضی هستید؟", reply_markup=reply_markup)
         else:
-            await update.message.reply_text("در حال پیاده‌سازی...")
-    else:
-        await update.message.reply_text("در حال پیاده‌سازی...")
+            await update.message.reply_text("خطا در ساخت استیکر.")
 
-def check_and_update_quota(user_id: int, sticker_type: str):
-    """Checks and updates the user's quota. Returns True if the user has quota, False otherwise."""
+    # Admin states
+    elif user_id == ADMIN_ID:
+        if current_state == "awaiting_admin_user_id_for_message":
+            try:
+                target_user_id = int(update.message.text)
+                user_data["state"] = "awaiting_admin_message_to_send"
+                user_data["target_user_id"] = target_user_id
+                await update.message.reply_text(f"پیام خود را برای کاربر {target_user_id} وارد کنید:")
+            except ValueError:
+                await update.message.reply_text("شناسه نامعتبر است. لطفاً شناسه عددی کاربر را وارد کنید.")
+
+        elif current_state == "awaiting_admin_message_to_send":
+            target_user_id = user_data.get("target_user_id")
+            message_text = update.message.text
+            try:
+                await context.bot.send_message(chat_id=target_user_id, text=message_text)
+                await update.message.reply_text("پیام با موفقیت ارسال شد.")
+            except Exception as e:
+                await update.message.reply_text(f"خطا در ارسال پیام: {e}")
+            user_data.clear()
+
+        elif current_state == "awaiting_admin_broadcast_message":
+            message_text = update.message.text
+            await update.message.reply_text(f"پیام همگانی (نمایشی): {message_text}")
+            user_data.clear()
+
+        elif current_state == "awaiting_admin_user_id_for_quota_increase":
+            try:
+                target_user_id = int(update.message.text)
+                user_data["state"] = "awaiting_admin_quota_increase_amount"
+                user_data["target_user_id"] = target_user_id
+                await update.message.reply_text(f"مقدار افزایش سهمیه برای کاربر {target_user_id} را وارد کنید:")
+            except ValueError:
+                await update.message.reply_text("شناسه نامعتبر است. لطفاً شناسه عددی کاربر را وارد کنید.")
+
+        elif current_state == "awaiting_admin_quota_increase_amount":
+            target_user_id = user_data.get("target_user_id")
+            try:
+                amount = int(update.message.text)
+                target_user_data = context.bot_data.get(target_user_id, {})
+                check_and_update_quota(target_user_data, "any") # Initialize if not exists
+                target_user_data["quota"]["simple"] += amount
+                target_user_data["quota"]["advanced"] += amount
+                context.bot_data[target_user_id] = target_user_data
+                await update.message.reply_text(f"سهمیه کاربر {target_user_id} افزایش یافت.")
+            except ValueError:
+                await update.message.reply_text("مقدار نامعتبر است. لطفاً عدد وارد کنید.")
+            user_data.clear()
+
+        elif current_state == "awaiting_admin_user_id_for_quota_decrease":
+            try:
+                target_user_id = int(update.message.text)
+                user_data["state"] = "awaiting_admin_quota_decrease_amount"
+                user_data["target_user_id"] = target_user_id
+                await update.message.reply_text(f"مقدار کاهش سهمیه برای کاربر {target_user_id} را وارد کنید:")
+            except ValueError:
+                await update.message.reply_text("شناسه نامعتبر است. لطفاً شناسه عددی کاربر را وارد کنید.")
+
+        elif current_state == "awaiting_admin_quota_decrease_amount":
+            target_user_id = user_data.get("target_user_id")
+            try:
+                amount = int(update.message.text)
+                target_user_data = context.bot_data.get(target_user_id, {})
+                check_and_update_quota(target_user_data, "any") # Initialize if not exists
+                target_user_data["quota"]["simple"] = max(0, target_user_data["quota"]["simple"] - amount)
+                target_user_data["quota"]["advanced"] = max(0, target_user_data["quota"]["advanced"] - amount)
+                context.bot_data[target_user_id] = target_user_data
+                await update.message.reply_text(f"سهمیه کاربر {target_user_id} کاهش یافت.")
+            except ValueError:
+                await update.message.reply_text("مقدار نامعتبر است. لطفاً عدد وارد کنید.")
+            user_data.clear()
+    else:
+        await update.message.reply_text("دستور شما را متوجه نشدم. لطفاً از دکمه‌ها استفاده کنید یا /start را بزنید.")
+
+def check_and_update_quota(user_data: dict, sticker_type: str):
+    """Checks and updates the user's quota within user_data. Returns True if the user has quota, False otherwise."""
     now = datetime.utcnow()
-    # Get the user_id from the function arguments, not from the outer scope
-    if user_id not in user_quotas or now >= user_quotas[user_id].get("reset_time", now):
-        user_quotas[user_id] = {
+    quota_data = user_data.get("quota", {})
+
+    if not quota_data or now >= quota_data.get("reset_time", now):
+        quota_data = {
             "simple": SIMPLE_QUOTA,
             "advanced": ADVANCED_QUOTA,
             "reset_time": now + timedelta(hours=24)
         }
+        user_data["quota"] = quota_data
+
+    if sticker_type == "any": # Just to initialize/reset
+        return True
 
     quota_type = "simple" if sticker_type == "simple" else "advanced"
-    if user_quotas[user_id][quota_type] > 0:
-        user_quotas[user_id][quota_type] -= 1
+    if quota_data.get(quota_type, 0) > 0:
+        quota_data[quota_type] -= 1
         return True
     return False
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
+    user_data = context.user_data
     user_id = query.from_user.id
 
     is_member = await bot_features.check_channel_membership(context, user_id)
@@ -359,6 +380,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     if query.data == "start_menu":
+        user_data.clear()
         await bot_features.start_command(update, context)
 
     elif query.data == "sticker_creator":
@@ -374,7 +396,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data in ["simple_sticker", "advanced_sticker"]:
         sticker_type = "simple" if query.data == "simple_sticker" else "advanced"
-        user_states[user_id] = {"state": "awaiting_pack_name", "type": sticker_type}
+        user_data["state"] = "awaiting_pack_name"
+        user_data["type"] = sticker_type
         pack_name_rules = """
 لطفاً یک نام برای بسته استیکر خود وارد کنید.
 
@@ -387,31 +410,32 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(pack_name_rules, parse_mode='Markdown')
 
     elif query.data == "satisfaction_yes":
-        if user_id in user_states and user_states[user_id].get("state") == "awaiting_satisfaction":
-            state_data = user_states[user_id]
-            sticker_type = state_data["type"]
+        if user_data.get("state") == "awaiting_satisfaction":
+            sticker_type = user_data["type"]
 
-            if not check_and_update_quota(user_id, sticker_type):
+            if not check_and_update_quota(user_data, sticker_type):
                 await query.edit_message_text("متاسفانه سهمیه روزانه شما برای این نوع استیکر به پایان رسیده است.")
                 return
 
-            pack_name = state_data["pack_name"]
-            sticker_bytes = io.BytesIO(state_data["sticker_bytes"])
+            pack_name = user_data["pack_name"]
+            sticker_bytes = io.BytesIO(user_data["sticker_bytes"])
             full_pack_name, error = await bot_features.add_sticker_to_pack(context, user_id, pack_name, sticker_bytes)
 
             if error == "occupied":
-                user_states[user_id]["state"] = "awaiting_pack_name"
+                user_data["state"] = "awaiting_pack_name"
                 await query.edit_message_text("این نام بسته قبلاً توسط کاربر دیگری گرفته شده است. لطفاً نام دیگری انتخاب کنید:")
             elif error:
                 await query.edit_message_text(f"خطایی رخ داد: {error}")
             else:
-                if user_id not in user_packs:
-                    user_packs[user_id] = []
-                if full_pack_name not in user_packs[user_id]:
-                    user_packs[user_id].append(full_pack_name)
+                user_packs = user_data.get("packs", [])
+                if full_pack_name not in user_packs:
+                    user_packs.append(full_pack_name)
+                user_data["packs"] = user_packs
 
-                remaining_quota = user_quotas[user_id]["simple" if sticker_type == "simple" else "advanced"]
-                user_states[user_id]["state"] = "awaiting_sticker_image"
+                quota_data = user_data.get("quota", {})
+                remaining_quota = quota_data.get("simple" if sticker_type == "simple" else "advanced", 0)
+                user_data["state"] = "awaiting_sticker_image"
+
                 await query.edit_message_text(
                     f"استیکر شما با موفقیت به بسته '{pack_name}' اضافه شد!\n"
                     f"سهمیه باقی‌مانده ({'ساده' if sticker_type == 'simple' else 'پیشرفته'}): {remaining_quota}\n\n"
@@ -422,13 +446,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("خطای وضعیت. لطفاً دوباره امتحان کنید.")
 
     elif query.data == "satisfaction_no":
-        if user_id in user_states:
-            user_states[user_id]["state"] = "awaiting_sticker_image"
-            await query.edit_message_text("عملیات لغو شد. لطفاً تصویر جدیدی برای استیکر خود ارسال کنید.")
+        user_data["state"] = "awaiting_sticker_image"
+        await query.edit_message_text("عملیات لغو شد. لطفاً تصویر جدیدی برای استیکر خود ارسال کنید.")
 
     elif query.data == "my_packs":
-        if user_id in user_packs and user_packs[user_id]:
-            packs_links = [f"[{name.split('_by_')[0]}](t.me/addstickers/{name})" for name in user_packs[user_id]]
+        user_packs = user_data.get("packs", [])
+        if user_packs:
+            packs_links = [f"[{name.split('_by_')[0]}](t.me/addstickers/{name})" for name in user_packs]
             packs_list = "\n".join(packs_links)
             await query.edit_message_text(f"لیست پک‌های شما:\n{packs_list}", parse_mode='Markdown')
         else:
@@ -438,24 +462,19 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("برای پشتیبانی به آیدی @onedaytoalive پیام دهید.")
 
     elif query.data == "my_quota":
-        now = datetime.utcnow()
-        if user_id not in user_quotas or now >= user_quotas[user_id].get("reset_time", now):
-            user_quotas[user_id] = {
-                "simple": SIMPLE_QUOTA,
-                "advanced": ADVANCED_QUOTA,
-                "reset_time": now + timedelta(hours=24)
-            }
+        check_and_update_quota(user_data, "any") # Ensures quota is initialized/reset
+        quota_data = user_data.get("quota", {})
 
-        quota_data = user_quotas[user_id]
-        reset_time = quota_data['reset_time']
+        now = datetime.utcnow()
+        reset_time = quota_data.get('reset_time', now + timedelta(hours=24))
         time_left = reset_time - now
         hours, remainder = divmod(time_left.seconds, 3600)
         minutes, _ = divmod(remainder, 60)
 
         quota_text = (
             f"📊 **سهمیه شما**\n\n"
-            f"🎨 **استیکر ساده:** {quota_data['simple']}/{SIMPLE_QUOTA}\n"
-            f"✨ **استیکر پیشرفته:** {quota_data['advanced']}/{ADVANCED_QUOTA}\n\n"
+            f"🎨 **استیکر ساده:** {quota_data.get('simple', SIMPLE_QUOTA)}/{SIMPLE_QUOTA}\n"
+            f"✨ **استیکر پیشرفته:** {quota_data.get('advanced', ADVANCED_QUOTA)}/{ADVANCED_QUOTA}\n\n"
             f"⏳ **زمان تا شارژ بعدی:** {hours} ساعت و {minutes} دقیقه"
         )
         await query.edit_message_text(quota_text, parse_mode='Markdown')
@@ -475,26 +494,26 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("شما اجازه دسترسی به این بخش را ندارید.")
 
     elif query.data == "admin_send_user":
-        user_states[user_id] = {"state": "awaiting_admin_user_id_for_message"}
+        user_data["state"] = "awaiting_admin_user_id_for_message"
         await query.edit_message_text("شناسه عددی کاربر مورد نظر را وارد کنید:")
 
     elif query.data == "admin_broadcast":
-        user_states[user_id] = {"state": "awaiting_admin_broadcast_message"}
+        user_data["state"] = "awaiting_admin_broadcast_message"
         await query.edit_message_text("پیام همگانی خود را وارد کنید:")
 
     elif query.data == "admin_increase_quota":
-        user_states[user_id] = {"state": "awaiting_admin_user_id_for_quota_increase"}
+        user_data["state"] = "awaiting_admin_user_id_for_quota_increase"
         await query.edit_message_text("شناسه عددی کاربر مورد نظر برای افزایش سهمیه را وارد کنید:")
 
     elif query.data == "admin_decrease_quota":
-        user_states[user_id] = {"state": "awaiting_admin_user_id_for_quota_decrease"}
+        user_data["state"] = "awaiting_admin_user_id_for_quota_decrease"
         await query.edit_message_text("شناسه عددی کاربر مورد نظر برای کاهش سهمیه را وارد کنید:")
 
     elif query.data == "games_menu":
         await query.edit_message_text("بخش بازی و سرگرمی در حال ساخت است. به زودی برمی‌گردیم!")
 
     else:
-        await query.message.reply_text(f"دکame {query.data} کلیک شد. (در حال پیاده‌سازی)")
+        await query.edit_message_text(f"گزینه ناشناخته: {query.data}")
 
 
 # Vercel Handler
