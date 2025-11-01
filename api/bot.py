@@ -327,6 +327,11 @@ def ensure_application_initialized():
             logger.error("No Telegram token found")
 
 class handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.end_headers()
+        self.wfile.write(b'Bot is running.')
+
     def do_POST(self):
         ensure_application_initialized()
         if application is None:
