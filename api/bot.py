@@ -16,6 +16,7 @@ from http.server import BaseHTTPRequestHandler
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, InputSticker
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from telegram.error import BadRequest
+from telegram.constants import ChatMemberStatus
 from PIL import Image, ImageDraw, ImageFont
 
 # Configure logging
@@ -28,11 +29,15 @@ logger = logging.getLogger(__name__)
 # Global variables for user states
 user_states = {}
 user_packs = {}
+user_quotas = {}
+DAILY_QUOTA = 10  # Default daily quota
+ADMIN_ID = 6053579919
 
 class TelegramBotFeatures:
     """Complete bot features class"""
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        user_id = update.effective_user.id
         welcome_text = """🎉 به ربات استیکر ساز خوش آمدید! 🎉
 
 از منوی زیر یکی از گزینه‌ها را انتخاب کنید:
@@ -49,11 +54,11 @@ class TelegramBotFeatures:
             [
                 InlineKeyboardButton("📚 راهنما", callback_data="help"),
                 InlineKeyboardButton("📞 پشتیبانی", callback_data="support")
-            ],
-            [
-                InlineKeyboardButton("👑 پنل ادمین", callback_data="admin_panel")
             ]
         ]
+        if user_id == ADMIN_ID:
+            keyboard.append([InlineKeyboardButton("👑 پنل ادمین", callback_data="admin_panel")])
+
         reply_markup = InlineKeyboardMarkup(keyboard)
 
         if update.callback_query:
@@ -139,6 +144,17 @@ class TelegramBotFeatures:
             logger.error(f"Unexpected error when adding sticker: {e}")
             return None, str(e)
 
+    async def check_channel_membership(self, context: ContextTypes.DEFAULT_TYPE, user_id: int):
+        """Checks if a user is a member of the required channel."""
+        try:
+            member = await context.bot.get_chat_member(chat_id="@redoxbot_sticker", user_id=user_id)
+            return member.status in [ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR]
+        except BadRequest:
+            # This can happen if the bot is not an admin in the channel
+            return False
+        except Exception as e:
+            logger.error(f"Error checking channel membership: {e}")
+            return False
 
 # Initialize bot features
 bot_features = TelegramBotFeatures()
@@ -184,7 +200,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_states[user_id].update({"state": "awaiting_text", "photo_id": photo_file_id})
             await update.message.reply_text("تصویر دریافت شد. لطفاً متنی که می‌خواهید روی استیکر باشد را ارسال کنید:")
 
-    def is_valid_pack_name(name: str) -> bool:
+    def is_valid_pack_name(self, name: str) -> bool:
         """Validates pack name based on Telegram rules."""
         if not (4 <= len(name) <= 32):
             return False
@@ -196,6 +212,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return False
         return True
 
+# Initialize bot_features object
+bot_features = TelegramBotFeatures()
+
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.message.from_user.id
     if user_id in user_states:
@@ -203,6 +222,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if current_state["state"] == "awaiting_pack_name":
             pack_name = update.message.text
+            if not bot_features.is_valid_pack_name(pack_name):
+                await update.message.reply_text("نام بسته نامعتبر است. لطفاً با توجه به قوانین، نام دیگری انتخاب کنید.")
+                return
+
             user_states[user_id].update({"state": "awaiting_sticker_image", "pack_name": pack_name})
             await update.message.reply_text(f"نام بسته '{pack_name}' انتخاب شد. لطفاً اولین تصویر را برای استیکر خود ارسال کنید.")
 
@@ -210,6 +233,58 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             text = update.message.text
             photo_id = current_state["photo_id"]
             pack_name = current_state["pack_name"]
+
+        # Admin states
+        elif user_id == ADMIN_ID:
+            if current_state["state"] == "awaiting_admin_user_id_for_message":
+                target_user_id = int(update.message.text)
+                user_states[user_id] = {"state": "awaiting_admin_message_to_send", "target_user_id": target_user_id}
+                await update.message.reply_text(f"پیام خود را برای کاربر {target_user_id} وارد کنید:")
+
+            elif current_state["state"] == "awaiting_admin_message_to_send":
+                target_user_id = current_state["target_user_id"]
+                message_text = update.message.text
+                try:
+                    await context.bot.send_message(chat_id=target_user_id, text=message_text)
+                    await update.message.reply_text("پیام با موفقیت ارسال شد.")
+                except Exception as e:
+                    await update.message.reply_text(f"خطا در ارسال پیام: {e}")
+                del user_states[user_id]
+
+            elif current_state["state"] == "awaiting_admin_broadcast_message":
+                message_text = update.message.text
+                # A proper broadcast to all users would require a user database.
+                # This is a placeholder for now.
+                await update.message.reply_text(f"پیام همگانی (نمایشی): {message_text}")
+                del user_states[user_id]
+
+            elif current_state["state"] == "awaiting_admin_user_id_for_quota_increase":
+                target_user_id = int(update.message.text)
+                user_states[user_id] = {"state": "awaiting_admin_quota_increase_amount", "target_user_id": target_user_id}
+                await update.message.reply_text(f"مقدار افزایش سهمیه برای کاربر {target_user_id} را وارد کنید:")
+
+            elif current_state["state"] == "awaiting_admin_quota_increase_amount":
+                target_user_id = current_state["target_user_id"]
+                amount = int(update.message.text)
+                if target_user_id not in user_quotas:
+                    user_quotas[target_user_id] = DAILY_QUOTA
+                user_quotas[target_user_id] += amount
+                await update.message.reply_text(f"سهمیه کاربر {target_user_id} به {user_quotas[target_user_id]} افزایش یافت.")
+                del user_states[user_id]
+
+            elif current_state["state"] == "awaiting_admin_user_id_for_quota_decrease":
+                target_user_id = int(update.message.text)
+                user_states[user_id] = {"state": "awaiting_admin_quota_decrease_amount", "target_user_id": target_user_id}
+                await update.message.reply_text(f"مقدار کاهش سهمیه برای کاربر {target_user_id} را وارد کنید:")
+
+            elif current_state["state"] == "awaiting_admin_quota_decrease_amount":
+                target_user_id = current_state["target_user_id"]
+                amount = int(update.message.text)
+                if target_user_id not in user_quotas:
+                    user_quotas[target_user_id] = DAILY_QUOTA
+                user_quotas[target_user_id] = max(0, user_quotas[target_user_id] - amount)
+                await update.message.reply_text(f"سهمیه کاربر {target_user_id} به {user_quotas[target_user_id]} کاهش یافت.")
+                del user_states[user_id]
 
             photo_file = await context.bot.get_file(photo_id)
             photo_stream = io.BytesIO()
@@ -239,6 +314,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     await query.answer()
     user_id = query.from_user.id
+
+    is_member = await bot_features.check_channel_membership(context, user_id)
+    if not is_member:
+        keyboard = [[InlineKeyboardButton(" عضویت در کانال", url="https://t.me/redoxbot_sticker")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.message.reply_text("برای استفاده از ربات، لطفاً ابتدا در کانال ما عضو شوید.", reply_markup=reply_markup)
+        return
 
     if query.data == "start_menu":
         await bot_features.start_command(update, context)
@@ -270,6 +352,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == "satisfaction_yes":
         if user_id in user_states and user_states[user_id].get("state") == "awaiting_satisfaction":
+            # Quota check
+            if user_id not in user_quotas:
+                user_quotas[user_id] = DAILY_QUOTA
+
+            if user_quotas[user_id] <= 0:
+                await query.edit_message_text("متاسفانه سهمیه روزانه شما به پایان رسیده است.")
+                return
+
             state_data = user_states[user_id]
             pack_name = state_data["pack_name"]
             sticker_bytes = io.BytesIO(state_data["sticker_bytes"])
@@ -287,8 +377,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if full_pack_name not in user_packs[user_id]:
                     user_packs[user_id].append(full_pack_name)
 
+                user_quotas[user_id] -= 1
                 user_states[user_id]["state"] = "awaiting_sticker_image"
-                await query.edit_message_text(f"استیکر شما با موفقیت به بسته '{pack_name}' اضافه شد!\nبرای مشاهده: https://t.me/addstickers/{full_pack_name}\n\nمی‌توانید تصویر بعدی را ارسال کنید یا با ارسال /done کار را تمام کنید.")
+                await query.edit_message_text(f"استیکر شما با موفقیت به بسته '{pack_name}' اضافه شد!\nسهمیه باقی‌مانده: {user_quotas[user_id]}\n\nبرای مشاهده: https://t.me/addstickers/{full_pack_name}\n\nمی‌توانید تصویر بعدی را ارسال کنید یا با ارسال /done کار را تمام کنید.")
         else:
             await query.edit_message_text("خطای وضعیت. لطفاً دوباره امتحان کنید.")
 
@@ -305,8 +396,46 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await query.edit_message_text("شما هنوز هیچ پکی نساخته‌اید.")
 
+    elif query.data == "support":
+        await query.edit_message_text("برای پشتیبانی به آیدی @onedaytoalive پیام دهید.")
+
+    elif query.data == "my_quota":
+        if user_id not in user_quotas:
+            user_quotas[user_id] = DAILY_QUOTA
+        await query.edit_message_text(f"سهمیه روزانه باقی‌مانده شما: {user_quotas[user_id]}")
+
+    elif query.data == "admin_panel":
+        if user_id == ADMIN_ID:
+            keyboard = [
+                [InlineKeyboardButton("ارسال پیام به کاربر", callback_data="admin_send_user")],
+                [InlineKeyboardButton("ارسال پیام همگانی", callback_data="admin_broadcast")],
+                [InlineKeyboardButton("افزایش سهمیه", callback_data="admin_increase_quota")],
+                [InlineKeyboardButton("کاهش سهمیه", callback_data="admin_decrease_quota")],
+                [InlineKeyboardButton("بازگشت", callback_data="start_menu")]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.edit_message_text("به پنل ادمین خوش آمدید.", reply_markup=reply_markup)
+        else:
+            await query.edit_message_text("شما اجازه دسترسی به این بخش را ندارید.")
+
+    elif query.data == "admin_send_user":
+        user_states[user_id] = {"state": "awaiting_admin_user_id_for_message"}
+        await query.edit_message_text("شناسه عددی کاربر مورد نظر را وارد کنید:")
+
+    elif query.data == "admin_broadcast":
+        user_states[user_id] = {"state": "awaiting_admin_broadcast_message"}
+        await query.edit_message_text("پیام همگانی خود را وارد کنید:")
+
+    elif query.data == "admin_increase_quota":
+        user_states[user_id] = {"state": "awaiting_admin_user_id_for_quota_increase"}
+        await query.edit_message_text("شناسه عددی کاربر مورد نظر برای افزایش سهمیه را وارد کنید:")
+
+    elif query.data == "admin_decrease_quota":
+        user_states[user_id] = {"state": "awaiting_admin_user_id_for_quota_decrease"}
+        await query.edit_message_text("شناسه عددی کاربر مورد نظر برای کاهش سهمیه را وارد کنید:")
+
     else:
-        await query.message.reply_text(f"دکمه {query.data} کلیک شد. (در حال پیاده‌سازی)")
+        await query.message.reply_text(f"دکame {query.data} کلیک شد. (در حال پیاده‌سازی)")
 
 
 # Vercel Handler
