@@ -317,7 +317,7 @@ def wsgi_app(environ, start_response):
         start_response('200 OK', [('Content-Type', 'application/json')])
         return [body]
 
-    if path == '/' and method == 'POST':
+    if path == '/webhook' and method == 'POST':
         try:
             content_length = int(environ.get('CONTENT_LENGTH', 0))
             body_bytes = environ['wsgi.input'].read(content_length)
