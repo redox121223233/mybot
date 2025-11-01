@@ -85,7 +85,22 @@ class TelegramBotFeatures:
 """
         await update.message.reply_text(help_text)
 
-    async def create_sticker(self, image_stream, text, font_size=60):
+    async def create_simple_sticker(self, image_stream):
+        """Creates a simple sticker from an image"""
+        try:
+            img = Image.open(image_stream).convert("RGBA")
+            img = img.resize((512, 512))
+
+            img_bytes = io.BytesIO()
+            img.save(img_bytes, format='PNG')
+            img_bytes.seek(0)
+
+            return img_bytes
+        except Exception as e:
+            logger.error(f"Error creating simple sticker: {e}")
+            return None
+
+    async def create_sticker_with_text(self, image_stream, text, font_size=60):
         """Create a sticker by adding text to an image"""
         try:
             # Open the user's image
@@ -97,7 +112,8 @@ class TelegramBotFeatures:
             # Use a default font
             try:
                 font = ImageFont.truetype("fonts/Vazir.ttf", font_size)
-            except:
+            except IOError:
+                logger.warning("Vazir font not found, falling back to default.")
                 font = ImageFont.load_default()
 
             # Calculate text position to center it
@@ -125,7 +141,7 @@ class TelegramBotFeatures:
             return img_bytes
 
         except Exception as e:
-            logger.error(f"Error creating sticker: {e}")
+            logger.error(f"Error creating sticker with text: {e}")
             return None
 
     async def guess_number_game(self, update_or_query):
@@ -243,7 +259,19 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         'mode': 'sticker_creation',
         'photo_file_id': photo_file.file_id
     }
-    await update.message.reply_text("🖼️ عکس شما دریافت شد.\n\nحالا متنی که می‌خواهید روی استیکر باشد را بنویسید:")
+
+    keyboard = [
+        [
+            InlineKeyboardButton("🖼️ ساده (فقط عکس)", callback_data="sticker_simple"),
+            InlineKeyboardButton("✍️ پیشرفته (با متن)", callback_data="sticker_advanced")
+        ]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+
+    await update.message.reply_text(
+        "✨ نوع استیکر خود را انتخاب کنید:",
+        reply_markup=reply_markup
+    )
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text messages for games or sticker creation"""
@@ -258,7 +286,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except ValueError:
             await update.message.reply_text("❌ لطفاً یک عدد صحیح وارد کنید!")
 
-    elif state.get('mode') == 'sticker_creation':
+    elif state.get('mode') == 'sticker_creation' and state.get('sticker_type') == 'advanced':
         state['text'] = text
 
         keyboard = [
@@ -283,7 +311,16 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if callback_data == "sticker_creator":
         await query.message.reply_text("🖼️ برای ساخت استیکر، یک عکس برای من ارسال کنید.")
 
-    elif callback_data in ["my_packs", "my_quota", "support", "admin_panel"]:
+    elif callback_data == "my_packs":
+        # Placeholder for sticker pack management
+        await query.edit_message_text(
+            "🛍️ **مدیریت پک‌های استیکر**\n\n"
+            "این بخش به شما اجازه می‌دهد پک‌های استیکر خود را بسازید و مدیریت کنید.\n\n"
+            "برای شروع، لطفاً یک نام برای پک جدید خود انتخاب کنید. (مثال: `MyCoolPack`)\n\n"
+            "توجه: این قابلیت هنوز در حال توسعه است."
+        )
+
+    elif callback_data in ["my_quota", "support", "admin_panel"]:
         await query.answer(f"این بخش ({callback_data}) در حال حاضر در دست ساخت است.", show_alert=True)
 
     elif callback_data == "start_menu":
@@ -305,9 +342,39 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         user_choice = callback_data.split("_")[1]
         await bot_features.check_rps_choice(update, user_choice)
 
-    elif callback_data.startswith("font_"):
+    elif callback_data == "sticker_simple":
         if state.get('mode') != 'sticker_creation':
             await query.edit_message_text("لطفاً ابتدا یک عکس ارسال کنید.")
+            return
+
+        await query.edit_message_text("⏳ در حال ساخت استیکر ساده...")
+
+        photo_file_id = state['photo_file_id']
+        photo_file = await context.bot.get_file(photo_file_id)
+        photo_stream = io.BytesIO()
+        await photo_file.download_to_memory(photo_stream)
+        photo_stream.seek(0)
+
+        sticker_bytes = await bot_features.create_simple_sticker(photo_stream)
+
+        if sticker_bytes:
+            await context.bot.send_sticker(chat_id=user_id, sticker=sticker_bytes)
+            await query.edit_message_text("✅ استیکر شما با موفقیت ساخته شد!")
+        else:
+            await query.edit_message_text("❌ خطا در ساخت استیکر! لطفاً مطمئن شوید که یک فایل عکس معتبر ارسال کرده‌اید.")
+
+        del user_states[user_id]
+
+    elif callback_data == "sticker_advanced":
+        if state.get('mode') != 'sticker_creation':
+            await query.edit_message_text("لطفاً ابتدا یک عکس ارسال کنید.")
+            return
+        state['sticker_type'] = 'advanced'
+        await query.edit_message_text("✍️ لطفاً متنی که می‌خواهید روی استیکر باشد را بنویسید:")
+
+    elif callback_data.startswith("font_"):
+        if state.get('mode') != 'sticker_creation' or state.get('sticker_type') != 'advanced':
+            await query.edit_message_text("فرآیند ساخت استیکر پیشرفته فعال نیست. لطفاً ابتدا یک عکس ارسال کنید.")
             return
 
         font_size = {
@@ -316,7 +383,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "font_large": 80
         }.get(callback_data, 60)
 
-        await query.edit_message_text("⏳ در حال ساخت استیکر...")
+        await query.edit_message_text("⏳ در حال ساخت استیکر پیشرفته...")
 
         photo_file_id = state['photo_file_id']
         text = state['text']
@@ -326,12 +393,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await photo_file.download_to_memory(photo_stream)
         photo_stream.seek(0)
 
-        sticker_bytes = await bot_features.create_sticker(photo_stream, text, font_size)
+        sticker_bytes = await bot_features.create_sticker_with_text(photo_stream, text, font_size)
 
         if sticker_bytes:
             await context.bot.send_sticker(chat_id=user_id, sticker=sticker_bytes)
+            await query.message.reply_text("✅ استیکر شما با موفقیت ساخته شد!")
         else:
-            await query.edit_message_text("❌ خطا در ساخت استیکر!")
+            await query.edit_message_text("❌ خطا در ساخت استیکر! لطفاً مطمئن شوید که یک فایل عکس معتبر ارسال کرده‌اید.")
 
         del user_states[user_id]
 
