@@ -346,8 +346,10 @@ class handler(BaseHTTPRequestHandler):
             update_data = json.loads(body.decode('utf-8'))
 
             async def process():
+                await application.initialize()
                 update = Update.de_json(update_data, application.bot)
                 await application.process_update(update)
+                await application.shutdown()
 
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
