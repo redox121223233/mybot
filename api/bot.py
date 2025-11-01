@@ -12,6 +12,7 @@ import random
 import io
 import re
 from http.server import BaseHTTPRequestHandler
+from datetime import datetime, timedelta
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, InputSticker
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
@@ -30,8 +31,9 @@ logger = logging.getLogger(__name__)
 user_states = {}
 user_packs = {}
 user_quotas = {}
-DAILY_QUOTA = 10  # Default daily quota
 ADMIN_ID = 6053579919
+SIMPLE_QUOTA = 10
+ADVANCED_QUOTA = 3
 
 class TelegramBotFeatures:
     """Complete bot features class"""
@@ -173,6 +175,18 @@ class TelegramBotFeatures:
             logger.error(f"Error checking channel membership: {e}")
             return False
 
+    def is_valid_pack_name(self, name: str) -> bool:
+        """Validates pack name based on Telegram rules."""
+        if not (4 <= len(name) <= 32):
+            return False
+        if not name[0].isalpha():
+            return False
+        if not re.match("^[a-zA-Z0-9_]*$", name):
+            return False
+        if name.isdigit():
+            return False
+        return True
+
 # Initialize bot features
 bot_features = TelegramBotFeatures()
 
@@ -217,18 +231,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             user_states[user_id].update({"state": "awaiting_text", "photo_id": photo_file_id})
             await update.message.reply_text("تصویر دریافت شد. لطفاً متنی که می‌خواهید روی استیکر باشد را ارسال کنید:")
 
-    def is_valid_pack_name(self, name: str) -> bool:
-        """Validates pack name based on Telegram rules."""
-        if not (4 <= len(name) <= 32):
-            return False
-        if not name[0].isalpha():
-            return False
-        if not re.match("^[a-zA-Z0-9_]*$", name):
-            return False
-        if name.isdigit():
-            return False
-        return True
-
 # Initialize bot_features object
 bot_features = TelegramBotFeatures()
 
@@ -249,7 +251,25 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif current_state.get("state") == "awaiting_text":
             text = update.message.text
             photo_id = current_state["photo_id"]
-            pack_name = current_state["pack_name"]
+
+            photo_file = await context.bot.get_file(photo_id)
+            photo_stream = io.BytesIO()
+            await photo_file.download_to_memory(photo_stream)
+            photo_stream.seek(0)
+
+            sticker_bytes = await bot_features.create_sticker_with_text(photo_stream, text)
+            if sticker_bytes:
+                user_states[user_id].update({"state": "awaiting_satisfaction", "sticker_bytes": sticker_bytes.getvalue()})
+                keyboard = [
+                    [
+                        InlineKeyboardButton("👍 بله", callback_data="satisfaction_yes"),
+                        InlineKeyboardButton("👎 خیر", callback_data="satisfaction_no")
+                    ]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.message.reply_document(sticker_bytes, filename="sticker_preview.png", caption="آیا از نتیجه راضی هستید؟", reply_markup=reply_markup)
+            else:
+                await update.message.reply_text("خطا در ساخت استیکر.")
 
         # Admin states
         elif user_id == ADMIN_ID:
@@ -284,9 +304,10 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 target_user_id = current_state["target_user_id"]
                 amount = int(update.message.text)
                 if target_user_id not in user_quotas:
-                    user_quotas[target_user_id] = DAILY_QUOTA
-                user_quotas[target_user_id] += amount
-                await update.message.reply_text(f"سهمیه کاربر {target_user_id} به {user_quotas[target_user_id]} افزایش یافت.")
+                    user_quotas[target_user_id] = {"simple": SIMPLE_QUOTA, "advanced": ADVANCED_QUOTA, "reset_time": datetime.utcnow() + timedelta(hours=24)}
+                user_quotas[target_user_id]["simple"] += amount
+                user_quotas[target_user_id]["advanced"] += amount
+                await update.message.reply_text(f"سهمیه کاربر {target_user_id} افزایش یافت.")
                 del user_states[user_id]
 
             elif current_state["state"] == "awaiting_admin_user_id_for_quota_decrease":
@@ -298,34 +319,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 target_user_id = current_state["target_user_id"]
                 amount = int(update.message.text)
                 if target_user_id not in user_quotas:
-                    user_quotas[target_user_id] = DAILY_QUOTA
-                user_quotas[target_user_id] = max(0, user_quotas[target_user_id] - amount)
-                await update.message.reply_text(f"سهمیه کاربر {target_user_id} به {user_quotas[target_user_id]} کاهش یافت.")
+                    user_quotas[target_user_id] = {"simple": SIMPLE_QUOTA, "advanced": ADVANCED_QUOTA, "reset_time": datetime.utcnow() + timedelta(hours=24)}
+                user_quotas[target_user_id]["simple"] = max(0, user_quotas[target_user_id]["simple"] - amount)
+                user_quotas[target_user_id]["advanced"] = max(0, user_quotas[target_user_id]["advanced"] - amount)
+                await update.message.reply_text(f"سهمیه کاربر {target_user_id} کاهش یافت.")
                 del user_states[user_id]
-
-            photo_file = await context.bot.get_file(photo_id)
-            photo_stream = io.BytesIO()
-            await photo_file.download_to_memory(photo_stream)
-            photo_stream.seek(0)
-
-            sticker_bytes = await bot_features.create_sticker_with_text(photo_stream, text)
-            if sticker_bytes:
-                user_states[user_id].update({"state": "awaiting_satisfaction", "sticker_bytes": sticker_bytes.getvalue()})
-                keyboard = [
-                    [
-                        InlineKeyboardButton("👍 بله", callback_data="satisfaction_yes"),
-                        InlineKeyboardButton("👎 خیر", callback_data="satisfaction_no")
-                    ]
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                await update.message.reply_document(sticker_bytes, filename="sticker_preview.png", caption="آیا از نتیجه راضی هستید؟", reply_markup=reply_markup)
-            else:
-                await update.message.reply_text("خطا در ساخت استیکر.")
-
         else:
             await update.message.reply_text("در حال پیاده‌سازی...")
     else:
         await update.message.reply_text("در حال پیاده‌سازی...")
+
+def check_and_update_quota(user_id: int, sticker_type: str):
+    """Checks and updates the user's quota. Returns True if the user has quota, False otherwise."""
+    now = datetime.utcnow()
+    # Get the user_id from the function arguments, not from the outer scope
+    if user_id not in user_quotas or now >= user_quotas[user_id].get("reset_time", now):
+        user_quotas[user_id] = {
+            "simple": SIMPLE_QUOTA,
+            "advanced": ADVANCED_QUOTA,
+            "reset_time": now + timedelta(hours=24)
+        }
+
+    quota_type = "simple" if sticker_type == "simple" else "advanced"
+    if user_quotas[user_id][quota_type] > 0:
+        user_quotas[user_id][quota_type] -= 1
+        return True
+    return False
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
@@ -369,22 +388,19 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == "satisfaction_yes":
         if user_id in user_states and user_states[user_id].get("state") == "awaiting_satisfaction":
-            # Quota check
-            if user_id not in user_quotas:
-                user_quotas[user_id] = DAILY_QUOTA
+            state_data = user_states[user_id]
+            sticker_type = state_data["type"]
 
-            if user_quotas[user_id] <= 0:
-                await query.edit_message_text("متاسفانه سهمیه روزانه شما به پایان رسیده است.")
+            if not check_and_update_quota(user_id, sticker_type):
+                await query.edit_message_text("متاسفانه سهمیه روزانه شما برای این نوع استیکر به پایان رسیده است.")
                 return
 
-            state_data = user_states[user_id]
             pack_name = state_data["pack_name"]
             sticker_bytes = io.BytesIO(state_data["sticker_bytes"])
-
             full_pack_name, error = await bot_features.add_sticker_to_pack(context, user_id, pack_name, sticker_bytes)
 
             if error == "occupied":
-                user_states[user_id] = {"state": "awaiting_pack_name", "type": state_data["type"]}
+                user_states[user_id]["state"] = "awaiting_pack_name"
                 await query.edit_message_text("این نام بسته قبلاً توسط کاربر دیگری گرفته شده است. لطفاً نام دیگری انتخاب کنید:")
             elif error:
                 await query.edit_message_text(f"خطایی رخ داد: {error}")
@@ -394,9 +410,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 if full_pack_name not in user_packs[user_id]:
                     user_packs[user_id].append(full_pack_name)
 
-                user_quotas[user_id] -= 1
+                remaining_quota = user_quotas[user_id]["simple" if sticker_type == "simple" else "advanced"]
                 user_states[user_id]["state"] = "awaiting_sticker_image"
-                await query.edit_message_text(f"استیکر شما با موفقیت به بسته '{pack_name}' اضافه شد!\nسهمیه باقی‌مانده: {user_quotas[user_id]}\n\nبرای مشاهده: https://t.me/addstickers/{full_pack_name}\n\nمی‌توانید تصویر بعدی را ارسال کنید یا با ارسال /done کار را تمام کنید.")
+                await query.edit_message_text(
+                    f"استیکر شما با موفقیت به بسته '{pack_name}' اضافه شد!\n"
+                    f"سهمیه باقی‌مانده ({'ساده' if sticker_type == 'simple' else 'پیشرفته'}): {remaining_quota}\n\n"
+                    f"برای مشاهده: https://t.me/addstickers/{full_pack_name}\n\n"
+                    "می‌توانید تصویر بعدی را ارسال کنید یا با ارسال /done کار را تمام کنید."
+                )
         else:
             await query.edit_message_text("خطای وضعیت. لطفاً دوباره امتحان کنید.")
 
@@ -417,9 +438,27 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("برای پشتیبانی به آیدی @onedaytoalive پیام دهید.")
 
     elif query.data == "my_quota":
-        if user_id not in user_quotas:
-            user_quotas[user_id] = DAILY_QUOTA
-        await query.edit_message_text(f"سهمیه روزانه باقی‌مانده شما: {user_quotas[user_id]}")
+        now = datetime.utcnow()
+        if user_id not in user_quotas or now >= user_quotas[user_id].get("reset_time", now):
+            user_quotas[user_id] = {
+                "simple": SIMPLE_QUOTA,
+                "advanced": ADVANCED_QUOTA,
+                "reset_time": now + timedelta(hours=24)
+            }
+
+        quota_data = user_quotas[user_id]
+        reset_time = quota_data['reset_time']
+        time_left = reset_time - now
+        hours, remainder = divmod(time_left.seconds, 3600)
+        minutes, _ = divmod(remainder, 60)
+
+        quota_text = (
+            f"📊 **سهمیه شما**\n\n"
+            f"🎨 **استیکر ساده:** {quota_data['simple']}/{SIMPLE_QUOTA}\n"
+            f"✨ **استیکر پیشرفته:** {quota_data['advanced']}/{ADVANCED_QUOTA}\n\n"
+            f"⏳ **زمان تا شارژ بعدی:** {hours} ساعت و {minutes} دقیقه"
+        )
+        await query.edit_message_text(quota_text, parse_mode='Markdown')
 
     elif query.data == "admin_panel":
         if user_id == ADMIN_ID:
@@ -450,6 +489,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif query.data == "admin_decrease_quota":
         user_states[user_id] = {"state": "awaiting_admin_user_id_for_quota_decrease"}
         await query.edit_message_text("شناسه عددی کاربر مورد نظر برای کاهش سهمیه را وارد کنید:")
+
+    elif query.data == "games_menu":
+        await query.edit_message_text("بخش بازی و سرگرمی در حال ساخت است. به زودی برمی‌گردیم!")
 
     else:
         await query.message.reply_text(f"دکame {query.data} کلیک شد. (در حال پیاده‌سازی)")
