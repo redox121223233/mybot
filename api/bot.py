@@ -327,11 +327,9 @@ def wsgi_app(environ, start_response):
                 update = Update.de_json(webhook_data, application.bot)
                 await application.process_update(update)
 
-            loop = asyncio.get_event_loop()
-            if loop.is_running():
-                loop.create_task(process())
-            else:
-                loop.run_until_complete(process())
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            loop.run_until_complete(process())
 
             start_response('200 OK', [('Content-Type', 'application/json')])
             return [b'{"status":"ok"}']
