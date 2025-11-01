@@ -313,21 +313,34 @@ def setup_application(application):
     application.add_handler(CallbackQueryHandler(button_callback))
 
 # Initialize Telegram application
-TELEGRAM_TOKEN = os.getenv('BOT_TOKEN') or os.getenv('TELEGRAM_BOT_TOKEN')
 application = None
 
-if TELEGRAM_TOKEN:
-    try:
-        application = Application.builder().token(TELEGRAM_TOKEN).build()
-        setup_application(application)
-        logger.info("Handlers setup completed successfully")
-    except Exception as e:
-        logger.error(f"Error setting up application: {e}")
-else:
-    logger.error("No Telegram token found in environment variables")
+def ensure_application_initialized():
+    """Ensures the Telegram application is initialized."""
+    global application
+    if application is None:
+        TELEGRAM_TOKEN = os.getenv('BOT_TOKEN') or os.getenv('TELEGRAM_BOT_TOKEN')
+        if TELEGRAM_TOKEN:
+            try:
+                application = Application.builder().token(TELEGRAM_TOKEN).build()
+                setup_application(application)
+                logger.info("Handlers setup completed successfully")
+            except Exception as e:
+                logger.error(f"Error setting up application: {e}")
+                application = None
+        else:
+            logger.error("No Telegram token found in environment variables")
+
 
 def wsgi_app(environ, start_response):
     """Simple WSGI handler for Vercel"""
+    ensure_application_initialized()
+
+    if application is None:
+        logger.critical("Application is not initialized. Cannot process request.")
+        start_response('500 Internal Server Error', [('Content-Type', 'text/plain')])
+        return [b'Internal Server Error: Bot not initialized']
+
     path = environ.get('PATH_INFO', '/')
     method = environ.get('REQUEST_METHOD', 'GET')
 
