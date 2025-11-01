@@ -120,14 +120,17 @@ class TelegramBotFeatures:
             logger.error(f"Error creating sticker: {e}")
             return None
 
-    async def guess_number_game(self, update: Update):
+    async def guess_number_game(self, update_or_query):
         """Setup guess number game"""
         number = random.randint(1, 100)
-        user_id = update.effective_user.id
+        user_id = update_or_query.effective_user.id
         user_states[user_id] = {'mode': 'guess_game', 'number': number, 'attempts': 0}
 
         message = "🔢 **بازی حدس عدد!**\n\nمن یک عدد بین ۱ تا ۱۰۰ انتخاب کردم. حدس شما چیه؟"
-        await update.message.reply_text(message)
+        if hasattr(update_or_query, 'message'):
+            await update_or_query.message.reply_text(message)
+        else:
+            await update_or_query.edit_message_text(message)
 
     async def check_guess(self, update: Update, guess: int):
         """Check user's guess"""
@@ -152,7 +155,7 @@ class TelegramBotFeatures:
 
         await update.message.reply_text(message)
 
-    async def rock_paper_scissors_game(self, update: Update):
+    async def rock_paper_scissors_game(self, update_or_query):
         """Setup rock paper scissors game"""
         keyboard = [
             [
@@ -162,7 +165,11 @@ class TelegramBotFeatures:
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("✂️ **سنگ کاغذ قیچی!**\n\nانتخاب کنید:", reply_markup=reply_markup)
+        message_text = "✂️ **سنگ کاغذ قیچی!**\n\nانتخاب کنید:"
+        if hasattr(update_or_query, 'message'):
+            await update_or_query.message.reply_text(message_text, reply_markup=reply_markup)
+        else:
+            await update_or_query.edit_message_text(message_text, reply_markup=reply_markup)
 
     async def check_rps_choice(self, update: Update, user_choice: str):
         """Check RPS choice"""
@@ -248,7 +255,19 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     callback_data = query.data
     state = user_states.get(user_id, {})
 
-    if callback_data.startswith("rps_"):
+    if callback_data == "sticker_creator":
+        await query.message.reply_text("🖼️ برای ساخت استیکر، یک عکس برای من ارسال کنید.")
+
+    elif callback_data == "guess_number":
+        await bot_features.guess_number_game(update.callback_query)
+
+    elif callback_data == "rock_paper_scissors":
+        await bot_features.rock_paper_scissors_game(update.callback_query)
+
+    elif callback_data == "help":
+        await bot_features.help_command(update.callback_query, context)
+
+    elif callback_data.startswith("rps_"):
         user_choice = callback_data.split("_")[1]
         await bot_features.check_rps_choice(update, user_choice)
 
