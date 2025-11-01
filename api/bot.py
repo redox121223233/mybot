@@ -9,14 +9,13 @@ import json
 import logging
 import asyncio
 import random
-import tempfile
 import io
-from datetime import datetime
+import re
 from http.server import BaseHTTPRequestHandler
-from wsgiref.simple_server import make_server
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, InputSticker
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+from telegram.error import BadRequest
 from PIL import Image, ImageDraw, ImageFont
 
 # Configure logging
@@ -28,19 +27,16 @@ logger = logging.getLogger(__name__)
 
 # Global variables for user states
 user_states = {}
+user_packs = {}
 
 class TelegramBotFeatures:
     """Complete bot features class"""
-
-    def __init__(self):
-        self.user_data = {}
 
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         welcome_text = """🎉 به ربات استیکر ساز خوش آمدید! 🎉
 
 از منوی زیر یکی از گزینه‌ها را انتخاب کنید:
 """
-
         keyboard = [
             [
                 InlineKeyboardButton("🎨 استیکر ساز", callback_data="sticker_creator"),
@@ -58,31 +54,15 @@ class TelegramBotFeatures:
                 InlineKeyboardButton("👑 پنل ادمین", callback_data="admin_panel")
             ]
         ]
-
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # Check if the command was triggered by a message or a callback query
         if update.callback_query:
             await update.callback_query.edit_message_text(welcome_text, reply_markup=reply_markup)
         else:
             await update.message.reply_text(welcome_text, reply_markup=reply_markup)
 
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        help_text = """📚 **راهنمای کامل ربات:**
-
-🎨 **استیکر ساز:**
-1. یک عکس برای ربات ارسال کنید.
-2. متنی که می‌خواهید روی استیکر باشد را بنویسید.
-3. اندازه فونت را انتخاب کنید.
-
-🎮 **بازی‌ها:**
-/guess - شروع بازی حدس عدد
-/rps - سنگ کاغذ قیچی
-
-💬 **سایر:**
-/start - منوی اصلی
-/help - این راهنما
-"""
+        help_text = "این راهنمای ربات است. (در آینده تکمیل می‌شود)"
         await update.message.reply_text(help_text)
 
     async def create_simple_sticker(self, image_stream):
@@ -90,11 +70,9 @@ class TelegramBotFeatures:
         try:
             img = Image.open(image_stream).convert("RGBA")
             img = img.resize((512, 512))
-
             img_bytes = io.BytesIO()
             img.save(img_bytes, format='PNG')
             img_bytes.seek(0)
-
             return img_bytes
         except Exception as e:
             logger.error(f"Error creating simple sticker: {e}")
@@ -103,136 +81,64 @@ class TelegramBotFeatures:
     async def create_sticker_with_text(self, image_stream, text, font_size=60):
         """Create a sticker by adding text to an image"""
         try:
-            # Open the user's image
             img = Image.open(image_stream).convert("RGBA")
             img = img.resize((512, 512))
-
             draw = ImageDraw.Draw(img)
-
-            # Use a default font
             try:
                 font = ImageFont.truetype("fonts/Vazir.ttf", font_size)
             except IOError:
-                logger.warning("Vazir font not found, falling back to default.")
                 font = ImageFont.load_default()
-
-            # Calculate text position to center it
             text_bbox = draw.textbbox((0, 0), text, font=font)
             text_width = text_bbox[2] - text_bbox[0]
             text_height = text_bbox[3] - text_bbox[1]
             position = ((512 - text_width) / 2, (512 - text_height) / 2)
-
-            # Add a simple stroke for better visibility
             stroke_width = 2
             stroke_fill = "black"
             draw.text((position[0]-stroke_width, position[1]-stroke_width), text, font=font, fill=stroke_fill)
             draw.text((position[0]+stroke_width, position[1]-stroke_width), text, font=font, fill=stroke_fill)
             draw.text((position[0]-stroke_width, position[1]+stroke_width), text, font=font, fill=stroke_fill)
             draw.text((position[0]+stroke_width, position[1]+stroke_width), text, font=font, fill=stroke_fill)
-
-            # Draw the main text
             draw.text(position, text, font=font, fill="white")
-
-            # Save to bytes
             img_bytes = io.BytesIO()
             img.save(img_bytes, format='PNG')
             img_bytes.seek(0)
-
             return img_bytes
-
         except Exception as e:
             logger.error(f"Error creating sticker with text: {e}")
             return None
 
-    async def guess_number_game(self, update_or_query):
-        """Setup guess number game"""
-        number = random.randint(1, 100)
-        user_id = update_or_query.effective_user.id
-        user_states[user_id] = {'mode': 'guess_game', 'number': number, 'attempts': 0}
+    async def add_sticker_to_pack(self, context: ContextTypes.DEFAULT_TYPE, user_id: int, pack_name: str, sticker_bytes: io.BytesIO):
+        """Adds a sticker to a pack, creating it if it doesn't exist."""
+        bot = context.bot
+        pack_name_suffix = f"_by_{bot.username}"
+        full_pack_name = f"{pack_name}{pack_name_suffix}"
 
-        message = "🔢 **بازی حدس عدد!**\n\nمن یک عدد بین ۱ تا ۱۰۰ انتخاب کردم. حدس شما چیه؟"
-        if hasattr(update_or_query, 'message'):
-            await update_or_query.message.reply_text(message)
-        else:
-            await update_or_query.edit_message_text(message)
+        sticker_to_add = InputSticker(sticker_bytes, ["✅"])
 
-    async def check_guess(self, update: Update, guess: int):
-        """Check user's guess"""
-        user_id = update.effective_user.id
-        state = user_states.get(user_id, {})
+        try:
+            # First, try to add to an existing pack
+            await bot.add_sticker_to_set(user_id=user_id, name=full_pack_name, sticker=sticker_to_add)
+            logger.info(f"Sticker added to existing pack {full_pack_name}")
+            return full_pack_name, None
+        except BadRequest as e:
+            if "sticker set name is already occupied" in e.message.lower():
+                 return None, "occupied"
+            elif "stickerset_invalid" in e.message.lower():
+                # Pack doesn't exist, so create it
+                try:
+                    await bot.create_new_sticker_set(user_id=user_id, name=full_pack_name, title=pack_name, stickers=[sticker_to_add])
+                    logger.info(f"Created new sticker pack {full_pack_name}")
+                    return full_pack_name, None
+                except BadRequest as e2:
+                    logger.error(f"Failed to create new sticker set: {e2}")
+                    return None, str(e2)
+            else:
+                logger.error(f"Unhandled BadRequest when adding sticker: {e}")
+                return None, str(e)
+        except Exception as e:
+            logger.error(f"Unexpected error when adding sticker: {e}")
+            return None, str(e)
 
-        if state.get('mode') != 'guess_game':
-            await update.message.reply_text("بازی شروع نشده! /guess رو بزنید")
-            return
-
-        number = state['number']
-        state['attempts'] += 1
-        attempts = state['attempts']
-
-        if guess == number:
-            message = f"🎉 **آفرین!**\n\nعدد {number} بود!\nتعداد تلاش‌ها: {attempts}"
-            del user_states[user_id]
-        elif guess < number:
-            message = f"📈 **برو بالاتر!**\n\nحدس شما ({guess}) کوچکتره."
-        else:
-            message = f"📉 **برو پایین‌تر!**\n\nحدس شما ({guess}) بزرگتره."
-
-        await update.message.reply_text(message)
-
-    async def show_games_menu(self, query: Update.callback_query):
-        """Shows the games submenu"""
-        keyboard = [
-            [
-                InlineKeyboardButton("🔢 حدس عدد", callback_data="guess_number"),
-                InlineKeyboardButton("✂️ سنگ کاغذ قیچی", callback_data="rock_paper_scissors")
-            ],
-            [
-                InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="start_menu")
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text("🎮 **بازی و سرگرمی**\n\nیک بازی را انتخاب کنید:", reply_markup=reply_markup)
-
-    async def rock_paper_scissors_game(self, update_or_query):
-        """Setup rock paper scissors game"""
-        keyboard = [
-            [
-                InlineKeyboardButton("✊ سنگ", callback_data="rps_rock"),
-                InlineKeyboardButton("📄 کاغذ", callback_data="rps_paper"),
-                InlineKeyboardButton("✂️ قیچی", callback_data="rps_scissors")
-            ],
-            [
-                InlineKeyboardButton("🔙 بازگشت به منوی بازی‌ها", callback_data="games_menu")
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        message_text = "✂️ **سنگ کاغذ قیچی!**\n\nانتخاب کنید:"
-        if hasattr(update_or_query, 'message'):
-            await update_or_query.message.reply_text(message_text, reply_markup=reply_markup)
-        else:
-            await update_or_query.edit_message_text(message_text, reply_markup=reply_markup)
-
-    async def check_rps_choice(self, update: Update, user_choice: str):
-        """Check RPS choice"""
-        choices = ["rock", "paper", "scissors"]
-        bot_choice = random.choice(choices)
-
-        choice_text = {"rock": "سنگ", "paper": "کاغذ", "scissors": "قیچی"}
-
-        result = ""
-        if user_choice == bot_choice:
-            result = "🤝 **مساوی!**"
-        elif (
-            (user_choice == "rock" and bot_choice == "scissors") or
-            (user_choice == "paper" and bot_choice == "rock") or
-            (user_choice == "scissors" and bot_choice == "paper")
-        ):
-            result = "🎉 **شما بردید!**"
-        else:
-            result = "😔 **من بردم!**"
-
-        message = f"{result}\n\nشما: {choice_text[user_choice]}\nمن: {choice_text[bot_choice]}"
-        await update.callback_query.edit_message_text(message)
 
 # Initialize bot features
 bot_features = TelegramBotFeatures()
@@ -244,280 +150,209 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await bot_features.help_command(update, context)
 
-async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await bot_features.guess_number_game(update)
-
-async def rps_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await bot_features.rock_paper_scissors_game(update)
-
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle incoming photos for sticker creation"""
-    user_id = update.effective_user.id
-    photo_file = await update.message.photo[-1].get_file()
+    user_id = update.message.from_user.id
+    if user_id in user_states and user_states[user_id]["state"] == "awaiting_sticker_image":
+        state_data = user_states[user_id]
+        pack_name = state_data["pack_name"]
+        sticker_type = state_data["type"]
 
-    user_states[user_id] = {
-        'mode': 'sticker_creation',
-        'photo_file_id': photo_file.file_id
-    }
+        if sticker_type == "simple":
+            photo_file = await update.message.photo[-1].get_file()
+            photo_stream = io.BytesIO()
+            await photo_file.download_to_memory(photo_stream)
+            photo_stream.seek(0)
 
-    keyboard = [
-        [
-            InlineKeyboardButton("🖼️ ساده (فقط عکس)", callback_data="sticker_simple"),
-            InlineKeyboardButton("✍️ پیشرفته (با متن)", callback_data="sticker_advanced")
-        ]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+            sticker_bytes = await bot_features.create_simple_sticker(photo_stream)
 
-    await update.message.reply_text(
-        "✨ نوع استیکر خود را انتخاب کنید:",
-        reply_markup=reply_markup
-    )
+            if sticker_bytes:
+                user_states[user_id].update({"state": "awaiting_satisfaction", "sticker_bytes": sticker_bytes.getvalue()})
+                keyboard = [
+                    [
+                        InlineKeyboardButton("👍 بله", callback_data="satisfaction_yes"),
+                        InlineKeyboardButton("👎 خیر", callback_data="satisfaction_no")
+                    ]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.message.reply_document(sticker_bytes, filename="sticker_preview.png", caption="آیا از نتیجه راضی هستید؟", reply_markup=reply_markup)
+            else:
+                await update.message.reply_text("خطا در پردازش تصویر.")
+
+        elif sticker_type == "advanced":
+            # Store the photo and wait for the text
+            photo_file_id = update.message.photo[-1].file_id
+            user_states[user_id].update({"state": "awaiting_text", "photo_id": photo_file_id})
+            await update.message.reply_text("تصویر دریافت شد. لطفاً متنی که می‌خواهید روی استیکر باشد را ارسال کنید:")
+
+    def is_valid_pack_name(name: str) -> bool:
+        """Validates pack name based on Telegram rules."""
+        if not (4 <= len(name) <= 32):
+            return False
+        if not name[0].isalpha():
+            return False
+        if not re.match("^[a-zA-Z0-9_]*$", name):
+            return False
+        if name.isdigit():
+            return False
+        return True
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle text messages for games or sticker creation"""
-    user_id = update.effective_user.id
-    text = update.message.text
-    state = user_states.get(user_id, {})
+    user_id = update.message.from_user.id
+    if user_id in user_states:
+        current_state = user_states[user_id]
 
-    if state.get('mode') == 'guess_game':
-        try:
-            guess = int(text)
-            await bot_features.check_guess(update, guess)
-        except ValueError:
-            await update.message.reply_text("❌ لطفاً یک عدد صحیح وارد کنید!")
+        if current_state["state"] == "awaiting_pack_name":
+            pack_name = update.message.text
+            user_states[user_id].update({"state": "awaiting_sticker_image", "pack_name": pack_name})
+            await update.message.reply_text(f"نام بسته '{pack_name}' انتخاب شد. لطفاً اولین تصویر را برای استیکر خود ارسال کنید.")
 
-    elif state.get('mode') == 'sticker_creation' and state.get('sticker_type') == 'advanced':
-        state['text'] = text
+        elif current_state.get("state") == "awaiting_text":
+            text = update.message.text
+            photo_id = current_state["photo_id"]
+            pack_name = current_state["pack_name"]
 
-        keyboard = [
-            [
-                InlineKeyboardButton("کوچک", callback_data="font_small"),
-                InlineKeyboardButton("متوسط", callback_data="font_medium"),
-                InlineKeyboardButton("بزرگ", callback_data="font_large")
-            ]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text("اندازه فونت را انتخاب کنید:", reply_markup=reply_markup)
+            photo_file = await context.bot.get_file(photo_id)
+            photo_stream = io.BytesIO()
+            await photo_file.download_to_memory(photo_stream)
+            photo_stream.seek(0)
+
+            sticker_bytes = await bot_features.create_sticker_with_text(photo_stream, text)
+            if sticker_bytes:
+                user_states[user_id].update({"state": "awaiting_satisfaction", "sticker_bytes": sticker_bytes.getvalue()})
+                keyboard = [
+                    [
+                        InlineKeyboardButton("👍 بله", callback_data="satisfaction_yes"),
+                        InlineKeyboardButton("👎 خیر", callback_data="satisfaction_no")
+                    ]
+                ]
+                reply_markup = InlineKeyboardMarkup(keyboard)
+                await update.message.reply_document(sticker_bytes, filename="sticker_preview.png", caption="آیا از نتیجه راضی هستید؟", reply_markup=reply_markup)
+            else:
+                await update.message.reply_text("خطا در ساخت استیکر.")
+
+        else:
+            await update.message.reply_text("در حال پیاده‌سازی...")
+    else:
+        await update.message.reply_text("در حال پیاده‌سازی...")
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle button callbacks"""
     query = update.callback_query
     await query.answer()
+    user_id = query.from_user.id
 
-    user_id = update.effective_user.id
-    callback_data = query.data
-    state = user_states.get(user_id, {})
-
-    if callback_data == "sticker_creator":
-        await query.message.reply_text("🖼️ برای ساخت استیکر، یک عکس برای من ارسال کنید.")
-
-    elif callback_data == "my_packs":
-        # Placeholder for sticker pack management
-        await query.edit_message_text(
-            "🛍️ **مدیریت پک‌های استیکر**\n\n"
-            "این بخش به شما اجازه می‌دهد پک‌های استیکر خود را بسازید و مدیریت کنید.\n\n"
-            "برای شروع، لطفاً یک نام برای پک جدید خود انتخاب کنید. (مثال: `MyCoolPack`)\n\n"
-            "توجه: این قابلیت هنوز در حال توسعه است."
-        )
-
-    elif callback_data in ["my_quota", "support", "admin_panel"]:
-        await query.answer(f"این بخش ({callback_data}) در حال حاضر در دست ساخت است.", show_alert=True)
-
-    elif callback_data == "start_menu":
+    if query.data == "start_menu":
         await bot_features.start_command(update, context)
 
-    elif callback_data == "games_menu":
-        await bot_features.show_games_menu(query)
+    elif query.data == "sticker_creator":
+        keyboard = [
+            [
+                InlineKeyboardButton("ساده", callback_data="simple_sticker"),
+                InlineKeyboardButton("پیشرفته", callback_data="advanced_sticker")
+            ],
+            [InlineKeyboardButton("بازگشت", callback_data="start_menu")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text("نوع استیکر خود را انتخاب کنید:", reply_markup=reply_markup)
 
-    elif callback_data == "guess_number":
-        await bot_features.guess_number_game(update.callback_query)
+    elif query.data in ["simple_sticker", "advanced_sticker"]:
+        sticker_type = "simple" if query.data == "simple_sticker" else "advanced"
+        user_states[user_id] = {"state": "awaiting_pack_name", "type": sticker_type}
+        pack_name_rules = """
+لطفاً یک نام برای بسته استیکر خود وارد کنید.
 
-    elif callback_data == "rock_paper_scissors":
-        await bot_features.rock_paper_scissors_game(update.callback_query)
+**قوانین نام‌گذاری:**
+- نام باید با یک حرف انگلیسی شروع شود.
+- فقط شامل حروف انگلیسی، اعداد و خط زیر (_) باشد.
+- نمی‌تواند فقط شامل اعداد باشد.
+- طول آن بین ۴ تا ۳۲ کاراکتر باشد.
+"""
+        await query.edit_message_text(pack_name_rules, parse_mode='Markdown')
 
-    elif callback_data == "help":
-        await bot_features.help_command(update.callback_query, context)
+    elif query.data == "satisfaction_yes":
+        if user_id in user_states and user_states[user_id].get("state") == "awaiting_satisfaction":
+            state_data = user_states[user_id]
+            pack_name = state_data["pack_name"]
+            sticker_bytes = io.BytesIO(state_data["sticker_bytes"])
 
-    elif callback_data.startswith("rps_"):
-        user_choice = callback_data.split("_")[1]
-        await bot_features.check_rps_choice(update, user_choice)
+            full_pack_name, error = await bot_features.add_sticker_to_pack(context, user_id, pack_name, sticker_bytes)
 
-    elif callback_data == "sticker_simple":
-        if state.get('mode') != 'sticker_creation':
-            await query.edit_message_text("لطفاً ابتدا یک عکس ارسال کنید.")
-            return
+            if error == "occupied":
+                user_states[user_id] = {"state": "awaiting_pack_name", "type": state_data["type"]}
+                await query.edit_message_text("این نام بسته قبلاً توسط کاربر دیگری گرفته شده است. لطفاً نام دیگری انتخاب کنید:")
+            elif error:
+                await query.edit_message_text(f"خطایی رخ داد: {error}")
+            else:
+                if user_id not in user_packs:
+                    user_packs[user_id] = []
+                if full_pack_name not in user_packs[user_id]:
+                    user_packs[user_id].append(full_pack_name)
 
-        await query.edit_message_text("⏳ در حال ساخت استیکر ساده...")
-
-        photo_file_id = state['photo_file_id']
-        photo_file = await context.bot.get_file(photo_file_id)
-        photo_stream = io.BytesIO()
-        await photo_file.download_to_memory(photo_stream)
-        photo_stream.seek(0)
-
-        sticker_bytes = await bot_features.create_simple_sticker(photo_stream)
-
-        if sticker_bytes:
-            await context.bot.send_sticker(chat_id=user_id, sticker=sticker_bytes)
-            await query.edit_message_text("✅ استیکر شما با موفقیت ساخته شد!")
+                user_states[user_id]["state"] = "awaiting_sticker_image"
+                await query.edit_message_text(f"استیکر شما با موفقیت به بسته '{pack_name}' اضافه شد!\nبرای مشاهده: https://t.me/addstickers/{full_pack_name}\n\nمی‌توانید تصویر بعدی را ارسال کنید یا با ارسال /done کار را تمام کنید.")
         else:
-            await query.edit_message_text("❌ خطا در ساخت استیکر! لطفاً مطمئن شوید که یک فایل عکس معتبر ارسال کرده‌اید.")
+            await query.edit_message_text("خطای وضعیت. لطفاً دوباره امتحان کنید.")
 
-        del user_states[user_id]
+    elif query.data == "satisfaction_no":
+        if user_id in user_states:
+            user_states[user_id]["state"] = "awaiting_sticker_image"
+            await query.edit_message_text("عملیات لغو شد. لطفاً تصویر جدیدی برای استیکر خود ارسال کنید.")
 
-    elif callback_data == "sticker_advanced":
-        if state.get('mode') != 'sticker_creation':
-            await query.edit_message_text("لطفاً ابتدا یک عکس ارسال کنید.")
-            return
-        state['sticker_type'] = 'advanced'
-        await query.edit_message_text("✍️ لطفاً متنی که می‌خواهید روی استیکر باشد را بنویسید:")
-
-    elif callback_data.startswith("font_"):
-        if state.get('mode') != 'sticker_creation' or state.get('sticker_type') != 'advanced':
-            await query.edit_message_text("فرآیند ساخت استیکر پیشرفته فعال نیست. لطفاً ابتدا یک عکس ارسال کنید.")
-            return
-
-        font_size = {
-            "font_small": 40,
-            "font_medium": 60,
-            "font_large": 80
-        }.get(callback_data, 60)
-
-        await query.edit_message_text("⏳ در حال ساخت استیکر پیشرفته...")
-
-        photo_file_id = state['photo_file_id']
-        text = state['text']
-
-        photo_file = await context.bot.get_file(photo_file_id)
-        photo_stream = io.BytesIO()
-        await photo_file.download_to_memory(photo_stream)
-        photo_stream.seek(0)
-
-        sticker_bytes = await bot_features.create_sticker_with_text(photo_stream, text, font_size)
-
-        if sticker_bytes:
-            await context.bot.send_sticker(chat_id=user_id, sticker=sticker_bytes)
-            await query.message.reply_text("✅ استیکر شما با موفقیت ساخته شد!")
+    elif query.data == "my_packs":
+        if user_id in user_packs and user_packs[user_id]:
+            packs_links = [f"[{name.split('_by_')[0]}](t.me/addstickers/{name})" for name in user_packs[user_id]]
+            packs_list = "\n".join(packs_links)
+            await query.edit_message_text(f"لیست پک‌های شما:\n{packs_list}", parse_mode='Markdown')
         else:
-            await query.edit_message_text("❌ خطا در ساخت استیکر! لطفاً مطمئن شوید که یک فایل عکس معتبر ارسال کرده‌اید.")
+            await query.edit_message_text("شما هنوز هیچ پکی نساخته‌اید.")
 
-        del user_states[user_id]
+    else:
+        await query.message.reply_text(f"دکمه {query.data} کلیک شد. (در حال پیاده‌سازی)")
 
-def setup_application(application):
-    """Setup all handlers for the application"""
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("guess", guess_command))
-    application.add_handler(CommandHandler("rps", rps_command))
 
-    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.add_handler(CallbackQueryHandler(button_callback))
-
-# Initialize Telegram application
+# Vercel Handler
 application = None
 
 def ensure_application_initialized():
-    """Ensures the Telegram application is initialized."""
     global application
     if application is None:
-        TELEGRAM_TOKEN = os.getenv('BOT_TOKEN') or os.getenv('TELEGRAM_BOT_TOKEN')
+        TELEGRAM_TOKEN = os.getenv('BOT_TOKEN')
         if TELEGRAM_TOKEN:
-            try:
-                application = Application.builder().token(TELEGRAM_TOKEN).build()
-                setup_application(application)
-                logger.info("Handlers setup completed successfully")
-            except Exception as e:
-                logger.error(f"Error setting up application: {e}")
-                application = None
+            application = Application.builder().token(TELEGRAM_TOKEN).build()
+            application.add_handler(CommandHandler("start", start_command))
+            application.add_handler(CommandHandler("help", help_command))
+            application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+            application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+            application.add_handler(CallbackQueryHandler(button_callback))
         else:
-            logger.error("No Telegram token found in environment variables")
+            logger.error("No Telegram token found")
 
+class handler(BaseHTTPRequestHandler):
+    def do_POST(self):
+        ensure_application_initialized()
+        if application is None:
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(b'Bot not initialized')
+            return
 
-def wsgi_app(environ, start_response):
-    """Simple WSGI handler for Vercel"""
-    ensure_application_initialized()
-
-    if application is None:
-        logger.critical("Application is not initialized. Cannot process request.")
-        start_response('500 Internal Server Error', [('Content-Type', 'text/plain')])
-        return [b'Internal Server Error: Bot not initialized']
-
-    path = environ.get('PATH_INFO', '/')
-    method = environ.get('REQUEST_METHOD', 'GET')
-
-    if path == '/' and method == 'GET':
-        body = json.dumps({'status': 'ok', 'message': 'Bot is running'}).encode('utf-8')
-        start_response('200 OK', [('Content-Type', 'application/json')])
-        return [body]
-
-    if path == '/webhook' and method == 'POST':
         try:
-            content_length = int(environ.get('CONTENT_LENGTH', 0))
-            body_bytes = environ['wsgi.input'].read(content_length)
-            webhook_data = json.loads(body_bytes)
+            content_length = int(self.headers['Content-Length'])
+            body = self.rfile.read(content_length)
+            update_data = json.loads(body.decode('utf-8'))
 
             async def process():
-                await application.initialize()
-                update = Update.de_json(webhook_data, application.bot)
+                update = Update.de_json(update_data, application.bot)
                 await application.process_update(update)
-                await application.shutdown()
 
             loop = asyncio.new_event_loop()
             asyncio.set_event_loop(loop)
             loop.run_until_complete(process())
 
-            start_response('200 OK', [('Content-Type', 'application/json')])
-            return [b'{"status":"ok"}']
+            self.send_response(200)
+            self.end_headers()
+            self.wfile.write(b'OK')
         except Exception as e:
-            logger.error(f"Error in webhook: {e}")
-            start_response('500 Internal Server Error', [('Content-Type', 'text/plain')])
-            return [b'Internal Server Error']
-
-    start_response('404 Not Found', [('Content-Type', 'text/plain')])
-    return [b'Not Found']
-
-class handler(BaseHTTPRequestHandler):
-    def do_GET(self):
-        environ = self.get_environ()
-        result = wsgi_app(environ, self.start_response)
-        self.finish_response(result)
-
-    def do_POST(self):
-        environ = self.get_environ()
-        result = wsgi_app(environ, self.start_response)
-        self.finish_response(result)
-
-    def get_environ(self):
-        environ = {
-            'wsgi.version': (1, 0), 'wsgi.url_scheme': 'https',
-            'wsgi.input': self.rfile, 'wsgi.errors': io.StringIO(),
-            'wsgi.multithread': False, 'wsgi.multiprocess': False, 'wsgi.run_once': False,
-            'REQUEST_METHOD': self.command, 'PATH_INFO': self.path,
-            'SERVER_NAME': self.headers.get('Host', '').split(':')[0],
-            'SERVER_PORT': self.headers.get('Host', '').split(':')[-1] if ':' in self.headers.get('Host', '') else '443',
-        }
-        for key, value in self.headers.items():
-            key = 'HTTP_' + key.upper().replace('-', '_')
-            environ[key] = value
-        if 'Content-Type' in self.headers:
-            environ['CONTENT_TYPE'] = self.headers['Content-Type']
-        if 'Content-Length' in self.headers:
-            environ['CONTENT_LENGTH'] = self.headers['Content-Length']
-        return environ
-
-    def start_response(self, status, headers):
-        self.send_response(int(status.split(' ')[0]))
-        for key, value in headers:
-            self.send_header(key, value)
-        self.end_headers()
-
-    def finish_response(self, result):
-        for data in result:
-            self.wfile.write(data)
-
-if __name__ == '__main__':
-    PORT = int(os.environ.get('PORT', 8000))
-    httpd = make_server('', PORT, wsgi_app)
-    print(f"Serving on port {PORT}...")
-    httpd.serve_forever()
+            logger.error(f"Error in handler: {e}")
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(f'Error: {e}'.encode())

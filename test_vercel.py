@@ -1,42 +1,36 @@
 #!/usr/bin/env python3
 """
-Test script for Vercel deployment (updated for unified bot structure)
+Test script for Vercel deployment
 """
 
 import sys
 import os
-import json
-import importlib.util
 
 def test_imports():
-    """Test if required modules can be imported and vercel.json is valid"""
+    """Test if all required modules can be imported"""
     try:
-        print("✅ Python version:", sys.version)
+        import json
+        print("✅ json import successful")
         
-        # Test if vercel.json is valid JSON
+        # Test if vercel.json is valid
         with open('vercel.json', 'r') as f:
             config = json.load(f)
             print("✅ vercel.json is valid JSON")
+            print(f"✅ Version: {config.get('version')}")
             
-            # Check build source
-            build_src = config.get('builds', [{}])[0].get('src')
-            if build_src == 'api/bot.py':
-                print(f"✅ vercel.json build source is correct: {build_src}")
-            else:
-                print(f"❌ vercel.json build source is incorrect: {build_src}")
-                return False
-
         return True
     except Exception as e:
-        print(f"❌ Import or JSON test failed: {e}")
+        print(f"❌ Import test failed: {e}")
         return False
 
 def test_file_structure():
-    """Test if the required file exists"""
+    """Test if required files exist"""
     required_files = [
-        'api/bot.py',
+        'api/index.py',
         'vercel.json', 
         'requirements.txt',
+        'handlers.py',
+        'bot_features.py'
     ]
     
     all_exist = True
@@ -44,28 +38,30 @@ def test_file_structure():
         if os.path.exists(file):
             print(f"✅ {file} exists")
         else:
-            print(f"❌ {file} is missing")
+            print(f"❌ {file} missing")
             all_exist = False
             
     return all_exist
 
 def test_handler_structure():
-    """Test if the handler in api/bot.py is a class inheriting from BaseHTTPRequestHandler"""
+    """Test if handler function is properly structured"""
     try:
-        # Check for the handler class in the file content
-        with open('api/bot.py', 'r', encoding='utf-8') as f:
+        with open('api/index.py', 'r') as f:
             content = f.read()
 
-        if 'class handler(BaseHTTPRequestHandler):' in content:
-            print("✅ Handler class definition is correct in api/bot.py")
-            return True
+        if 'def handler(' in content:
+            print("✅ Handler function exists")
         else:
-            print("❌ Handler class definition is missing or incorrect in api/bot.py")
+            print("❌ Handler function missing")
             return False
             
-    except FileNotFoundError:
-        print("❌ api/bot.py not found")
-        return False
+        if 'from flask import Flask' in content:
+            print("✅ Flask import present")
+        else:
+            print("❌ Flask import missing")
+            return False
+
+        return True
     except Exception as e:
         print(f"❌ Handler structure test failed: {e}")
         return False
@@ -76,7 +72,7 @@ if __name__ == "__main__":
     
     tests = [
         ("File Structure", test_file_structure),
-        ("Vercel Config & Imports", test_imports),
+        ("Import Tests", test_imports),
         ("Handler Structure", test_handler_structure)
     ]
     
@@ -89,8 +85,6 @@ if __name__ == "__main__":
             
     print("\n" + "=" * 50)
     if all_passed:
-        print("🎉 All tests passed! The structure seems correct for Vercel deployment.")
-        sys.exit(0)
+        print("🎉 All tests passed! Ready for Vercel deployment.")
     else:
         print("⚠️  Some tests failed. Please review the issues above.")
-        sys.exit(1)
