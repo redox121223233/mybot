@@ -160,6 +160,7 @@ class TelegramBotFeatures:
         """Checks if a user is a member of the required channel."""
         try:
             member = await context.bot.get_chat_member(chat_id="@redoxbot_sticker", user_id=user_id)
+            logger.info(f"User {user_id} has channel membership status: {member.status}")
             return member.status in [ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR]
         except BadRequest as e:
             if "user not found" in e.message.lower():
