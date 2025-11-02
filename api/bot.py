@@ -87,7 +87,7 @@ class TelegramBotFeatures:
             img = Image.open(image_stream).convert("RGBA")
             img = img.resize((512, 512))
             img_bytes = io.BytesIO()
-            img.save(img_bytes, format='PNG')
+            img.save(img_bytes, format='WEBP')
             img_bytes.seek(0)
             return img_bytes
         except Exception as e:
@@ -116,7 +116,7 @@ class TelegramBotFeatures:
             draw.text((position[0]+stroke_width, position[1]+stroke_width), text, font=font, fill=stroke_fill)
             draw.text(position, text, font=font, fill="white")
             img_bytes = io.BytesIO()
-            img.save(img_bytes, format='PNG')
+            img.save(img_bytes, format='WEBP')
             img_bytes.seek(0)
             return img_bytes
         except Exception as e:
@@ -197,36 +197,17 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_data = context.user_data
     if user_data.get("state") == "awaiting_sticker_image":
-        sticker_type = user_data.get("type")
+        photo_file_id = update.message.photo[-1].file_id
+        user_data["photo_id"] = photo_file_id
 
-        if sticker_type == "simple":
-            photo_file = await update.message.photo[-1].get_file()
-            photo_stream = io.BytesIO()
-            await photo_file.download_to_memory(photo_stream)
-            photo_stream.seek(0)
-
-            sticker_bytes = await bot_features.create_simple_sticker(photo_stream)
-
-            if sticker_bytes:
-                user_data["state"] = "awaiting_satisfaction"
-                user_data["sticker_bytes"] = sticker_bytes.getvalue()
-                keyboard = [
-                    [
-                        InlineKeyboardButton("👍 بله", callback_data="satisfaction_yes"),
-                        InlineKeyboardButton("👎 خیر", callback_data="satisfaction_no")
-                    ]
-                ]
-                reply_markup = InlineKeyboardMarkup(keyboard)
-                await update.message.reply_document(sticker_bytes, filename="sticker_preview.png", caption="آیا از نتیجه راضی هستید؟", reply_markup=reply_markup)
-            else:
-                await update.message.reply_text("خطا در پردازش تصویر.")
-
-        elif sticker_type == "advanced":
-            # Store the photo and wait for the text
-            photo_file_id = update.message.photo[-1].file_id
-            user_data["state"] = "awaiting_text"
-            user_data["photo_id"] = photo_file_id
-            await update.message.reply_text("تصویر دریافت شد. لطفاً متنی که می‌خواهید روی استیکر باشد را ارسال کنید:")
+        keyboard = [
+            [
+                InlineKeyboardButton("🖼️ پس‌زمینه پیش‌فرض", callback_data="bg_default"),
+                InlineKeyboardButton("✨ پس‌زمینه عکس خودم", callback_data="bg_user")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text("یک گزینه برای پس‌زمینه انتخاب کنید:", reply_markup=reply_markup)
 
 # Initialize bot_features object
 bot_features = TelegramBotFeatures()
@@ -255,6 +236,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await photo_file.download_to_memory(photo_stream)
         photo_stream.seek(0)
 
+        # Add background if needed
+        if user_data.get("background") == "bg_default":
+            background = Image.open("assets/default_background.png")
+            img = Image.open(photo_stream).convert("RGBA")
+            background.paste(img, (0, 0), img)
+            photo_stream = io.BytesIO()
+            background.save(photo_stream, format='PNG')
+            photo_stream.seek(0)
+
         sticker_bytes = await bot_features.create_sticker_with_text(photo_stream, text)
         if sticker_bytes:
             user_data["state"] = "awaiting_satisfaction"
@@ -266,7 +256,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 ]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            await update.message.reply_document(sticker_bytes, filename="sticker_preview.png", caption="آیا از نتیجه راضی هستید؟", reply_markup=reply_markup)
+            await update.message.reply_document(sticker_bytes, filename="sticker.webp", caption="آیا از نتیجه راضی هستید؟", reply_markup=reply_markup)
         else:
             await update.message.reply_text("خطا در ساخت استیکر.")
 
@@ -409,12 +399,62 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 """
         await query.edit_message_text(pack_name_rules, parse_mode='Markdown')
 
+    elif query.data in ["bg_default", "bg_user"]:
+        user_data["background"] = query.data
+        keyboard = [
+            [
+                InlineKeyboardButton("✍️ با متن", callback_data="text_yes"),
+                InlineKeyboardButton("🖼️ بدون متن", callback_data="text_no")
+            ]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text("آیا می‌خواهید به استیکر خود متن اضافه کنید؟", reply_markup=reply_markup)
+
+    elif query.data == "text_no":
+        user_data["text"] = None
+        user_data["type"] = "simple"
+        # Create sticker without text
+        photo_id = user_data.get("photo_id")
+        photo_file = await context.bot.get_file(photo_id)
+        photo_stream = io.BytesIO()
+        await photo_file.download_to_memory(photo_stream)
+        photo_stream.seek(0)
+
+        # Add background if needed
+        if user_data.get("background") == "bg_default":
+            background = Image.open("assets/default_background.png")
+            img = Image.open(photo_stream).convert("RGBA")
+            background.paste(img, (0, 0), img)
+            photo_stream = io.BytesIO()
+            background.save(photo_stream, format='PNG')
+            photo_stream.seek(0)
+
+        sticker_bytes = await bot_features.create_simple_sticker(photo_stream)
+
+        if sticker_bytes:
+            user_data["state"] = "awaiting_satisfaction"
+            user_data["sticker_bytes"] = sticker_bytes.getvalue()
+            keyboard = [
+                [
+                    InlineKeyboardButton("👍 بله", callback_data="satisfaction_yes"),
+                    InlineKeyboardButton("👎 خیر", callback_data="satisfaction_no")
+                ]
+            ]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            await query.message.reply_document(sticker_bytes, filename="sticker.webp", caption="آیا از نتیجه راضی هستید؟", reply_markup=reply_markup)
+        else:
+            await query.edit_message_text("خطا در ساخت استیکر.")
+
+    elif query.data == "text_yes":
+        user_data["state"] = "awaiting_text"
+        await query.edit_message_text("لطفاً متنی که می‌خواهید روی استیکر باشد را ارسال کنید:")
+
     elif query.data == "satisfaction_yes":
         if user_data.get("state") == "awaiting_satisfaction":
             sticker_type = user_data["type"]
 
             if not check_and_update_quota(user_data, sticker_type):
-                await query.edit_message_text("متاسفانه سهمیه روزانه شما برای این نوع استیکر به پایان رسیده است.")
+                await query.edit_message_caption("متاسفانه سهمیه روزانه شما برای این نوع استیکر به پایان رسیده است.")
                 return
 
             pack_name = user_data["pack_name"]
@@ -423,9 +463,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             if error == "occupied":
                 user_data["state"] = "awaiting_pack_name"
-                await query.edit_message_text("این نام بسته قبلاً توسط کاربر دیگری گرفته شده است. لطفاً نام دیگری انتخاب کنید:")
+                await query.edit_message_caption("این نام بسته قبلاً توسط کاربر دیگری گرفته شده است. لطفاً نام دیگری انتخاب کنید:")
             elif error:
-                await query.edit_message_text(f"خطایی رخ داد: {error}")
+                await query.edit_message_caption(f"خطایی رخ داد: {error}")
             else:
                 user_packs = user_data.get("packs", [])
                 if full_pack_name not in user_packs:
@@ -436,18 +476,18 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 remaining_quota = quota_data.get("simple" if sticker_type == "simple" else "advanced", 0)
                 user_data["state"] = "awaiting_sticker_image"
 
-                await query.edit_message_text(
+                await query.edit_message_caption(
                     f"استیکر شما با موفقیت به بسته '{pack_name}' اضافه شد!\n"
                     f"سهمیه باقی‌مانده ({'ساده' if sticker_type == 'simple' else 'پیشرفته'}): {remaining_quota}\n\n"
                     f"برای مشاهده: https://t.me/addstickers/{full_pack_name}\n\n"
                     "می‌توانید تصویر بعدی را ارسال کنید یا با ارسال /done کار را تمام کنید."
                 )
         else:
-            await query.edit_message_text("خطای وضعیت. لطفاً دوباره امتحان کنید.")
+            await query.message.reply_text("خطای وضعیت. لطفاً دوباره با /start شروع کنید.")
 
     elif query.data == "satisfaction_no":
         user_data["state"] = "awaiting_sticker_image"
-        await query.edit_message_text("عملیات لغو شد. لطفاً تصویر جدیدی برای استیکر خود ارسال کنید.")
+        await query.edit_message_caption("عملیات لغو شد. لطفاً تصویر جدیدی برای استیکر خود ارسال کنید.")
 
     elif query.data == "my_packs":
         user_packs = user_data.get("packs", [])
