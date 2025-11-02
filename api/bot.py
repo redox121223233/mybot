@@ -453,8 +453,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if user_data.get("state") == "awaiting_satisfaction":
             sticker_type = user_data["type"]
 
+            await query.message.delete()
             if not check_and_update_quota(user_data, sticker_type):
-                await query.edit_message_caption("متاسفانه سهمیه روزانه شما برای این نوع استیکر به پایان رسیده است.")
+                await query.message.reply_text("متاسفانه سهمیه روزانه شما برای این نوع استیکر به پایان رسیده است.")
                 return
 
             pack_name = user_data["pack_name"]
@@ -463,9 +464,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
             if error == "occupied":
                 user_data["state"] = "awaiting_pack_name"
-                await query.edit_message_caption("این نام بسته قبلاً توسط کاربر دیگری گرفته شده است. لطفاً نام دیگری انتخاب کنید:")
+                await query.message.reply_text("این نام بسته قبلاً توسط کاربر دیگری گرفته شده است. لطفاً نام دیگری انتخاب کنید:")
             elif error:
-                await query.edit_message_caption(f"خطایی رخ داد: {error}")
+                await query.message.reply_text(f"خطایی رخ داد: {error}")
             else:
                 user_packs = user_data.get("packs", [])
                 if full_pack_name not in user_packs:
@@ -476,7 +477,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 remaining_quota = quota_data.get("simple" if sticker_type == "simple" else "advanced", 0)
                 user_data["state"] = "awaiting_sticker_image"
 
-                await query.edit_message_caption(
+                await query.message.reply_text(
                     f"استیکر شما با موفقیت به بسته '{pack_name}' اضافه شد!\n"
                     f"سهمیه باقی‌مانده ({'ساده' if sticker_type == 'simple' else 'پیشرفته'}): {remaining_quota}\n\n"
                     f"برای مشاهده: https://t.me/addstickers/{full_pack_name}\n\n"
@@ -487,7 +488,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == "satisfaction_no":
         user_data["state"] = "awaiting_sticker_image"
-        await query.edit_message_caption("عملیات لغو شد. لطفاً تصویر جدیدی برای استیکر خود ارسال کنید.")
+        await query.message.delete()
+        await query.message.reply_text("عملیات لغو شد. لطفاً تصویر جدیدی برای استیکر خود ارسال کنید.")
 
     elif query.data == "my_packs":
         user_packs = user_data.get("packs", [])
