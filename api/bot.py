@@ -142,7 +142,7 @@ class TelegramBotFeatures:
             elif "stickerset_invalid" in e.message.lower():
                 # Pack doesn't exist, so create it
                 try:
-                    await bot.create_new_sticker_set(user_id=user_id, name=full_pack_name, title=pack_name, stickers=[sticker_to_add])
+                    await bot.create_new_sticker_set(user_id=user_id, name=full_pack_name, title=pack_name, stickers=[sticker_to_add], sticker_format='static')
                     logger.info(f"Created new sticker pack {full_pack_name}")
                     return full_pack_name, None
                 except BadRequest as e2:
