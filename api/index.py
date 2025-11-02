@@ -57,7 +57,7 @@ def get_redis_client():
             else:
                 hostname = url
 
-            redis_url = f"rediss://default:{token}@{hostname}"
+            redis_url = f"rediss://:{token}@{hostname}"
 
             logger.info("Connecting to Redis via constructed URL...")
             redis_client = redis.from_url(redis_url, decode_responses=True)
