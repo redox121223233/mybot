@@ -44,12 +44,26 @@ def get_redis_client():
     global redis_client
     if redis_client is None:
         try:
-            url = os.environ.get("UPSTASH_REDIS_REST_URL")
+            # Get credentials from environment
+            rest_url = os.environ.get("UPSTASH_REDIS_REST_URL")
             token = os.environ.get("UPSTASH_REDIS_REST_TOKEN")
-            if not url or not token:
+
+            if not rest_url or not token:
                 logger.error("Upstash Redis URL or Token not found in environment variables.")
                 return None
-            redis_client = redis.from_url(f"rediss://default:{token}@{url.replace('https://', '')}", decode_responses=True)
+
+            # Correctly construct the rediss:// URL from the REST URL.
+            # The REST URL is like https://<region>-<hostname>-<uuid>.upstash.io
+            # We need to extract the hostname part for the rediss URL.
+            hostname_with_region = rest_url.replace("https://", "")
+
+            # The format for redis-py is rediss://:<password>@<host>:<port>
+            # For Upstash, the user is 'default' but can be omitted.
+            redis_url = f"rediss://:{token}@{hostname_with_region}:6379"
+
+            logger.info(f"Connecting to Redis at {hostname_with_region}")
+            redis_client = redis.from_url(redis_url, decode_responses=True)
+
         except Exception as e:
             logger.error(f"Failed to initialize Redis client: {e}")
             return None
@@ -105,36 +119,39 @@ async def save_sessions():
     except Exception as e:
         logger.error(f"Failed to save session data to Redis: {e}")
 
-def user(uid: int) -> dict:
+async def user(uid: int) -> dict:
     if uid not in USERS:
         USERS[uid] = { "packs": [], "current_pack": None, "daily_limit": 3, "ai_used": 0, "day_start": 0 }
         await save_data()
     return USERS[uid]
 
-def sess(uid: int) -> dict:
+async def sess(uid: int) -> dict:
     if uid not in SESSIONS:
         SESSIONS[uid] = { "mode": "main", "sticker_data": {} }
         await save_sessions()
     return SESSIONS[uid]
 
-def reset_mode(uid: int):
+async def reset_mode(uid: int):
     SESSIONS[uid] = { "mode": "main", "sticker_data": {} }
     await save_sessions()
 
 # ============ Sticker Pack Management ============
-def get_user_packs(uid: int) -> list:
-    return user(uid).get("packs", [])
+async def get_user_packs(uid: int) -> list:
+    u = await user(uid)
+    return u.get("packs", [])
 
-def add_user_pack(uid: int, pack_name: str, pack_short_name: str):
-    packs = user(uid).get("packs", [])
+async def add_user_pack(uid: int, pack_name: str, pack_short_name: str):
+    u = await user(uid)
+    packs = u.get("packs", [])
     if not any(p['short_name'] == pack_short_name for p in packs):
         packs.append({"name": pack_name, "short_name": pack_short_name})
-    user(uid)["packs"] = packs
-    user(uid)["current_pack"] = pack_short_name
+    u["packs"] = packs
+    u["current_pack"] = pack_short_name
     await save_data()
 
-def set_current_pack(uid: int, pack_short_name: str):
-    user(uid)["current_pack"] = pack_short_name
+async def set_current_pack(uid: int, pack_short_name: str):
+    u = await user(uid)
+    u["current_pack"] = pack_short_name
     await save_data()
 
 from datetime import datetime, timezone
@@ -144,22 +161,23 @@ def _today_start_ts() -> int:
     midnight = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
     return int(midnight.timestamp())
 
-def _reset_daily_if_needed(u: dict):
+async def _reset_daily_if_needed(u: dict):
     day_start = u.get("day_start", 0)
     today = _today_start_ts()
     if day_start < today:
         u["day_start"] = today
         u["ai_used"] = 0
+        await save_data() # Save changes if reset happens
 
-def _quota_left(uid: int) -> int:
-    u = user(uid)
-    _reset_daily_if_needed(u)
+async def _quota_left(uid: int) -> int:
+    u = await user(uid)
+    await _reset_daily_if_needed(u)
     limit = u.get("daily_limit", 3)
     return max(0, limit - u.get("ai_used", 0))
 
-def _seconds_to_reset(uid: int) -> int:
-    u = user(uid)
-    _reset_daily_if_needed(u)
+async def _seconds_to_reset(uid: int) -> int:
+    u = await user(uid)
+    await _reset_daily_if_needed(u)
     now = int(datetime.now(timezone.utc).timestamp())
     end = u.get("day_start", 0) + 86400
     return max(0, end - now)
@@ -197,8 +215,9 @@ async def require_channel_membership(update: Update, context: ContextTypes.DEFAU
     return False
 
 
-def get_current_pack_short_name(uid: int) -> str | None:
-    return user(uid).get("current_pack")
+async def get_current_pack_short_name(uid: int) -> str | None:
+    u = await user(uid)
+    return u.get("current_pack")
 
 async def check_pack_exists(bot, short_name: str) -> bool:
     try:
@@ -324,26 +343,7 @@ class TelegramBotFeatures:
     
     def __init__(self):
         self.user_data = {}
-        self.coupons = self.load_coupons()
-        self.music_data = self.load_music_data()
         
-    def load_coupons(self):
-        return [
-            {"code": "SAVE10", "discount": "10%", "category": "electronics"},
-            {"code": "FOOD20", "discount": "20%", "category": "food"},
-            {"code": "STYLE15", "discount": "15%", "category": "fashion"},
-            {"code": "TECH25", "discount": "25%", "category": "technology"},
-            {"code": "HOME30", "discount": "30%", "category": "home"},
-        ]
-    
-    def load_music_data(self):
-        return {
-            "pop": ["Artist1 - Song1", "Artist2 - Song2", "Artist3 - Song3"],
-            "rock": ["Band1 - Track1", "Band2 - Track2", "Band3 - Track3"],
-            "classical": ["Composer1 - Piece1", "Composer2 - Piece2", "Composer3 - Piece3"],
-            "jazz": ["JazzArtist1 - JazzSong1", "JazzArtist2 - JazzSong2", "JazzArtist3 - JazzSong3"],
-        }
-    
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         welcome_text = """🎉 به ربات استیکر ساز خوش آمدید! 🎉
 
@@ -352,8 +352,8 @@ class TelegramBotFeatures:
         
         keyboard = [
             [InlineKeyboardButton("🎨 استیکر ساز", callback_data="sticker_creator"), InlineKeyboardButton("🗂 پک‌های من", callback_data="my_packs")],
-            [InlineKeyboardButton("📊 سهمیه من", callback_data="my_quota"), InlineKeyboardButton("🎮 بازی و سرگرمی", callback_data="games_menu")],
-            [InlineKeyboardButton("📚 راهنما", callback_data="help"), InlineKeyboardButton("📞 پشتیبانی", callback_data="support")]
+            [InlineKeyboardButton("📊 سهمیه من", callback_data="my_quota"), InlineKeyboardButton("📞 پشتیبانی", callback_data="support")],
+            [InlineKeyboardButton("📚 راهنما", callback_data="help")]
         ]
         if update.effective_user.id == ADMIN_ID:
             keyboard.append([InlineKeyboardButton("👑 پنل ادمین", callback_data="admin:panel")])
@@ -390,174 +390,6 @@ class TelegramBotFeatures:
         else:
             await update.message.reply_text(help_text, reply_markup=reply_markup)
     
-    async def guess_number_game(self):
-        """Setup guess number game"""
-        number = random.randint(1, 100)
-        self.user_data['guess_number'] = number
-        self.user_data['guess_attempts'] = 0
-        
-        keyboard = [
-            [InlineKeyboardButton("💭 حدس بزن", callback_data="guess_prompt")],
-            [InlineKeyboardButton("💡 راهنمایی", callback_data="guess_hint")],
-            [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]
-        ]
-        
-        message = "🔢 **بازی حدس عدد!**\n\nمن یک عدد بین ۱ تا ۱۰۰ انتخاب کردم. حدس شما چیه؟"
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        return {"message": message, "reply_markup": reply_markup}
-    
-    async def check_guess(self, guess):
-        """Check user's guess"""
-        if 'guess_number' not in self.user_data:
-            return {"message": "بازی شروع نشده! /guess رو بزنید", "reply_markup": None}
-        
-        number = self.user_data['guess_number']
-        self.user_data['guess_attempts'] += 1
-        attempts = self.user_data['guess_attempts']
-        
-        keyboard = [
-            [InlineKeyboardButton("💭 حدس دوباره", callback_data="guess_prompt")],
-            [InlineKeyboardButton("💡 راهنمایی", callback_data="guess_hint")],
-            [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        if guess == number:
-            message = f"🎉 **آفرین!**\n\nعدد {number} بود!\nتعداد تلاش‌ها: {attempts}"
-            del self.user_data['guess_number']
-            del self.user_data['guess_attempts']
-            keyboard = [[InlineKeyboardButton("🎮 بازی دوباره", callback_data="guess_number")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-        elif guess < number:
-            message = f"📈 **برو بالاتر!**\n\nحدس شما ({guess}) کوچکتره\nتعداد تلاش‌ها: {attempts}"
-        else:
-            message = f"📉 **برو پایین‌تر!**\n\nحدس شما ({guess}) بزرگتره\nتعداد تلاش‌ها: {attempts}"
-        
-        return {"message": message, "reply_markup": reply_markup}
-    
-    async def rock_paper_scissors_game(self):
-        """Setup rock paper scissors game"""
-        keyboard = [
-            [
-                InlineKeyboardButton("✊ سنگ", callback_data="rps_choice_rock"),
-                InlineKeyboardButton("📄 کاغذ", callback_data="rps_choice_paper"),
-                InlineKeyboardButton("✂️ قیچی", callback_data="rps_choice_scissors")
-            ],
-            [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]
-        ]
-        
-        message = "✂️ **سنگ کاغذ قیچی!**\n\nانتخاب کنید:"
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        return {"message": message, "reply_markup": reply_markup}
-    
-    async def check_rps_choice(self, user_choice):
-        """Check RPS choice"""
-        choices = ["rock", "paper", "scissors"]
-        bot_choice = random.choice(choices)
-        
-        choice_emoji = {"rock": "✊", "paper": "📄", "scissors": "✂️"}
-        choice_text = {"rock": "سنگ", "paper": "کاغذ", "scissors": "قیچی"}
-        
-        user_emoji = choice_emoji[user_choice]
-        bot_emoji = choice_emoji[bot_choice]
-        
-        keyboard = [
-            [InlineKeyboardButton("🎮 بازی دوباره", callback_data="rock_paper_scissors")],
-            [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        if user_choice == bot_choice:
-            result = "🤝 **مساوی!**"
-        elif (
-            (user_choice == "rock" and bot_choice == "scissors") or
-            (user_choice == "paper" and bot_choice == "rock") or
-            (user_choice == "scissors" and bot_choice == "paper")
-        ):
-            result = "🎉 **شما بردید!**"
-        else:
-            result = "😔 **من بردم!**"
-        
-        message = f"{result}\n\nشما: {user_emoji} {choice_text[user_choice]}\nمن: {bot_emoji} {choice_text[bot_choice]}"
-        
-        return {"message": message, "reply_markup": reply_markup}
-    
-    async def word_game(self):
-        """Setup word game"""
-        words = ["پرتقال", "موز", "سیب", "هلو", "انگور", "توت", "گیلاس", "آلبالو"]
-        word = random.choice(words)
-        self.user_data['word_game'] = {'word': word, 'attempts': 0, 'max_attempts': 6}
-        
-        display = "_ " * len(word)
-        
-        keyboard = [
-            [InlineKeyboardButton("💡 راهنمایی", callback_data="word_hint")],
-            [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]
-        ]
-        
-        message = f"📝 **بازی کلمات!**\n\nکلمه: {display}\nتعداد حدس‌ها: 6"
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        return {"message": message, "reply_markup": reply_markup}
-    
-    async def memory_game(self):
-        """Setup memory game"""
-        # Simple memory game implementation
-        numbers = [str(random.randint(1, 9)) for _ in range(5)]
-        self.user_data['memory_game'] = {'sequence': numbers, 'showing': True}
-        
-        sequence_str = " - ".join(numbers)
-        
-        message = f"🧠 **بازی حافظه!**\n\nاین اعداد رو حفظ کن:\n{sequence_str}\n\n5 ثانیه فرصت داری!"
-        reply_markup = None
-        
-        return {"message": message, "reply_markup": reply_markup}
-    
-    async def random_game(self):
-        """Setup random game"""
-        games = [
-            {"name": "تاس", "emoji": "🎲", "result": str(random.randint(1, 6))},
-            {"name": "شیر یا خط", "emoji": "🪙", "result": random.choice(["شیر", "خط"])},
-            {"name": "کارت", "emoji": "🃏", "result": random.choice(["آس", "شاه", "بیبی", "دو", "سه", "چهار"])},
-        ]
-        
-        selected = random.choice(games)
-        
-        keyboard = [
-            [InlineKeyboardButton("🎲 دوباره", callback_data="random_game")],
-            [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]
-        ]
-        
-        message = f"🎲 **بازی تصادفی!**\n\n{selected['emoji']} {selected['name']}\nنتیجه: {selected['result']}"
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        return {"message": message, "reply_markup": reply_markup}
-    
-    async def custom_sticker_menu(self):
-        """Show custom sticker menu"""
-        keyboard = [
-            [
-                InlineKeyboardButton("⚪ سفید", callback_data="sticker_bg_white"),
-                InlineKeyboardButton("⚫ سیاه", callback_data="sticker_bg_black")
-            ],
-            [
-                InlineKeyboardButton("🔵 آبی", callback_data="sticker_bg_blue"),
-                InlineKeyboardButton("🔴 قرمز", callback_data="sticker_bg_red")
-            ],
-            [
-                InlineKeyboardButton("🟢 سبز", callback_data="sticker_bg_green"),
-                InlineKeyboardButton("🟡 زرد", callback_data="sticker_bg_yellow")
-            ],
-            [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]
-        ]
-        
-        message = "🎨 **سازنده استیکر سفارشی!**\n\nرنگ پس‌زمینه را انتخاب کنید:"
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        return {"message": message, "reply_markup": reply_markup}
-
 # Initialize bot features
 bot_features = TelegramBotFeatures()
 
@@ -567,7 +399,7 @@ async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not await require_channel_membership(update, context):
         return
     user_id = update.effective_user.id
-    reset_mode(user_id)
+    await reset_mode(user_id)
     await bot_features.start_command(update, context)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -576,69 +408,6 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await bot_features.help_command(update, context)
 
-async def sticker_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /sticker command"""
-    if context.args:
-        text = ' '.join(context.args)
-        sticker_bytes = await bot_features.create_sticker(text)
-        
-        if sticker_bytes:
-            sticker_bytes.seek(0)
-            await update.message.reply_sticker(
-                sticker=InputFile(sticker_bytes, filename="sticker.png")
-            )
-        else:
-            await update.message.reply_text("❌ خطا در ساخت استیکر!")
-    else:
-        await update.message.reply_text("❌ لطفاً متن استیکر را وارد کنید:\nمثال: /sticker سلام دنیا")
-
-async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /guess command"""
-    game_data = await bot_features.guess_number_game()
-    await update.message.reply_text(
-        game_data["message"],
-        reply_markup=game_data["reply_markup"]
-    )
-
-async def rps_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /rps command"""
-    game_data = await bot_features.rock_paper_scissors_game()
-    await update.message.reply_text(
-        game_data["message"],
-        reply_markup=game_data["reply_markup"]
-    )
-
-async def word_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /word command"""
-    game_data = await bot_features.word_game()
-    await update.message.reply_text(
-        game_data["message"],
-        reply_markup=game_data["reply_markup"]
-    )
-
-async def memory_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /memory command"""
-    game_data = await bot_features.memory_game()
-    await update.message.reply_text(
-        game_data["message"],
-        reply_markup=game_data["reply_markup"]
-    )
-
-async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /random command"""
-    game_data = await bot_features.random_game()
-    await update.message.reply_text(
-        game_data["message"],
-        reply_markup=game_data["reply_markup"]
-    )
-
-async def customsticker_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /customsticker command"""
-    menu_data = await bot_features.custom_sticker_menu()
-    await update.message.reply_text(
-        menu_data["message"],
-        reply_markup=menu_data["reply_markup"]
-    )
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle button callbacks"""
@@ -663,98 +432,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await bot_features.start_command(update, context)
         return
 
-    elif callback_data == "games_menu":
-        games_text = "🎮 **بازی‌ها و سرگرمی‌ها** 🎮\n\nیکی از بازی‌های زیر را انتخاب کنید:"
-        keyboard = [
-            [InlineKeyboardButton("🔢 حدس عدد", callback_data="guess_number")],
-            [InlineKeyboardButton("✂️ سنگ کاغذ قیچی", callback_data="rock_paper_scissors")],
-            [InlineKeyboardButton("📝 بازی کلمات", callback_data="word_game")],
-            [InlineKeyboardButton("🧠 بازی حافظه", callback_data="memory_game")],
-            [InlineKeyboardButton("🎲 بازی تصادفی", callback_data="random_game")],
-            [InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="back_to_main")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(games_text, reply_markup=reply_markup)
-        return
-    
-    elif callback_data == "guess_number":
-        game_data = await bot_features.guess_number_game()
-        await query.edit_message_text(
-            game_data["message"],
-            reply_markup=game_data["reply_markup"]
-        )
-    
-    elif callback_data == "guess_prompt":
-        keyboard = [[
-            InlineKeyboardButton("ارسال عدد", callback_data="guess_send_number")
-        ]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text(
-            "🔢 لطفاً عدد مورد نظر خود را به صورت پیام متنی ارسال کنید (بین 1 تا 100):",
-            reply_markup=reply_markup
-        )
-        if user_id not in user_states:
-            user_states[user_id] = {}
-        user_states[user_id]["waiting_for_guess"] = True
-    
-    elif callback_data == "guess_hint":
-        if 'guess_number' in bot_features.user_data:
-            number = bot_features.user_data['guess_number']
-            hint = "بزرگتر از 50" if number > 50 else "کوچکتر از 50"
-            await query.edit_message_text(
-                f"💡 **راهنمایی:** عدد {hint} است!\n\nدوباره تلاش کنید:",
-                reply_markup=query.message.reply_markup
-            )
-    
-    elif callback_data == "rock_paper_scissors":
-        game_data = await bot_features.rock_paper_scissors_game()
-        await query.edit_message_text(
-            game_data["message"],
-            reply_markup=game_data["reply_markup"]
-        )
-    
-    elif callback_data.startswith("rps_choice_"):
-        user_choice = callback_data.replace("rps_choice_", "")
-        result = await bot_features.check_rps_choice(user_choice)
-        await query.edit_message_text(
-            result["message"],
-            reply_markup=result["reply_markup"]
-        )
-    
-    elif callback_data == "word_game":
-        game_data = await bot_features.word_game()
-        await query.edit_message_text(
-            game_data["message"],
-            reply_markup=game_data["reply_markup"]
-        )
-    
-    elif callback_data == "word_hint":
-        if 'word_game' in bot_features.user_data:
-            word = bot_features.user_data['word_game']['word']
-            first_letter = word[0]
-            last_letter = word[-1]
-            await query.edit_message_text(
-                f"💡 **راهنمایی:**\n\nحرف اول: {first_letter}\nحرف آخر: {last_letter}\n\nتعداد حروف: {len(word)}",
-                reply_markup=query.message.reply_markup
-            )
-    
-    elif callback_data == "memory_game":
-        game_data = await bot_features.memory_game()
-        await query.edit_message_text(
-            game_data["message"],
-            reply_markup=game_data["reply_markup"]
-        )
-    
-    elif callback_data == "random_game":
-        game_data = await bot_features.random_game()
-        await query.edit_message_text(
-            game_data["message"],
-            reply_markup=game_data["reply_markup"]
-        )
-    
     elif callback_data == "sticker_creator":
         # Start the pack selection/creation flow
-        packs = get_user_packs(user_id)
+        packs = await get_user_packs(user_id)
         if packs:
             keyboard = [[InlineKeyboardButton(f"📦 {p['name']}", callback_data=f"pack:select:{p['short_name']}")] for p in packs]
             keyboard.append([InlineKeyboardButton("➕ ساخت پک جدید", callback_data="pack:new")])
@@ -763,7 +443,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
         else:
-            sess(user_id)["mode"] = "pack_create_start"
+            current_sess = await sess(user_id)
+            current_sess["mode"] = "pack_create_start"
+            await save_sessions()
             await query.edit_message_text(
                 """نام پک را بنویس (مثال: my_stickers):
 
@@ -773,12 +455,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • نباید دو آندرلاین (__) پشت سر هم داشته باشد
 • حداکثر ۵۰ کاراکتر (به خاطر اضافه شدن نام ربات)"""
             )
-            await save_sessions()
 
     # --- Sticker Pack Flow ---
     elif callback_data.startswith("pack:select:"):
         pack_short_name = callback_data.split(":")[-1]
-        set_current_pack(user_id, pack_short_name)
+        await set_current_pack(user_id, pack_short_name)
         # Now ask for sticker type
         keyboard = [
             [InlineKeyboardButton("🖼 استیکر ساده", callback_data="sticker:simple")],
@@ -787,33 +468,36 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("نوع استیکر را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif callback_data == "pack:new":
-        sess(user_id)["mode"] = "pack_create_start"
+        current_sess = await sess(user_id)
+        current_sess["mode"] = "pack_create_start"
         await save_sessions()
         await query.edit_message_text("""نام پک را بنویس (مثال: my_stickers):
 
-• فقط حروف انگلیسی، عدد و زیرخط
+• فقط حروف انگلیسی، عدد و آندرلاین (_)
 • باید با حرف شروع شود
-• نباید با زیرخط تمام شود
-• نباید دو زیرخط پشت سر هم داشته باشد
+• نباید با آندرلاین (_) تمام شود
+• نباید دو آندرلاین (__) پشت سر هم داشته باشد
 • حداکثر ۵۰ کاراکتر (به خاطر اضافه شدن نام ربات)""")
 
     # --- Sticker Simple Flow ---
     elif callback_data == "sticker:simple":
-        reset_mode(user_id) # Aggressive reset
-        sess(user_id)['sticker_mode'] = 'simple'
-        sess(user_id)['sticker_data'] = {}
+        await reset_mode(user_id) # Aggressive reset
+        current_sess = await sess(user_id)
+        current_sess['sticker_mode'] = 'simple'
+        current_sess['sticker_data'] = {}
         await save_sessions()
         await query.edit_message_text("لطفاً متن استیکر ساده را ارسال کنید:")
 
     # --- Sticker Advanced Flow ---
     elif callback_data == "sticker:advanced":
-        reset_mode(user_id) # Aggressive reset
-        if _quota_left(user_id) <= 0:
+        await reset_mode(user_id) # Aggressive reset
+        if await _quota_left(user_id) <= 0:
             await query.answer("سهمیه استیکر پیشرفته شما برای امروز به پایان رسیده است.", show_alert=True)
             return
 
-        sess(user_id)['sticker_mode'] = 'advanced'
-        sess(user_id)['sticker_data'] = {
+        current_sess = await sess(user_id)
+        current_sess['sticker_mode'] = 'advanced'
+        current_sess['sticker_data'] = {
             "v_pos": "center", "h_pos": "center", "font": "Default",
             "color": "#FFFFFF", "size": "large", "bg_photo_bytes": None
         }
@@ -824,12 +508,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parts = callback_data.split(':')
         action = parts[1]
 
-        sticker_data = sess(user_id).get('sticker_data', {})
+        current_sess = await sess(user_id)
+        sticker_data = current_sess.get('sticker_data', {})
 
         if action == 'custom_bg':
             choice = parts[2]
             if choice == 'yes':
-                sess(user_id)['mode'] = 'awaiting_custom_bg'
+                current_sess['mode'] = 'awaiting_custom_bg'
                 await save_sessions()
                 await query.edit_message_text("لطفاً عکس پس‌زمینه را ارسال کنید.")
             else: # 'no'
@@ -902,7 +587,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif callback_data == "sticker:advanced:edit":
         # Show a preview and allow for re-editing
-        sticker_data = sess(user_id).get('sticker_data', {})
+        current_sess = await sess(user_id)
+        sticker_data = current_sess.get('sticker_data', {})
         img_bytes = await render_image(
             text=sticker_data.get("text", "پیش‌نمایش"),
             v_pos=sticker_data.get("v_pos", "center"),
@@ -936,16 +622,17 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif callback_data == "sticker:confirm":
-        sticker_data = sess(user_id).get('sticker_data', {})
-        pack_short_name = get_current_pack_short_name(user_id)
+        current_sess = await sess(user_id)
+        sticker_data = current_sess.get('sticker_data', {})
+        pack_short_name = await get_current_pack_short_name(user_id)
 
         if not pack_short_name:
             await query.edit_message_text("خطا: پکی انتخاب نشده است. لطفاً دوباره شروع کنید.")
             return
 
         # Decrement quota if it was an advanced sticker
-        if sess(user_id).get("sticker_mode") == "advanced":
-            u = user(user_id)
+        if current_sess.get("sticker_mode") == "advanced":
+            u = await user(user_id)
             u["ai_used"] = u.get("ai_used", 0) + 1
             await save_data()
 
@@ -993,10 +680,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 reply_markup=InlineKeyboardMarkup(poll_keyboard)
             )
             # Reset mode here to prevent issues with the next sticker
-            reset_mode(user_id)
+            await reset_mode(user_id)
         except Exception as e:
             await query.message.reply_text(f"خطا در اضافه کردن استیکر به پک: {e}")
-            reset_mode(user_id)
+            await reset_mode(user_id)
     
     elif callback_data == "help":
         await bot_features.help_command(update, context)
@@ -1017,36 +704,40 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif callback_data == "admin:broadcast_prompt":
         if user_id != ADMIN_ID: return
-        sess(user_id)["mode"] = "admin_broadcast"
+        current_sess = await sess(user_id)
+        current_sess["mode"] = "admin_broadcast"
         await save_sessions()
         await query.edit_message_text("پیام همگانی را ارسال کنید:")
 
     elif callback_data == "admin:dm_prompt":
         if user_id != ADMIN_ID: return
-        sess(user_id)["mode"] = "admin_dm_id"
+        current_sess = await sess(user_id)
+        current_sess["mode"] = "admin_dm_id"
         await save_sessions()
         await query.edit_message_text("آیدی عددی کاربر مورد نظر را ارسال کنید:")
 
     elif callback_data == "admin:quota_prompt":
         if user_id != ADMIN_ID: return
-        sess(user_id)["mode"] = "admin_quota_id"
+        current_sess = await sess(user_id)
+        current_sess["mode"] = "admin_quota_id"
         await save_sessions()
         await query.edit_message_text("آیدی عددی کاربر مورد نظر را ارسال کنید:")
 
     elif callback_data == "rate:yes":
         await query.message.reply_text("از بازخورد شما متشکریم!")
-        reset_mode(user_id)
+        await reset_mode(user_id)
         await bot_features.start_command(update, context)
 
     elif callback_data == "rate:no":
         await query.message.reply_text("از بازخورد شما متشکریم! نظرات شما به ما در بهبود ربات کمک می‌کند.")
-        reset_mode(user_id)
+        await reset_mode(user_id)
         await bot_features.start_command(update, context)
 
     elif callback_data == "my_quota":
-        left = _quota_left(user_id)
-        total = user(user_id).get("daily_limit", 3)
-        eta_str = _fmt_eta(_seconds_to_reset(user_id))
+        left = await _quota_left(user_id)
+        u = await user(user_id)
+        total = u.get("daily_limit", 3)
+        eta_str = _fmt_eta(await _seconds_to_reset(user_id))
 
         text = f"📊 **سهمیه شما** 📊\n\n"
         text += f"شما **{left}** از **{total}** سهمیه ساخت استیکر پیشرفته خود را برای امروز باقی دارید.\n\n"
@@ -1055,7 +746,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text(text)
 
     elif callback_data == "my_packs":
-        packs = get_user_packs(user_id)
+        packs = await get_user_packs(user_id)
         if not packs:
             await query.edit_message_text("شما هنوز هیچ پکی نساخته‌اید.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]]))
             return
@@ -1075,18 +766,20 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle incoming photos for custom backgrounds."""
     user_id = update.effective_user.id
+    current_sess = await sess(user_id)
 
-    if sess(user_id).get("mode") == "awaiting_custom_bg":
+    if current_sess.get("mode") == "awaiting_custom_bg":
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = await photo_file.download_as_bytearray()
 
-        sticker_data = sess(user_id).get("sticker_data", {})
+        sticker_data = current_sess.get("sticker_data", {})
         sticker_data["bg_photo_bytes"] = bytes(photo_bytes)
-        sess(user_id)["sticker_data"] = sticker_data
+        current_sess["sticker_data"] = sticker_data
         await save_sessions()
 
         # Reset mode and continue the advanced sticker flow
-        sess(user_id)["mode"] = "main" # Or whatever the normal mode is
+        current_sess["mode"] = "main" # Or whatever the normal mode is
+        await save_sessions()
 
         keyboard = [
             [InlineKeyboardButton("بالا", callback_data="sticker_adv:vpos:top")],
@@ -1108,48 +801,56 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     text = update.message.text
-    current_mode = sess(user_id).get("mode")
+    current_sess = await sess(user_id)
+    current_mode = current_sess.get("mode")
 
     # --- Admin Actions ---
     if user_id == ADMIN_ID:
         if current_mode == "admin_broadcast":
             success_count = 0
-            for uid in USERS:
-                try:
-                    await context.bot.send_message(uid, text)
-                    success_count += 1
-                except Exception:
-                    pass
+            # We need to load all users, which we don't do by default
+            # For simplicity, this feature might require full data load, which is inefficient.
+            # Let's assume USERS is loaded for admin actions for now.
+            all_users_data = await get_redis_client().get("USERS")
+            if all_users_data:
+                all_users = json.loads(all_users_data)
+                for uid_str in all_users:
+                    try:
+                        await context.bot.send_message(int(uid_str), text)
+                        success_count += 1
+                    except Exception:
+                        pass
             await update.message.reply_text(f"پیام به {success_count} کاربر ارسال شد.")
-            reset_mode(user_id)
+            await reset_mode(user_id)
             return
         elif current_mode == "admin_dm_id":
-            sess(user_id)["admin_target_id"] = int(text)
-            sess(user_id)["mode"] = "admin_dm_text"
+            current_sess["admin_target_id"] = int(text)
+            current_sess["mode"] = "admin_dm_text"
             await save_sessions()
             await update.message.reply_text("پیام را برای ارسال بنویسید:")
             return
         elif current_mode == "admin_dm_text":
-            target_id = sess(user_id).get("admin_target_id")
+            target_id = current_sess.get("admin_target_id")
             try:
                 await context.bot.send_message(target_id, text)
                 await update.message.reply_text("پیام با موفقیت ارسال شد.")
             except Exception as e:
                 await update.message.reply_text(f"خطا در ارسال پیام: {e}")
-            reset_mode(user_id)
+            await reset_mode(user_id)
             return
         elif current_mode == "admin_quota_id":
-            sess(user_id)["admin_target_id"] = int(text)
-            sess(user_id)["mode"] = "admin_quota_value"
+            current_sess["admin_target_id"] = int(text)
+            current_sess["mode"] = "admin_quota_value"
             await save_sessions()
             await update.message.reply_text("مقدار سهمیه جدید را وارد کنید:")
             return
         elif current_mode == "admin_quota_value":
-            target_id = sess(user_id).get("admin_target_id")
-            user(target_id)["daily_limit"] = int(text)
+            target_id = current_sess.get("admin_target_id")
+            target_user = await user(target_id) # Ensure user exists
+            target_user["daily_limit"] = int(text)
             await save_data()
             await update.message.reply_text(f"سهمیه کاربر {target_id} به {text} تغییر یافت.")
-            reset_mode(user_id)
+            await reset_mode(user_id)
             return
 
     # --- Pack Creation Flow ---
@@ -1181,8 +882,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 stickers=[InputSticker(sticker=uploaded_sticker.file_id, emoji_list=["🎉"])],
                 sticker_format="static"
             )
-            add_user_pack(user_id, text, pack_short_name)
-            set_current_pack(user_id, pack_short_name)
+            await add_user_pack(user_id, text, pack_short_name)
+            await set_current_pack(user_id, pack_short_name)
 
             keyboard = [
                 [InlineKeyboardButton("🖼 استیکر ساده", callback_data="sticker:simple")],
@@ -1192,7 +893,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 f"پک «{text}» با موفقیت ساخته شد! حالا نوع استیکر را انتخاب کنید:",
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
-            reset_mode(user_id)
+            await reset_mode(user_id)
         except BadRequest as e:
             error_message = str(e)
             if "Sticker set name is already occupied" in error_message:
@@ -1202,43 +903,27 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(
                     """نامی که وارد کردید نامعتبر است. لطفاً نام را طبق قوانین زیر دوباره وارد کنید:
 
-• فقط حروف انگلیسی، عدد و زیرخط
+• فقط حروف انگلیسی، عدد و آندرلاین (_)
 • باید با حرف شروع شود
-• نباید با زیرخط تمام شود
-• نباید دو زیرخط پشت سر هم داشته باشد
+• نباید با آندرلاین (_) تمام شود
+• نباید دو آندرلاین (__) پشت سر هم داشته باشد
 • حداکثر ۵۰ کاراکتر (به خاطر اضافه شدن نام ربات)"""
                 )
                 # User remains in 'pack_create_start' mode
             else:
                 await update.message.reply_text(f"خطا در ساخت پک: {e}")
-                reset_mode(user_id)
+                await reset_mode(user_id)
         except Exception as e:
             await update.message.reply_text(f"یک خطای غیرمنتظره رخ داد: {e}")
-            reset_mode(user_id)
+            await reset_mode(user_id)
         return
-
-    # Handle waiting for guess
-    if user_id in user_states and user_states[user_id].get("waiting_for_guess"):
-        try:
-            guess = int(text)
-            if 1 <= guess <= 100:
-                result = await bot_features.check_guess(guess)
-                await update.message.reply_text(
-                    result["message"],
-                    reply_markup=result["reply_markup"]
-                )
-                user_states[user_id]["waiting_for_guess"] = False
-            else:
-                await update.message.reply_text("❌ لطفاً عددی بین 1 تا 100 وارد کنید!")
-        except ValueError:
-            await update.message.reply_text("❌ لطفاً یک عدد صحیح وارد کنید!")
     
     # Handle sticker creation text input
-    elif sess(user_id).get("sticker_mode") in ["simple", "advanced"]:
-        mode = sess(user_id)["sticker_mode"]
-        sticker_data = sess(user_id).get("sticker_data", {})
+    elif current_sess.get("sticker_mode") in ["simple", "advanced"]:
+        mode = current_sess["sticker_mode"]
+        sticker_data = current_sess.get("sticker_data", {})
         sticker_data["text"] = text
-        sess(user_id)["sticker_data"] = sticker_data
+        current_sess["sticker_data"] = sticker_data
         await save_sessions()
 
         if mode == "simple":
@@ -1269,37 +954,22 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     # ... inside button_callback ...
     elif callback_data == "sticker:simple:edit":
-        sess(user_id)['sticker_mode'] = 'simple'
+        current_sess = await sess(user_id)
+        current_sess['sticker_mode'] = 'simple'
+        await save_sessions()
         await query.edit_message_text("لطفاً متن جدید استیکر ساده را ارسال کنید:")
     
     # Default message
     else:
-        await update.message.reply_text(
-            "🤖 ربات شما پیام را دریافت کرد! برای دیدن دستورات، /help را وارد کنید.\n\n"
-            "دستورات موجود:\n"
-            "/start - شروع ربات\n"
-            "/help - راهنما\n"
-            "/guess - بازی حدس عدد\n"
-            "/rps - سنگ کاغذ قیچی\n"
-            "/word - بازی کلمات\n"
-            "/memory - بازی حافظه\n"
-            "/random - بازی تصادفی\n"
-            "/sticker <متن> - ساخت استیکر سریع\n"
-            "/customsticker - استیکر ساز سفارشی\n"
-            "و بسیار دیگر..."
-        )
+        # Fallback for unhandled messages
+        pass
+
 
 def setup_application(application):
     """Setup all handlers for the application"""
     # Command handlers
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CommandHandler("guess", guess_command))
-    application.add_handler(CommandHandler("rps", rps_command))
-    application.add_handler(CommandHandler("word", word_command))
-    application.add_handler(CommandHandler("memory", memory_command))
-    application.add_handler(CommandHandler("random", random_command))
-    application.add_handler(CommandHandler("customsticker", customsticker_command))
     
     # Callback and message handlers
     application.add_handler(CallbackQueryHandler(button_callback))
