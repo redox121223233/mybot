@@ -44,24 +44,13 @@ def get_redis_client():
     global redis_client
     if redis_client is None:
         try:
-            # Get credentials from environment
-            rest_url = os.environ.get("UPSTASH_REDIS_REST_URL")
-            token = os.environ.get("UPSTASH_REDIS_REST_TOKEN")
-
-            if not rest_url or not token:
-                logger.error("Upstash Redis URL or Token not found in environment variables.")
+            # Use the direct rediss:// URL from the environment variable
+            redis_url = os.environ.get("UPSTASH_REDIS_URL")
+            if not redis_url:
+                logger.error("UPSTASH_REDIS_URL not found in environment variables.")
                 return None
 
-            # Correctly construct the rediss:// URL from the REST URL.
-            # The REST URL is like https://<region>-<hostname>-<uuid>.upstash.io
-            # We need to extract the hostname part for the rediss URL.
-            hostname_with_region = rest_url.replace("https://", "")
-
-            # The format for redis-py is rediss://:<password>@<host>:<port>
-            # For Upstash, the user is 'default' but can be omitted.
-            redis_url = f"rediss://:{token}@{hostname_with_region}:6379"
-
-            logger.info(f"Connecting to Redis at {hostname_with_region}")
+            logger.info("Connecting to Redis via UPSTASH_REDIS_URL...")
             redis_client = redis.from_url(redis_url, decode_responses=True)
 
         except Exception as e:
@@ -239,9 +228,6 @@ def is_valid_pack_name(name: str) -> bool:
         if not (char.isalnum() or char == '_'):
             return False
     return True
-
-# Global variables for user states
-user_states = {}
 
 # ============ Font and Rendering Logic ============
 FONT_DIR = os.path.join(os.path.dirname(__file__), "..", "fonts")
@@ -684,6 +670,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             await query.message.reply_text(f"خطا در اضافه کردن استیکر به پک: {e}")
             await reset_mode(user_id)
+
+    elif callback_data == "sticker:simple:edit":
+        current_sess = await sess(user_id)
+        current_sess['sticker_mode'] = 'simple'
+        await save_sessions()
+        await query.edit_message_text("لطفاً متن جدید استیکر ساده را ارسال کنید:")
     
     elif callback_data == "help":
         await bot_features.help_command(update, context)
@@ -951,13 +943,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "آیا می‌خواهید از عکس دلخواه به عنوان پس‌زمینه استفاده کنید؟",
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
-
-    # ... inside button_callback ...
-    elif callback_data == "sticker:simple:edit":
-        current_sess = await sess(user_id)
-        current_sess['sticker_mode'] = 'simple'
-        await save_sessions()
-        await query.edit_message_text("لطفاً متن جدید استیکر ساده را ارسال کنید:")
     
     # Default message
     else:
@@ -1023,7 +1008,7 @@ async def webhook():
 @app.route('/health')
 def health():
     """Health check endpoint."""
-    is_token_present = TELEGRAM_TOKEN is not None
+    is_token_present = (os.getenv('BOT_TOKEN') or os.getenv('TELEGRAM_BOT_TOKEN')) is not None
     return jsonify({
         "status": "healthy",
         "handlers": "active",
