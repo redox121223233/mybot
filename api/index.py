@@ -44,13 +44,22 @@ def get_redis_client():
     global redis_client
     if redis_client is None:
         try:
-            # Use the direct rediss:// URL from the environment variable
-            redis_url = os.environ.get("UPSTASH_REDIS_URL")
-            if not redis_url:
-                logger.error("UPSTASH_REDIS_URL not found in environment variables.")
+            url = os.environ.get("UPSTASH_REDIS_REST_URL")
+            token = os.environ.get("UPSTASH_REDIS_REST_TOKEN")
+
+            if not url or not token:
+                logger.error("UPSTASH_REDIS_REST_URL or UPSTASH_REDIS_REST_TOKEN not found.")
                 return None
 
-            logger.info("Connecting to Redis via UPSTASH_REDIS_URL...")
+            # Construct the rediss:// URL for redis-py
+            if url.startswith("https://"):
+                hostname = url[len("https://"):]
+            else:
+                hostname = url
+
+            redis_url = f"rediss://default:{token}@{hostname}"
+
+            logger.info("Connecting to Redis via constructed URL...")
             redis_client = redis.from_url(redis_url, decode_responses=True)
 
         except Exception as e:
@@ -357,9 +366,6 @@ class TelegramBotFeatures:
 
 🎨 **استیکر ساز:**
 برای ساخت استیکر، از دکمه "استیکر ساز" در منوی اصلی استفاده کنید. شما باید یک پک استیکر بسازید یا یکی از پک‌های موجود خود را انتخاب کنید. سپس می‌توانید استیکرهای ساده یا پیشرفته بسازید.
-
-🎮 **بازی‌ها:**
-برای سرگرمی، می‌توانید از منوی "بازی و سرگرمی" یکی از بازی‌های موجود را انتخاب کنید.
 
  پشتیبانی:**
 در صورت بروز مشکل، با پشتیبانی در تماس باشید.
