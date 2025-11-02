@@ -101,7 +101,7 @@ class TelegramBotFeatures:
             img = img.resize((512, 512))
             draw = ImageDraw.Draw(img)
             try:
-                font = ImageFont.truetype("fonts/Vazir.ttf", font_size)
+                font = ImageFont.truetype("fonts/Vazirmatn-Regular.ttf", font_size)
             except IOError:
                 font = ImageFont.load_default()
             text_bbox = draw.textbbox((0, 0), text, font=font)
@@ -299,11 +299,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             target_user_id = user_data.get("target_user_id")
             try:
                 amount = int(update.message.text)
-                target_user_data = context.bot_data.get(target_user_id, {})
-                check_and_update_quota(target_user_data, "any") # Initialize if not exists
-                target_user_data["quota"]["simple"] += amount
-                target_user_data["quota"]["advanced"] += amount
-                context.bot_data[target_user_id] = target_user_data
+                check_and_update_quota(context, target_user_id, "any") # Initialize if not exists
+                context.bot_data["quotas"][target_user_id]["simple"] += amount
+                context.bot_data["quotas"][target_user_id]["advanced"] += amount
                 await update.message.reply_text(f"سهمیه کاربر {target_user_id} افزایش یافت.")
             except ValueError:
                 await update.message.reply_text("مقدار نامعتبر است. لطفاً عدد وارد کنید.")
@@ -322,11 +320,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             target_user_id = user_data.get("target_user_id")
             try:
                 amount = int(update.message.text)
-                target_user_data = context.bot_data.get(target_user_id, {})
-                check_and_update_quota(target_user_data, "any") # Initialize if not exists
-                target_user_data["quota"]["simple"] = max(0, target_user_data["quota"]["simple"] - amount)
-                target_user_data["quota"]["advanced"] = max(0, target_user_data["quota"]["advanced"] - amount)
-                context.bot_data[target_user_id] = target_user_data
+                check_and_update_quota(context, target_user_id, "any") # Initialize if not exists
+                context.bot_data["quotas"][target_user_id]["simple"] = max(0, context.bot_data["quotas"][target_user_id]["simple"] - amount)
+                context.bot_data["quotas"][target_user_id]["advanced"] = max(0, context.bot_data["quotas"][target_user_id]["advanced"] - amount)
                 await update.message.reply_text(f"سهمیه کاربر {target_user_id} کاهش یافت.")
             except ValueError:
                 await update.message.reply_text("مقدار نامعتبر است. لطفاً عدد وارد کنید.")
@@ -334,25 +330,28 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     else:
         await update.message.reply_text("دستور شما را متوجه نشدم. لطفاً از دکمه‌ها استفاده کنید یا /start را بزنید.")
 
-def check_and_update_quota(user_data: dict, sticker_type: str):
-    """Checks and updates the user's quota within user_data. Returns True if the user has quota, False otherwise."""
+def check_and_update_quota(context: ContextTypes.DEFAULT_TYPE, user_id: int, sticker_type: str):
+    """Checks and updates the user's quota within context.bot_data. Returns True if the user has quota, False otherwise."""
     now = datetime.utcnow()
-    quota_data = user_data.get("quota", {})
+    if "quotas" not in context.bot_data:
+        context.bot_data["quotas"] = {}
 
-    if not quota_data or now >= quota_data.get("reset_time", now):
-        quota_data = {
+    user_quotas = context.bot_data["quotas"].get(user_id, {})
+
+    if not user_quotas or now >= user_quotas.get("reset_time", now):
+        user_quotas = {
             "simple": SIMPLE_QUOTA,
             "advanced": ADVANCED_QUOTA,
             "reset_time": now + timedelta(hours=24)
         }
-        user_data["quota"] = quota_data
+        context.bot_data["quotas"][user_id] = user_quotas
 
     if sticker_type == "any": # Just to initialize/reset
         return True
 
     quota_type = "simple" if sticker_type == "simple" else "advanced"
-    if quota_data.get(quota_type, 0) > 0:
-        quota_data[quota_type] -= 1
+    if user_quotas.get(quota_type, 0) > 0:
+        user_quotas[quota_type] -= 1
         return True
     return False
 
@@ -446,6 +445,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("خطا در ساخت استیکر.")
 
     elif query.data == "text_yes":
+        user_data["type"] = "advanced"
         user_data["state"] = "awaiting_text"
         await query.edit_message_text("لطفاً متنی که می‌خواهید روی استیکر باشد را ارسال کنید:")
 
@@ -454,7 +454,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             sticker_type = user_data["type"]
 
             await query.message.delete()
-            if not check_and_update_quota(user_data, sticker_type):
+            if not check_and_update_quota(context, user_id, sticker_type):
                 await query.message.reply_text("متاسفانه سهمیه روزانه شما برای این نوع استیکر به پایان رسیده است.")
                 return
 
@@ -504,8 +504,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("برای پشتیبانی به آیدی @onedaytoalive پیام دهید.")
 
     elif query.data == "my_quota":
-        check_and_update_quota(user_data, "any") # Ensures quota is initialized/reset
-        quota_data = user_data.get("quota", {})
+        check_and_update_quota(context, user_id, "any") # Ensures quota is initialized/reset
+        quota_data = context.bot_data["quotas"][user_id]
 
         now = datetime.utcnow()
         reset_time = quota_data.get('reset_time', now + timedelta(hours=24))
