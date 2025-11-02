@@ -44,22 +44,12 @@ def get_redis_client():
     global redis_client
     if redis_client is None:
         try:
-            url = os.environ.get("UPSTASH_REDIS_REST_URL")
-            token = os.environ.get("UPSTASH_REDIS_REST_TOKEN")
-
-            if not url or not token:
-                logger.error("UPSTASH_REDIS_REST_URL or UPSTASH_REDIS_REST_TOKEN not found.")
+            redis_url = os.environ.get("UPSTASH_REDIS_URL")
+            if not redis_url:
+                logger.error("UPSTASH_REDIS_URL not found in environment variables.")
                 return None
 
-            # Construct the rediss:// URL for redis-py
-            if url.startswith("https://"):
-                hostname = url[len("https://"):]
-            else:
-                hostname = url
-
-            redis_url = f"rediss://:{token}@{hostname}"
-
-            logger.info("Connecting to Redis via constructed URL...")
+            logger.info("Connecting to Redis via UPSTASH_REDIS_URL...")
             redis_client = redis.from_url(redis_url, decode_responses=True)
 
         except Exception as e:
