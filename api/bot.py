@@ -19,6 +19,8 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 from telegram.error import BadRequest
 from telegram.constants import ChatMemberStatus
 from PIL import Image, ImageDraw, ImageFont
+import arabic_reshaper
+from bidi.algorithm import get_display
 
 # Configure logging
 logging.basicConfig(
@@ -104,17 +106,21 @@ class TelegramBotFeatures:
                 font = ImageFont.truetype("fonts/Vazirmatn-Regular.ttf", font_size)
             except IOError:
                 font = ImageFont.load_default()
-            text_bbox = draw.textbbox((0, 0), text, font=font)
+
+            reshaped_text = arabic_reshaper.reshape(text)
+            bidi_text = get_display(reshaped_text)
+
+            text_bbox = draw.textbbox((0, 0), bidi_text, font=font)
             text_width = text_bbox[2] - text_bbox[0]
             text_height = text_bbox[3] - text_bbox[1]
             position = ((512 - text_width) / 2, (512 - text_height) / 2)
             stroke_width = 2
             stroke_fill = "black"
-            draw.text((position[0]-stroke_width, position[1]-stroke_width), text, font=font, fill=stroke_fill)
-            draw.text((position[0]+stroke_width, position[1]-stroke_width), text, font=font, fill=stroke_fill)
-            draw.text((position[0]-stroke_width, position[1]+stroke_width), text, font=font, fill=stroke_fill)
-            draw.text((position[0]+stroke_width, position[1]+stroke_width), text, font=font, fill=stroke_fill)
-            draw.text(position, text, font=font, fill="white")
+            draw.text((position[0]-stroke_width, position[1]-stroke_width), bidi_text, font=font, fill=stroke_fill)
+            draw.text((position[0]+stroke_width, position[1]-stroke_width), bidi_text, font=font, fill=stroke_fill)
+            draw.text((position[0]-stroke_width, position[1]+stroke_width), bidi_text, font=font, fill=stroke_fill)
+            draw.text((position[0]+stroke_width, position[1]+stroke_width), bidi_text, font=font, fill=stroke_fill)
+            draw.text(position, bidi_text, font=font, fill="white")
             img_bytes = io.BytesIO()
             img.save(img_bytes, format='WEBP')
             img_bytes.seek(0)
@@ -373,20 +379,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await bot_features.start_command(update, context)
 
     elif query.data == "sticker_creator":
-        keyboard = [
-            [
-                InlineKeyboardButton("ساده", callback_data="simple_sticker"),
-                InlineKeyboardButton("پیشرفته", callback_data="advanced_sticker")
-            ],
-            [InlineKeyboardButton("بازگشت", callback_data="start_menu")]
-        ]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text("نوع استیکر خود را انتخاب کنید:", reply_markup=reply_markup)
-
-    elif query.data in ["simple_sticker", "advanced_sticker"]:
-        sticker_type = "simple" if query.data == "simple_sticker" else "advanced"
         user_data["state"] = "awaiting_pack_name"
-        user_data["type"] = sticker_type
         pack_name_rules = """
 لطفاً یک نام برای بسته استیکر خود وارد کنید.
 
