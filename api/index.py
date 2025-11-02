@@ -858,6 +858,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text("این پک قبلاً وجود دارد. لطفاً یک نام دیگر انتخاب کنید.")
             return
 
+        # Immediately send a waiting message to avoid timeout
+        await update.message.reply_text("...لطفا کمی صبر کنید، پک استیکر شما در حال ساخته شدن است")
+
         # Create a dummy sticker to create the pack
         dummy_sticker_bytes = await render_image("اولین", "center", "center", "Default", "#FFFFFF", "medium", as_webp=False)
 
@@ -881,8 +884,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("🖼 استیکر ساده", callback_data="sticker:simple")],
                 [InlineKeyboardButton("✨ استیکر پیشرفته", callback_data="sticker:advanced")]
             ]
-            await update.message.reply_text(
-                f"پک «{text}» با موفقیت ساخته شد! حالا نوع استیکر را انتخاب کنید:",
+            await context.bot.send_message(
+                chat_id=user_id,
+                text=f"پک «{text}» با موفقیت ساخته شد! حالا نوع استیکر را انتخاب کنید:",
                 reply_markup=InlineKeyboardMarkup(keyboard)
             )
             await reset_mode(user_id)
