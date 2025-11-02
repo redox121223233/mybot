@@ -31,61 +31,95 @@ ADMIN_ID = 6053579919
 SUPPORT_USERNAME = "@onedaytoalive"
 
 # ============ Data Persistence ============
-# Vercel's writable directory is /tmp
-DATA_DIR = "/tmp"
-USER_DATA_FILE = os.path.join(DATA_DIR, "userdata.json")
-SESSION_DATA_FILE = os.path.join(DATA_DIR, "sessions.json")
+import redis.asyncio as redis
+import json
+
+# Upstash Redis connection will be initialized dynamically
+redis_client = None
+
 USERS: dict[int, dict] = {}
 SESSIONS: dict[int, dict] = {}
 
-def load_sessions():
-    global SESSIONS
-    try:
-        with open(SESSION_DATA_FILE, 'r') as f:
-            data = json.load(f)
-            SESSIONS = {int(k): v for k, v in data.items()}
-    except (FileNotFoundError, json.JSONDecodeError):
-        SESSIONS = {}
+def get_redis_client():
+    global redis_client
+    if redis_client is None:
+        try:
+            url = os.environ.get("UPSTASH_REDIS_REST_URL")
+            token = os.environ.get("UPSTASH_REDIS_REST_TOKEN")
+            if not url or not token:
+                logger.error("Upstash Redis URL or Token not found in environment variables.")
+                return None
+            redis_client = redis.from_url(f"rediss://default:{token}@{url.replace('https://', '')}", decode_responses=True)
+        except Exception as e:
+            logger.error(f"Failed to initialize Redis client: {e}")
+            return None
+    return redis_client
 
-def save_sessions():
-    try:
-        with open(SESSION_DATA_FILE, 'w') as f:
-            json.dump(SESSIONS, f, indent=4)
-    except Exception as e:
-        logger.error(f"Failed to save session data: {e}")
-
-def load_data():
+async def load_data():
     global USERS
+    client = get_redis_client()
+    if not client:
+        USERS = {}
+        return
     try:
-        with open(USER_DATA_FILE, 'r') as f:
-            # JSON keys are strings, so convert them back to int
-            data = json.load(f)
-            USERS = {int(k): v for k, v in data.items()}
-    except (FileNotFoundError, json.JSONDecodeError):
+        data_str = await client.get("USERS")
+        if data_str:
+            USERS = {int(k): v for k, v in json.loads(data_str).items()}
+        else:
+            USERS = {}
+    except Exception as e:
+        logger.error(f"Failed to load user data from Redis: {e}")
         USERS = {}
 
-def save_data():
+async def save_data():
+    client = get_redis_client()
+    if not client:
+        return
     try:
-        with open(USER_DATA_FILE, 'w') as f:
-            json.dump(USERS, f, indent=4)
+        await client.set("USERS", json.dumps(USERS))
     except Exception as e:
-        logger.error(f"Failed to save user data: {e}")
+        logger.error(f"Failed to save user data to Redis: {e}")
+
+async def load_sessions():
+    global SESSIONS
+    client = get_redis_client()
+    if not client:
+        SESSIONS = {}
+        return
+    try:
+        data_str = await client.get("SESSIONS")
+        if data_str:
+            SESSIONS = {int(k): v for k, v in json.loads(data_str).items()}
+        else:
+            SESSIONS = {}
+    except Exception as e:
+        logger.error(f"Failed to load session data from Redis: {e}")
+        SESSIONS = {}
+
+async def save_sessions():
+    client = get_redis_client()
+    if not client:
+        return
+    try:
+        await client.set("SESSIONS", json.dumps(SESSIONS))
+    except Exception as e:
+        logger.error(f"Failed to save session data to Redis: {e}")
 
 def user(uid: int) -> dict:
     if uid not in USERS:
         USERS[uid] = { "packs": [], "current_pack": None, "daily_limit": 3, "ai_used": 0, "day_start": 0 }
-        save_data()
+        await save_data()
     return USERS[uid]
 
 def sess(uid: int) -> dict:
     if uid not in SESSIONS:
         SESSIONS[uid] = { "mode": "main", "sticker_data": {} }
-        save_sessions()
+        await save_sessions()
     return SESSIONS[uid]
 
 def reset_mode(uid: int):
     SESSIONS[uid] = { "mode": "main", "sticker_data": {} }
-    save_sessions()
+    await save_sessions()
 
 # ============ Sticker Pack Management ============
 def get_user_packs(uid: int) -> list:
@@ -97,11 +131,11 @@ def add_user_pack(uid: int, pack_name: str, pack_short_name: str):
         packs.append({"name": pack_name, "short_name": pack_short_name})
     user(uid)["packs"] = packs
     user(uid)["current_pack"] = pack_short_name
-    save_data()
+    await save_data()
 
 def set_current_pack(uid: int, pack_short_name: str):
     user(uid)["current_pack"] = pack_short_name
-    save_data()
+    await save_data()
 
 from datetime import datetime, timezone
 
@@ -739,7 +773,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 • نباید دو آندرلاین (__) پشت سر هم داشته باشد
 • حداکثر ۵۰ کاراکتر (به خاطر اضافه شدن نام ربات)"""
             )
-            save_sessions()
+            await save_sessions()
 
     # --- Sticker Pack Flow ---
     elif callback_data.startswith("pack:select:"):
@@ -754,7 +788,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif callback_data == "pack:new":
         sess(user_id)["mode"] = "pack_create_start"
-        save_sessions()
+        await save_sessions()
         await query.edit_message_text("""نام پک را بنویس (مثال: my_stickers):
 
 • فقط حروف انگلیسی، عدد و زیرخط
@@ -768,7 +802,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reset_mode(user_id) # Aggressive reset
         sess(user_id)['sticker_mode'] = 'simple'
         sess(user_id)['sticker_data'] = {}
-        save_sessions()
+        await save_sessions()
         await query.edit_message_text("لطفاً متن استیکر ساده را ارسال کنید:")
 
     # --- Sticker Advanced Flow ---
@@ -783,7 +817,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "v_pos": "center", "h_pos": "center", "font": "Default",
             "color": "#FFFFFF", "size": "large", "bg_photo_bytes": None
         }
-        save_sessions()
+        await save_sessions()
         await query.edit_message_text("لطفاً متن استیکر پیشرفته را ارسال کنید:")
 
     elif callback_data.startswith("sticker_adv:"): # Advanced Sticker Options
@@ -796,7 +830,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             choice = parts[2]
             if choice == 'yes':
                 sess(user_id)['mode'] = 'awaiting_custom_bg'
-                save_sessions()
+                await save_sessions()
                 await query.edit_message_text("لطفاً عکس پس‌زمینه را ارسال کنید.")
             else: # 'no'
                 # Continue with the normal flow
@@ -813,7 +847,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if action == 'vpos':
             sticker_data['v_pos'] = parts[2]
-            save_sessions()
+            await save_sessions()
             # Next step: Horizontal position
             keyboard = [
                 [InlineKeyboardButton("چپ", callback_data="sticker_adv:hpos:left")],
@@ -824,7 +858,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif action == 'hpos':
             sticker_data['h_pos'] = parts[2]
-            save_sessions()
+            await save_sessions()
             # Next step: Color
             keyboard = [
                 [InlineKeyboardButton("سفید", callback_data="sticker_adv:color:#FFFFFF"), InlineKeyboardButton("مشکی", callback_data="sticker_adv:color:#000000")],
@@ -834,7 +868,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif action == 'color':
             sticker_data['color'] = parts[2]
-            save_sessions()
+            await save_sessions()
             # Next step: Size
             keyboard = [
                 [InlineKeyboardButton("کوچک", callback_data="sticker_adv:size:small")],
@@ -845,15 +879,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif action == 'size':
             sticker_data['size'] = parts[2]
-            save_sessions()
+            await save_sessions()
             # Final step: Preview
             img_bytes = await render_image(
                 text=sticker_data.get("text", "پیش‌نمایش"),
-                v_pos=sticker_data["v_pos"],
-                h_pos=sticker_data["h_pos"],
-                font_key=sticker_data["font"],
-                color_hex=sticker_data["color"],
-                size_key=sticker_data["size"],
+                v_pos=sticker_data.get("v_pos", "center"),
+                h_pos=sticker_data.get("h_pos", "center"),
+                font_key=sticker_data.get("font", "Default"),
+                color_hex=sticker_data.get("color", "#FFFFFF"),
+                size_key=sticker_data.get("size", "large"),
                 bg_photo=sticker_data.get("bg_photo_bytes"),
                 as_webp=False
             )
@@ -913,7 +947,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if sess(user_id).get("sticker_mode") == "advanced":
             u = user(user_id)
             u["ai_used"] = u.get("ai_used", 0) + 1
-            save_data()
+            await save_data()
 
         img_bytes_png = await render_image(
             text=sticker_data.get("text", "استیکر"),
@@ -984,19 +1018,19 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif callback_data == "admin:broadcast_prompt":
         if user_id != ADMIN_ID: return
         sess(user_id)["mode"] = "admin_broadcast"
-        save_sessions()
+        await save_sessions()
         await query.edit_message_text("پیام همگانی را ارسال کنید:")
 
     elif callback_data == "admin:dm_prompt":
         if user_id != ADMIN_ID: return
         sess(user_id)["mode"] = "admin_dm_id"
-        save_sessions()
+        await save_sessions()
         await query.edit_message_text("آیدی عددی کاربر مورد نظر را ارسال کنید:")
 
     elif callback_data == "admin:quota_prompt":
         if user_id != ADMIN_ID: return
         sess(user_id)["mode"] = "admin_quota_id"
-        save_sessions()
+        await save_sessions()
         await query.edit_message_text("آیدی عددی کاربر مورد نظر را ارسال کنید:")
 
     elif callback_data == "rate:yes":
@@ -1049,7 +1083,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sticker_data = sess(user_id).get("sticker_data", {})
         sticker_data["bg_photo_bytes"] = bytes(photo_bytes)
         sess(user_id)["sticker_data"] = sticker_data
-        save_sessions()
+        await save_sessions()
 
         # Reset mode and continue the advanced sticker flow
         sess(user_id)["mode"] = "main" # Or whatever the normal mode is
@@ -1092,7 +1126,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif current_mode == "admin_dm_id":
             sess(user_id)["admin_target_id"] = int(text)
             sess(user_id)["mode"] = "admin_dm_text"
-            save_sessions()
+            await save_sessions()
             await update.message.reply_text("پیام را برای ارسال بنویسید:")
             return
         elif current_mode == "admin_dm_text":
@@ -1107,13 +1141,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif current_mode == "admin_quota_id":
             sess(user_id)["admin_target_id"] = int(text)
             sess(user_id)["mode"] = "admin_quota_value"
-            save_sessions()
+            await save_sessions()
             await update.message.reply_text("مقدار سهمیه جدید را وارد کنید:")
             return
         elif current_mode == "admin_quota_value":
             target_id = sess(user_id).get("admin_target_id")
             user(target_id)["daily_limit"] = int(text)
-            save_data()
+            await save_data()
             await update.message.reply_text(f"سهمیه کاربر {target_id} به {text} تغییر یافت.")
             reset_mode(user_id)
             return
@@ -1205,12 +1239,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sticker_data = sess(user_id).get("sticker_data", {})
         sticker_data["text"] = text
         sess(user_id)["sticker_data"] = sticker_data
-        save_sessions()
+        await save_sessions()
 
         if mode == "simple":
             # For simple mode, generate preview immediately
             img_bytes = await render_image(
-                text=text, v_pos="center", h_pos="center", font_key="Default",
+                text=sticker_data.get("text", "استیکر ساده"),
+                v_pos="center", h_pos="center", font_key="Default",
                 color_hex="#FFFFFF", size_key="medium", as_webp=False
             )
             await update.message.reply_photo(
@@ -1287,8 +1322,8 @@ def home():
 @app.route('/webhook', methods=['POST'])
 async def webhook():
     """Handles incoming Telegram updates."""
-    load_data()  # Load persistent user data
-    load_sessions() # Load temporary session data
+    await load_data()  # Load persistent user data
+    await load_sessions() # Load temporary session data
     if not TELEGRAM_TOKEN:
         logger.error("No Telegram token found!")
         return jsonify({"status": "error", "message": "Bot token not configured"}), 500
