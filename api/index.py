@@ -813,6 +813,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if action == 'vpos':
             sticker_data['v_pos'] = parts[2]
+            save_sessions()
             # Next step: Horizontal position
             keyboard = [
                 [InlineKeyboardButton("چپ", callback_data="sticker_adv:hpos:left")],
@@ -823,6 +824,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif action == 'hpos':
             sticker_data['h_pos'] = parts[2]
+            save_sessions()
             # Next step: Color
             keyboard = [
                 [InlineKeyboardButton("سفید", callback_data="sticker_adv:color:#FFFFFF"), InlineKeyboardButton("مشکی", callback_data="sticker_adv:color:#000000")],
@@ -832,6 +834,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif action == 'color':
             sticker_data['color'] = parts[2]
+            save_sessions()
             # Next step: Size
             keyboard = [
                 [InlineKeyboardButton("کوچک", callback_data="sticker_adv:size:small")],
@@ -842,6 +845,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         elif action == 'size':
             sticker_data['size'] = parts[2]
+            save_sessions()
             # Final step: Preview
             img_bytes = await render_image(
                 text=sticker_data.get("text", "پیش‌نمایش"),
@@ -863,6 +867,29 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
     elif callback_data == "sticker:advanced:edit":
+        # Show a preview and allow for re-editing
+        sticker_data = sess(user_id).get('sticker_data', {})
+        img_bytes = await render_image(
+            text=sticker_data.get("text", "پیش‌نمایش"),
+            v_pos=sticker_data.get("v_pos", "center"),
+            h_pos=sticker_data.get("h_pos", "center"),
+            font_key=sticker_data.get("font", "Default"),
+            color_hex=sticker_data.get("color", "#FFFFFF"),
+            size_key=sticker_data.get("size", "large"),
+            bg_photo=sticker_data.get("bg_photo_bytes"),
+            as_webp=False
+        )
+        await query.message.delete()
+        await query.message.reply_photo(
+            photo=InputFile(img_bytes, filename="preview.png"),
+            caption="این هم پیش‌نمایش استیکر شما. آیا آن را تایید می‌کنید؟",
+            reply_markup=InlineKeyboardMarkup([[
+                InlineKeyboardButton("✅ بله، تایید می‌کنم", callback_data="sticker:confirm"),
+                InlineKeyboardButton("✏️ نه، ویرایش می‌کنم", callback_data="sticker:advanced:restart_edit")
+            ]])
+        )
+
+    elif callback_data == "sticker:advanced:restart_edit":
         # Go back to the first step of advanced customization
         keyboard = [
             [InlineKeyboardButton("بالا", callback_data="sticker_adv:vpos:top")],
@@ -1022,6 +1049,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sticker_data = sess(user_id).get("sticker_data", {})
         sticker_data["bg_photo_bytes"] = bytes(photo_bytes)
         sess(user_id)["sticker_data"] = sticker_data
+        save_sessions()
 
         # Reset mode and continue the advanced sticker flow
         sess(user_id)["mode"] = "main" # Or whatever the normal mode is
@@ -1177,6 +1205,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sticker_data = sess(user_id).get("sticker_data", {})
         sticker_data["text"] = text
         sess(user_id)["sticker_data"] = sticker_data
+        save_sessions()
 
         if mode == "simple":
             # For simple mode, generate preview immediately
