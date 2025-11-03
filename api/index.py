@@ -26,6 +26,30 @@ logger = logging.getLogger(__name__)
 # Global variables for user states
 user_states = {}
 
+# ============ Data Persistence ============
+import redis
+import json
+
+# Upstash Redis connection will be initialized dynamically
+redis_client = None
+
+def get_redis_client():
+    global redis_client
+    if redis_client is None:
+        try:
+            redis_url = os.environ.get("UPSTASH_REDIS_REST_URL")
+            if not redis_url:
+                logger.error("UPSTASH_REDIS_REST_URL not found in environment variables.")
+                return None
+
+            logger.info("Connecting to Redis via UPSTASH_REDIS_REST_URL...")
+            redis_client = redis.from_url(redis_url, decode_responses=True)
+
+        except Exception as e:
+            logger.error(f"Failed to initialize Redis client: {e}")
+            return None
+    return redis_client
+
 class TelegramBotFeatures:
     """Complete bot features class"""
     
@@ -639,6 +663,7 @@ def home():
 
 @app.route('/webhook', methods=['POST'])
 async def webhook():
+    get_redis_client()  # Initialize Redis client
     if request.method == 'POST':
         try:
             update_data = request.get_json()
