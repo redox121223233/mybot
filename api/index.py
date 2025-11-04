@@ -689,15 +689,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = await photo_file.download_as_bytearray()
 
-        # Encode to Base64 to make it JSON serializable
-        encoded_photo = base64.b64encode(bytes(photo_bytes)).decode('utf-8')
-
-        sticker_data = current_sess.get("sticker_data", {})
-        sticker_data["bg_photo_b64"] = encoded_photo # Store as a new key
-        sticker_data.pop("bg_photo", None) # Remove old raw bytes key if it exists
+        # --- DIAGNOSTIC: Do not save the photo to the session to test memory pressure hypothesis ---
+        logger.warning("DIAGNOSTIC MODE: Photo received but not saved to session.")
 
         current_sess["mode"] = "main"
-        await save_sessions()
+        # No save_sessions() call here, as we are not persisting the photo data.
 
         # After receiving photo, proceed based on sticker mode
         if current_sess.get("sticker_mode") == "simple":
