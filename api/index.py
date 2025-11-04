@@ -755,6 +755,7 @@ app = Flask(__name__)
 
 @app.route('/webhook', methods=['POST'])
 async def webhook():
+    logger.info("Webhook received.")
     # Crucial check: Ensure database is configured before proceeding
     client = get_db_client()
     if not client:
@@ -780,25 +781,38 @@ async def webhook():
             logger.error(f"Failed to send configuration error to user: {e}")
         return jsonify(status="error", message="Database not configured"), 500
 
+    logger.info("Loading data and sessions...")
     await load_data()
     await load_sessions()
+    logger.info("Data and sessions loaded.")
 
     TELEGRAM_TOKEN = os.getenv('BOT_TOKEN') or os.getenv('TELEGRAM_BOT_TOKEN')
     if not TELEGRAM_TOKEN:
         logger.error("No Telegram token found!")
         return jsonify(status="error", message="Bot token not configured"), 500
 
+    logger.info("Building application...")
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     setup_application(application)
+    logger.info("Application built.")
 
     try:
+        logger.info("Initializing application...")
         await application.initialize()
+        logger.info("Application initialized.")
+
+        logger.info("Processing update...")
         update = Update.de_json(request.get_json(), application.bot)
         await application.process_update(update)
+        logger.info("Update processed.")
+
+        logger.info("Shutting down application...")
         await application.shutdown()
+        logger.info("Application shut down.")
+
         return jsonify(status="ok"), 200
     except Exception as e:
-        logger.error(f"Error processing webhook: {e}")
+        logger.error(f"!!! CRITICAL ERROR processing webhook: {e}", exc_info=True)
         if application.is_initialized:
             await application.shutdown()
         return jsonify(status="error", message=str(e)), 500
