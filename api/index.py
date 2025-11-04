@@ -547,86 +547,71 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("موقعیت عمودی متن را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif callback_data == "sticker:confirm":
-        # Immediately respond to the user and clean up the message
-        await query.edit_message_caption("✅ استیکر شما برای پردازش ارسال شد. به زودی در پک شما ظاهر خواهد شد.", reply_markup=None)
+        # --- STAGE 1 of 2: Render and Upload ---
+        await query.edit_message_caption("⏳ در حال پردازش و آپلود اولیه استیکر...", reply_markup=None)
 
         current_sess = await sess(user_id)
         sticker_data = current_sess.get('sticker_data', {})
+
+        try:
+            # Final render with safety defaults
+            final_data = sticker_data.copy()
+            final_text = final_data.pop("text", "")
+            defaults = {
+                "v_pos": "center", "h_pos": "center", "font_key": "Default",
+                "color_hex": "#FFFFFF", "size_key": "medium", "bg_photo": None
+            }
+            defaults.update(final_data)
+
+            img_bytes_png = await render_image(text=final_text, **defaults, as_webp=False)
+
+            logger.info(f"Uploading sticker file for user {user_id} (Stage 1)...")
+            uploaded_sticker = await context.bot.upload_sticker_file(user_id=user_id, sticker=InputFile(img_bytes_png, "sticker.png"), sticker_format="static")
+            logger.info(f"Sticker file uploaded successfully. File ID: {uploaded_sticker.file_id}")
+
+            # Deduct quota now
+            if current_sess.get("sticker_mode") == "advanced" and user_id != ADMIN_ID:
+                u = await user(user_id)
+                u["ai_used"] = u.get("ai_used", 0) + 1
+                await save_data()
+
+            # Now, send the confirmation message with the new button
+            keyboard = [[InlineKeyboardButton("✅ افزودن به پک", callback_data=f"add_sticker:{uploaded_sticker.file_id}")]]
+            await query.message.reply_text(
+                "✅ استیکر شما با موفقیت ساخته و آپلود شد!\n\n"
+                "برای اضافه کردن نهایی به پک، دکمه زیر را فشار دهید.",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+
+        except Exception as e:
+            logger.error(f"STAGE 1 FAILED for user {user_id}: {e}", exc_info=True)
+            await query.message.reply_text(f"خطا در مرحله اول ساخت استیکر: {e}")
+
+    elif callback_data.startswith("add_sticker:"):
+        # --- STAGE 2 of 2: Add to Set ---
+        await query.edit_message_text("⏳ در حال اضافه کردن استیکر به پک...", reply_markup=None)
+
+        file_id = callback_data.split(":")[-1]
         pack_short_name = await get_current_pack_short_name(user_id)
 
         if not pack_short_name:
             await query.message.reply_text("خطا: پکی انتخاب نشده است. لطفاً دوباره شروع کنید.")
             return
 
-        # Deduct quota now
-        if current_sess.get("sticker_mode") == "advanced" and user_id != ADMIN_ID:
-            u = await user(user_id)
-            u["ai_used"] = u.get("ai_used", 0) + 1
-            await save_data()
-
-        # --- Fire-and-forget HTTP request to ourself ---
         try:
-            # Construct the full URL for the processing endpoint
-            # VERCEL_URL is set by Vercel and doesn't include the protocol
-            base_url = os.environ.get("VERCEL_URL")
-            if not base_url:
-                logger.error("VERCEL_URL environment variable not found. Cannot trigger background task.")
-                await query.message.reply_text("خطای سرور: امکان پردازش پس‌زمینه وجود ندارد.")
-                return
+            logger.info(f"Adding sticker to set {pack_short_name} for user {user_id} (Stage 2)...")
+            await context.bot.add_sticker_to_set(user_id=user_id, name=pack_short_name, sticker=InputSticker(sticker=file_id, emoji_list=["😃"]))
+            logger.info("Sticker added to set successfully.")
 
-            process_url = f"https://{base_url}/api/process_sticker"
+            pack_link = f"https://t.me/addstickers/{pack_short_name}"
+            await query.message.reply_text(f"✅ استیکر شما با موفقیت به پک اضافه شد!\n\n{pack_link}")
 
-            payload = {
-                "user_id": user_id,
-                "pack_short_name": pack_short_name,
-                "sticker_data": sticker_data
-            }
-
-            # Use httpx to make an async request without waiting for the result
-            async with httpx.AsyncClient() as client:
-                # We set a short timeout because we don't need to wait for the response
-                await client.post(process_url, json=payload, timeout=5.0)
-
-            logger.info(f"Triggered background sticker processing for user {user_id} at {process_url}")
+            # Reset user mode after the final, successful step
+            await reset_mode(user_id)
 
         except Exception as e:
-            logger.error(f"Failed to trigger background sticker processing: {e}", exc_info=True)
-            await context.bot.send_message(user_id, "متاسفانه در ارسال استیکر برای پردازش خطایی رخ داد.")
-
-async def create_sticker_task(user_id: int, pack_short_name: str, sticker_data: dict, bot):
-    """Asynchronous task to create and add a sticker, handling delays."""
-    try:
-        # Final render with safety defaults
-        final_data = sticker_data.copy()
-        final_text = final_data.pop("text", "")
-        defaults = {
-            "v_pos": "center", "h_pos": "center", "font_key": "Default",
-            "color_hex": "#FFFFFF", "size_key": "medium", "bg_photo": None
-        }
-        defaults.update(final_data)
-
-        img_bytes_png = await render_image(text=final_text, **defaults, as_webp=False)
-
-        logger.info(f"Attempting to upload sticker file for user {user_id}.")
-        uploaded_sticker = await bot.upload_sticker_file(user_id=user_id, sticker=InputFile(img_bytes_png, "sticker.png"), sticker_format="static")
-        logger.info(f"Sticker file uploaded successfully. File ID: {uploaded_sticker.file_id}")
-
-        # --- Wait for 5 seconds to avoid Telegram API rate limits ---
-        logger.info("Waiting for 5 seconds before adding to set...")
-        await asyncio.sleep(5)
-
-        logger.info(f"Attempting to add sticker to set {pack_short_name}.")
-        await bot.add_sticker_to_set(user_id=user_id, name=pack_short_name, sticker=InputSticker(sticker=uploaded_sticker.file_id, emoji_list=["😃"]))
-        logger.info(f"Sticker added to set {pack_short_name} successfully.")
-
-        # Notify user of success
-        pack_link = f"https://t.me/addstickers/{pack_short_name}"
-        await bot.send_message(user_id, f"✅ استیکر شما با موفقیت به پک اضافه شد!\n\n{pack_link}")
-
-    except Exception as e:
-        logger.error(f"BACKGROUND TASK FAILED: Could not add sticker for user {user_id}. Error: {e}", exc_info=True)
-        await bot.send_message(user_id, f"متاسفانه در اضافه کردن استیکر به پک خطایی رخ داد: {e}")
-
+            logger.error(f"STAGE 2 FAILED for user {user_id}: {e}", exc_info=True)
+            await query.message.reply_text(f"خطا در مرحله دوم افزودن استیکر: {e}")
 
     elif callback_data == "sticker:simple:edit":
         current_sess = await sess(user_id)
@@ -880,37 +865,3 @@ def index():
 
 from telegram import Bot
 
-@app.route('/process_sticker', methods=['POST'])
-async def process_sticker_webhook():
-    """
-    This endpoint is called internally to process the sticker creation in a separate function.
-    Uses the lightweight telegram.Bot class to avoid fatal errors on Vercel.
-    """
-    data = await request.get_json()
-    user_id = data.get('user_id')
-    pack_short_name = data.get('pack_short_name')
-    sticker_data = data.get('sticker_data')
-
-    if not all([user_id, pack_short_name, sticker_data]):
-        logger.error("process_sticker webhook received incomplete data.")
-        return jsonify(status="error", message="Incomplete data"), 400
-
-    logger.info(f"Starting lightweight background processing for user {user_id}...")
-    TELEGRAM_TOKEN = os.getenv('BOT_TOKEN') or os.getenv('TELEGRAM_BOT_TOKEN')
-    if not TELEGRAM_TOKEN:
-        logger.error("No Telegram token found for background task!")
-        return jsonify(status="error", message="Bot token not configured"), 500
-
-    bot = Bot(token=TELEGRAM_TOKEN)
-    try:
-        await bot.initialize()
-        await create_sticker_task(user_id, pack_short_name, sticker_data, bot)
-        await bot.shutdown()
-
-        logger.info(f"Lightweight background processing finished for user {user_id}.")
-        return jsonify(status="ok"), 200
-    except Exception as e:
-        logger.error(f"!!! CRITICAL ERROR in lightweight background processing: {e}", exc_info=True)
-        if 'bot' in locals() and bot.is_initialized:
-            await bot.shutdown()
-        return jsonify(status="error", message=str(e)), 500
