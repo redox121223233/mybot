@@ -626,14 +626,6 @@ async def create_sticker_task(user_id: int, pack_short_name: str, sticker_data: 
     except Exception as e:
         logger.error(f"BACKGROUND TASK FAILED: Could not add sticker for user {user_id}. Error: {e}", exc_info=True)
         await bot.send_message(user_id, f"متاسفانه در اضافه کردن استیکر به پک خطایی رخ داد: {e}")
-    finally:
-        # We need to manage the DB connection manually here
-        client = get_db_client()
-        if client:
-            await load_sessions() # Load latest sessions
-            await reset_mode(user_id) # This now saves the session
-        else:
-            logger.error("Could not get DB client in background task to reset mode.")
 
 
     elif callback_data == "sticker:simple:edit":
