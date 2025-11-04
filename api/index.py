@@ -453,7 +453,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif callback_data == "sticker:simple":
         current_sess = await sess(user_id)
         current_sess['sticker_mode'] = 'simple'
-        current_sess['sticker_data'] = {}
+        current_sess['sticker_data'] = {
+            "v_pos": "center", "h_pos": "center", "font_key": "Default",
+            "color_hex": "#FFFFFF", "size_key": "medium", "bg_photo": None
+        }
         await save_sessions()
         await query.edit_message_text("لطفاً متن استیکر ساده را ارسال کنید:")
 
@@ -463,7 +466,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         current_sess = await sess(user_id)
         current_sess['sticker_mode'] = 'advanced'
-        current_sess['sticker_data'] = {"v_pos": "center", "h_pos": "center", "font": "Default", "color": "#FFFFFF", "size": "large", "bg_photo_bytes": None}
+        current_sess['sticker_data'] = {"v_pos": "center", "h_pos": "center", "font_key": "Default", "color_hex": "#FFFFFF", "size_key": "large", "bg_photo": None}
         await save_sessions()
         await query.edit_message_text("لطفاً متن استیکر پیشرفته را ارسال کنید:")
 
@@ -489,9 +492,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         elif action == 'hpos':
             sticker_data['h_pos'] = parts[2]
         elif action == 'color':
-            sticker_data['color'] = parts[2]
+            sticker_data['color_hex'] = parts[2]
         elif action == 'size':
-            sticker_data['size'] = parts[2]
+            sticker_data['size_key'] = parts[2]
 
         await save_sessions()
 
@@ -506,7 +509,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             keyboard = [[InlineKeyboardButton("کوچک", callback_data="sticker_adv:size:small"), InlineKeyboardButton("متوسط", callback_data="sticker_adv:size:medium"), InlineKeyboardButton("بزرگ", callback_data="sticker_adv:size:large")]]
             await query.edit_message_text("اندازه فونت را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
         elif action == 'size':
-            img_bytes = await render_image(text=sticker_data.get("text", "پیش‌نمایش"), **sticker_data)
+            preview_data = sticker_data.copy()
+            preview_text = preview_data.pop("text", "پیش‌نمایش")
+            # Ensure all keys are present for robustness
+            defaults = {
+                "v_pos": "center", "h_pos": "center", "font_key": "Default",
+                "color_hex": "#FFFFFF", "size_key": "medium", "bg_photo": None
+            }
+            defaults.update(preview_data)
+            img_bytes = await render_image(text=preview_text, **defaults)
             await query.message.reply_photo(photo=InputFile(img_bytes, filename="preview.png"), caption="این هم پیش‌نمایش. آیا تایید می‌کنید؟", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ تایید", callback_data="sticker:confirm"), InlineKeyboardButton("✏️ ویرایش", callback_data="sticker:advanced:edit")]]))
 
     elif callback_data == "sticker:advanced:edit" or callback_data == "sticker:advanced:restart_edit":
@@ -527,14 +538,23 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             u["ai_used"] = u.get("ai_used", 0) + 1
             await save_data()
 
-        img_bytes_png = await render_image(**sticker_data, as_webp=False)
+        # Final render with safety defaults
+        final_data = sticker_data.copy()
+        final_text = final_data.pop("text", "") # text must exist here, but pop for safety
+        defaults = {
+            "v_pos": "center", "h_pos": "center", "font_key": "Default",
+            "color_hex": "#FFFFFF", "size_key": "medium", "bg_photo": None
+        }
+        defaults.update(final_data)
+
+        img_bytes_png = await render_image(text=final_text, **defaults, as_webp=False)
 
         try:
             uploaded_sticker = await context.bot.upload_sticker_file(user_id=user_id, sticker=InputFile(img_bytes_png, "sticker.png"), sticker_format="static")
             await context.bot.add_sticker_to_set(user_id=user_id, name=pack_short_name, sticker=InputSticker(sticker=uploaded_sticker.file_id, emoji_list=["😃"]))
 
             pack_link = f"https://t.me/addstickers/{pack_short_name}"
-            img_bytes_webp = await render_image(**sticker_data, as_webp=True)
+            img_bytes_webp = await render_image(text=final_text, **defaults, as_webp=True)
             await query.message.delete()
             await query.message.reply_sticker(sticker=InputFile(img_bytes_webp, filename="sticker.webp"))
 
@@ -605,7 +625,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = await photo_file.download_as_bytearray()
         sticker_data = current_sess.get("sticker_data", {})
-        sticker_data["bg_photo_bytes"] = bytes(photo_bytes)
+        sticker_data["bg_photo"] = bytes(photo_bytes)
         current_sess["mode"] = "main"
         await save_sessions()
         keyboard = [[InlineKeyboardButton("بالا", callback_data="sticker_adv:vpos:top"), InlineKeyboardButton("وسط", callback_data="sticker_adv:vpos:center"), InlineKeyboardButton("پایین", callback_data="sticker_adv:vpos:bottom")]]
@@ -708,7 +728,15 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await save_sessions()
 
         if current_sess["sticker_mode"] == "simple":
-            img_bytes = await render_image(**sticker_data, as_webp=False)
+            preview_data = sticker_data.copy()
+            preview_text = preview_data.pop("text", "پیش‌نمایش")
+            # Ensure all keys are present for robustness
+            defaults = {
+                "v_pos": "center", "h_pos": "center", "font_key": "Default",
+                "color_hex": "#FFFFFF", "size_key": "medium", "bg_photo": None
+            }
+            defaults.update(preview_data)
+            img_bytes = await render_image(text=preview_text, **defaults, as_webp=False)
             await update.message.reply_photo(photo=InputFile(img_bytes, filename="preview.png"), caption="این هم پیش‌نمایش. آیا تایید می‌کنید؟", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ تایید", callback_data="sticker:confirm"), InlineKeyboardButton("✏️ ویرایش", callback_data="sticker:simple:edit")]]))
         else:
             keyboard = [[InlineKeyboardButton("🏞 بله، عکس ارسال می‌کنم", callback_data="sticker_adv:custom_bg:yes"), InlineKeyboardButton(" خیر، ادامه می‌دهم", callback_data="sticker_adv:custom_bg:no")]]
