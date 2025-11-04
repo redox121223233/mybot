@@ -753,32 +753,13 @@ def setup_application(application):
 from flask import Flask, request, jsonify
 app = Flask(__name__)
 
-@app.route('/webhook', methods=['POST'])
-async def webhook():
+async def main_async():
+    """The main asynchronous logic of the bot."""
     logger.info("Webhook received.")
-    # Crucial check: Ensure database is configured before proceeding
     client = get_db_client()
     if not client:
-        logger.error("Database client is not available. Aborting webhook processing.")
-        # Try to inform the user about the misconfiguration
-        try:
-            update_data = request.get_json()
-            chat_id = update_data['message']['chat']['id']
-            # This is a raw API call because the application isn't fully set up
-            TELEGRAM_TOKEN = os.getenv('BOT_TOKEN') or os.getenv('TELEGRAM_BOT_TOKEN')
-            if TELEGRAM_TOKEN:
-                error_message = (
-                    "**خطای جدی در پیکربندی ربات!**\n\n"
-                    "متغیر محیطی `UPSTASH_REDIS_URL` در تنظیمات Vercel یافت نشد.\n\n"
-                    "لطفاً به داشبورد پروژه خود در Vercel بروید، وارد بخش Settings -> Environment Variables شوید و این متغیر را با مقداری که از سایت Upstash دریافت کرده‌اید، تنظیم کنید."
-                )
-                async with httpx.AsyncClient() as http_client:
-                    await http_client.post(
-                        f"https://api.telegram.org/bot{TELEGRAM_TOKEN}/sendMessage",
-                        json={"chat_id": chat_id, "text": error_message, "parse_mode": "Markdown"}
-                    )
-        except Exception as e:
-            logger.error(f"Failed to send configuration error to user: {e}")
+        logger.error("Database client is not available.")
+        # We cannot easily send a message back here, so we log and exit.
         return jsonify(status="error", message="Database not configured"), 500
 
     logger.info("Loading data and sessions...")
@@ -802,7 +783,7 @@ async def webhook():
         logger.info("Application initialized.")
 
         logger.info("Processing update...")
-        update = Update.de_json(request.get_json(), application.bot)
+        update = Update.de_json(request.get_json(force=True), application.bot)
         await application.process_update(update)
         logger.info("Update processed.")
 
@@ -813,9 +794,17 @@ async def webhook():
         return jsonify(status="ok"), 200
     except Exception as e:
         logger.error(f"!!! CRITICAL ERROR processing webhook: {e}", exc_info=True)
-        if application.is_initialized:
+        if 'application' in locals() and application.is_initialized:
             await application.shutdown()
         return jsonify(status="error", message=str(e)), 500
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    """
+    This is the synchronous entry point for Vercel.
+    It runs the main asynchronous logic using asyncio.run().
+    """
+    return asyncio.run(main_async())
 
 @app.route('/')
 def index():
