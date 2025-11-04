@@ -304,22 +304,9 @@ def _parse_hex(hx: str) -> tuple[int, int, int, int]:
 async def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: str, size_key: str, bg_mode: str = "transparent", bg_photo: bytes | None = None, bg_photo_b64: str | None = None, as_webp: bool = False) -> bytes:
     W, H = (512, 512)
 
-    photo_bytes = None
-    if bg_photo_b64:
-        try:
-            photo_bytes = base64.b64decode(bg_photo_b64)
-        except Exception:
-            logger.error("Failed to decode base64 background image.")
-    elif bg_photo: # For backward compatibility or other uses
-        photo_bytes = bg_photo
-
-    if photo_bytes:
-        try:
-            img = Image.open(io.BytesIO(photo_bytes)).convert("RGBA").resize((W, H))
-        except Exception:
-            img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    else:
-        img = Image.new("RGBA", (W, H), (0, 0, 0, 0) if bg_mode == "transparent" else (255, 255, 255, 255))
+    # --- DIAGNOSTIC: Force transparent background to isolate Pillow crash ---
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    logger.warning("DIAGNOSTIC MODE: Forcing transparent background.")
 
     draw = ImageDraw.Draw(img)
     color = _parse_hex(color_hex)
