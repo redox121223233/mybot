@@ -561,8 +561,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         img_bytes_png = await render_image(text=final_text, **defaults, as_webp=False)
 
         try:
+            logger.info(f"Attempting to upload sticker file for user {user_id}.")
             uploaded_sticker = await context.bot.upload_sticker_file(user_id=user_id, sticker=InputFile(img_bytes_png, "sticker.png"), sticker_format="static")
+            logger.info(f"Sticker file uploaded successfully. File ID: {uploaded_sticker.file_id}")
+
+            logger.info(f"Attempting to add sticker to set {pack_short_name}.")
             await context.bot.add_sticker_to_set(user_id=user_id, name=pack_short_name, sticker=InputSticker(sticker=uploaded_sticker.file_id, emoji_list=["😃"]))
+            logger.info(f"Sticker added to set {pack_short_name} successfully.")
 
             pack_link = f"https://t.me/addstickers/{pack_short_name}"
             img_bytes_webp = await render_image(text=final_text, **defaults, as_webp=True)
