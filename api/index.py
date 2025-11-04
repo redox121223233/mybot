@@ -579,6 +579,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             uploaded_sticker = await context.bot.upload_sticker_file(user_id=user_id, sticker=InputFile(img_bytes_png, "sticker.png"), sticker_format="static")
             logger.info(f"Sticker file uploaded successfully. File ID: {uploaded_sticker.file_id}")
 
+            # --- Wait for 5 seconds to avoid Telegram API rate limits ---
+            logger.info("Waiting for 5 seconds before adding to set...")
+            await asyncio.sleep(5)
+
             logger.info(f"Attempting to add sticker to set {pack_short_name}.")
             await context.bot.add_sticker_to_set(user_id=user_id, name=pack_short_name, sticker=InputSticker(sticker=uploaded_sticker.file_id, emoji_list=["😃"]))
             logger.info(f"Sticker added to set {pack_short_name} successfully.")
@@ -592,6 +596,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_text(f"استیکر با موفقیت اضافه شد!\n\n{pack_link}\n\nآیا از نتیجه راضی بودید؟", reply_markup=InlineKeyboardMarkup(poll_keyboard))
             await reset_mode(user_id)
         except Exception as e:
+            logger.error(f"Failed to add sticker for user {user_id} to pack {pack_short_name}. Error: {e}", exc_info=True)
             await query.message.reply_text(f"خطا در اضافه کردن استیکر: {e}")
             await reset_mode(user_id)
 
