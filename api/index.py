@@ -546,6 +546,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         keyboard = [[InlineKeyboardButton("بالا", callback_data="sticker_adv:vpos:top"), InlineKeyboardButton("وسط", callback_data="sticker_adv:vpos:center"), InlineKeyboardButton("پایین", callback_data="sticker_adv:vpos:bottom")]]
         await query.edit_message_text("موقعیت عمودی متن را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
 
+import secrets
+
     elif callback_data == "sticker:confirm":
         # --- STAGE 1 of 2: Render and Upload ---
         await query.edit_message_caption("⏳ در حال پردازش و آپلود اولیه استیکر...", reply_markup=None)
@@ -569,6 +571,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             uploaded_sticker = await context.bot.upload_sticker_file(user_id=user_id, sticker=InputFile(img_bytes_png, "sticker.png"), sticker_format="static")
             logger.info(f"Sticker file uploaded successfully. File ID: {uploaded_sticker.file_id}")
 
+            # Generate a short, secure key to reference the file_id
+            lookup_key = secrets.token_urlsafe(8)
+
+            # Store the file_id in the session
+            if 'pending_stickers' not in current_sess:
+                current_sess['pending_stickers'] = {}
+            current_sess['pending_stickers'][lookup_key] = uploaded_sticker.file_id
+            await save_sessions()
+
             # Deduct quota now
             if current_sess.get("sticker_mode") == "advanced" and user_id != ADMIN_ID:
                 u = await user(user_id)
@@ -576,7 +587,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await save_data()
 
             # Now, send the confirmation message with the new button
-            keyboard = [[InlineKeyboardButton("✅ افزودن به پک", callback_data=f"add_sticker:{uploaded_sticker.file_id}")]]
+            keyboard = [[InlineKeyboardButton("✅ افزودن به پک", callback_data=f"add_sticker:{lookup_key}")]]
             await query.message.reply_text(
                 "✅ استیکر شما با موفقیت ساخته و آپلود شد!\n\n"
                 "برای اضافه کردن نهایی به پک، دکمه زیر را فشار دهید.",
@@ -591,7 +602,17 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # --- STAGE 2 of 2: Add to Set ---
         await query.edit_message_text("⏳ در حال اضافه کردن استیکر به پک...", reply_markup=None)
 
-        file_id = callback_data.split(":")[-1]
+        lookup_key = callback_data.split(":")[-1]
+        current_sess = await sess(user_id)
+
+        # Retrieve the file_id from the session
+        pending_stickers = current_sess.get('pending_stickers', {})
+        file_id = pending_stickers.get(lookup_key)
+
+        if not file_id:
+            await query.message.reply_text("خطا: اطلاعات استیکر یافت نشد. ممکن است منقضی شده باشد. لطفاً دوباره تلاش کنید.")
+            return
+
         pack_short_name = await get_current_pack_short_name(user_id)
 
         if not pack_short_name:
@@ -606,7 +627,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             pack_link = f"https://t.me/addstickers/{pack_short_name}"
             await query.message.reply_text(f"✅ استیکر شما با موفقیت به پک اضافه شد!\n\n{pack_link}")
 
-            # Reset user mode after the final, successful step
+            # Clean up the used key and reset user mode
+            pending_stickers.pop(lookup_key, None)
+            await save_sessions()
             await reset_mode(user_id)
 
         except Exception as e:
