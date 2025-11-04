@@ -567,6 +567,12 @@ import secrets
 
             img_bytes_png = await render_image(text=final_text, **defaults, as_webp=False)
 
+            # --- Memory Optimization ---
+            # Clear the large background photo data from the session immediately after use.
+            if 'bg_photo_b64' in current_sess.get('sticker_data', {}):
+                del current_sess['sticker_data']['bg_photo_b64']
+                logger.info("Cleared background photo from session to conserve memory.")
+
             logger.info(f"Uploading sticker file for user {user_id} (Stage 1)...")
             uploaded_sticker = await context.bot.upload_sticker_file(user_id=user_id, sticker=InputFile(img_bytes_png, "sticker.png"), sticker_format="static")
             logger.info(f"Sticker file uploaded successfully. File ID: {uploaded_sticker.file_id}")
