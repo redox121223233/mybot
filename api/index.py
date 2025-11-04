@@ -547,6 +547,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await query.edit_message_text("موقعیت عمودی متن را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
 
     elif callback_data == "sticker:confirm":
+        # Immediately edit the message to show a waiting state
+        await query.edit_message_caption("...لطفاً چند لحظه صبر کنید")
+
         current_sess = await sess(user_id)
         sticker_data = current_sess.get('sticker_data', {})
         pack_short_name = await get_current_pack_short_name(user_id)
@@ -555,7 +558,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("خطا: پکی انتخاب نشده است. لطفاً دوباره شروع کنید.")
             return
 
-        if current_sess.get("sticker_mode") == "advanced":
+        if current_sess.get("sticker_mode") == "advanced" and user_id != ADMIN_ID:
             u = await user(user_id)
             u["ai_used"] = u.get("ai_used", 0) + 1
             await save_data()
@@ -662,8 +665,18 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         current_sess["mode"] = "main"
         await save_sessions()
 
-        keyboard = [[InlineKeyboardButton("بالا", callback_data="sticker_adv:vpos:top"), InlineKeyboardButton("وسط", callback_data="sticker_adv:vpos:center"), InlineKeyboardButton("پایین", callback_data="sticker_adv:vpos:bottom")]]
-        await update.message.reply_text("عکس پس‌زمینه دریافت شد. حالا موقعیت عمودی متن را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
+        # After receiving photo, proceed based on sticker mode
+        if current_sess.get("sticker_mode") == "simple":
+            # For simple stickers, show preview immediately
+            preview_data = sticker_data.copy()
+            preview_text = preview_data.pop("text", "پیش‌نمایش")
+            defaults = { "v_pos": "center", "h_pos": "center", "font_key": "Default", "color_hex": "#FFFFFF", "size_key": "medium" }
+            defaults.update(preview_data)
+            img_bytes = await render_image(text=preview_text, **defaults, as_webp=False)
+            await update.message.reply_photo(photo=InputFile(img_bytes, filename="preview.png"), caption="این هم پیش‌نمایش. آیا تایید می‌کنید؟", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ تایید", callback_data="sticker:confirm"), InlineKeyboardButton("✏️ ویرایش", callback_data="sticker:simple:edit")]]))
+        else: # Advanced mode
+            keyboard = [[InlineKeyboardButton("بالا", callback_data="sticker_adv:vpos:top"), InlineKeyboardButton("وسط", callback_data="sticker_adv:vpos:center"), InlineKeyboardButton("پایین", callback_data="sticker_adv:vpos:bottom")]]
+            await update.message.reply_text("عکس پس‌زمینه دریافت شد. حالا موقعیت عمودی متن را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
 
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.photo:
