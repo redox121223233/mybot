@@ -887,12 +887,13 @@ def index():
     return "Bot is running!"
 
 @app.route('/process_sticker', methods=['POST'])
-def process_sticker_webhook():
+async def process_sticker_webhook():
     """
     This endpoint is called internally to process the sticker creation in a separate function.
     This helps to avoid the 10-second timeout on the main webhook.
+    It's an async Flask route for better stability on Vercel.
     """
-    data = request.get_json(force=True)
+    data = await request.get_json()
     user_id = data.get('user_id')
     pack_short_name = data.get('pack_short_name')
     sticker_data = data.get('sticker_data')
@@ -901,13 +902,7 @@ def process_sticker_webhook():
         logger.error("process_sticker webhook received incomplete data.")
         return jsonify(status="error", message="Incomplete data"), 400
 
-    # We need to run this in a new async event loop
-    return asyncio.run(process_sticker_async(user_id, pack_short_name, sticker_data))
-
-async def process_sticker_async(user_id, pack_short_name, sticker_data):
-    """The async part of the sticker processing."""
     logger.info(f"Starting background processing for user {user_id}...")
-    # Essential setup to use the bot context outside of the main webhook
     TELEGRAM_TOKEN = os.getenv('BOT_TOKEN') or os.getenv('TELEGRAM_BOT_TOKEN')
     if not TELEGRAM_TOKEN:
         logger.error("No Telegram token found for background task!")
@@ -916,18 +911,14 @@ async def process_sticker_async(user_id, pack_short_name, sticker_data):
     application = Application.builder().token(TELEGRAM_TOKEN).build()
 
     try:
-        # We don't need to initialize the full dispatcher, just the bot
         await application.bot.initialize()
-
-        # The context object is not easily available here, so we pass the bot object directly.
-        # We will need to adapt the create_sticker_task to accept the bot object.
         await create_sticker_task(user_id, pack_short_name, sticker_data, application.bot)
-
         await application.bot.shutdown()
+
         logger.info(f"Background processing finished for user {user_id}.")
         return jsonify(status="ok"), 200
     except Exception as e:
         logger.error(f"!!! CRITICAL ERROR in background processing: {e}", exc_info=True)
-        if 'application' in locals() and application.bot.is_initialized:
+        if 'application' in locals() and hasattr(application, 'bot') and application.bot.is_initialized:
             await application.bot.shutdown()
         return jsonify(status="error", message=str(e)), 500
