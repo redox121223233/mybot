@@ -11,6 +11,7 @@ import asyncio
 import random
 import tempfile
 import io
+import base64
 from datetime import datetime
 import httpx
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, InputSticker
@@ -300,11 +301,21 @@ def _parse_hex(hx: str) -> tuple[int, int, int, int]:
         b = int(hx[4:6], 16)
     return (r, g, b, 255)
 
-async def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: str, size_key: str, bg_mode: str = "transparent", bg_photo: bytes | None = None, as_webp: bool = False) -> bytes:
+async def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: str, size_key: str, bg_mode: str = "transparent", bg_photo: bytes | None = None, bg_photo_b64: str | None = None, as_webp: bool = False) -> bytes:
     W, H = (512, 512)
-    if bg_photo:
+
+    photo_bytes = None
+    if bg_photo_b64:
         try:
-            img = Image.open(io.BytesIO(bg_photo)).convert("RGBA").resize((W, H))
+            photo_bytes = base64.b64decode(bg_photo_b64)
+        except Exception:
+            logger.error("Failed to decode base64 background image.")
+    elif bg_photo: # For backward compatibility or other uses
+        photo_bytes = bg_photo
+
+    if photo_bytes:
+        try:
+            img = Image.open(io.BytesIO(photo_bytes)).convert("RGBA").resize((W, H))
         except Exception:
             img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     else:
@@ -624,10 +635,17 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if current_sess.get("mode") == "awaiting_custom_bg":
         photo_file = await update.message.photo[-1].get_file()
         photo_bytes = await photo_file.download_as_bytearray()
+
+        # Encode to Base64 to make it JSON serializable
+        encoded_photo = base64.b64encode(bytes(photo_bytes)).decode('utf-8')
+
         sticker_data = current_sess.get("sticker_data", {})
-        sticker_data["bg_photo"] = bytes(photo_bytes)
+        sticker_data["bg_photo_b64"] = encoded_photo # Store as a new key
+        sticker_data.pop("bg_photo", None) # Remove old raw bytes key if it exists
+
         current_sess["mode"] = "main"
         await save_sessions()
+
         keyboard = [[InlineKeyboardButton("بالا", callback_data="sticker_adv:vpos:top"), InlineKeyboardButton("وسط", callback_data="sticker_adv:vpos:center"), InlineKeyboardButton("پایین", callback_data="sticker_adv:vpos:bottom")]]
         await update.message.reply_text("عکس پس‌زمینه دریافت شد. حالا موقعیت عمودی متن را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
 
