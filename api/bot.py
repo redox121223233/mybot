@@ -103,7 +103,7 @@ class TelegramBotFeatures:
             img = img.resize((512, 512))
             draw = ImageDraw.Draw(img)
             try:
-                font = ImageFont.truetype("fonts/Vazirmatn-Regular.ttf", font_size)
+                font = ImageFont.truetype("../fonts/Vazirmatn-Regular.ttf", font_size)
             except IOError:
                 font = ImageFont.load_default()
 
@@ -244,7 +244,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Add background if needed
         if user_data.get("background") == "bg_default":
-            background = Image.open("assets/default_background.png")
+            background = Image.open("../assets/default_background.png")
             img = Image.open(photo_stream).convert("RGBA")
             background.paste(img, (0, 0), img)
             photo_stream = io.BytesIO()
@@ -380,7 +380,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif query.data == "sticker_creator":
         user_data["state"] = "awaiting_pack_name"
-        pack_name_rules = """
+        pack_name_rules = r"""
 لطفاً یک نام برای بسته استیکر خود وارد کنید.
 
 **قوانین نام‌گذاری:**
@@ -414,7 +414,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         # Add background if needed
         if user_data.get("background") == "bg_default":
-            background = Image.open("assets/default_background.png")
+            background = Image.open("../assets/default_background.png")
             img = Image.open(photo_stream).convert("RGBA")
             background.paste(img, (0, 0), img)
             photo_stream = io.BytesIO()
@@ -466,7 +466,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     user_packs.append(full_pack_name)
                 user_data["packs"] = user_packs
 
-                quota_data = user_data.get("quota", {})
+                quota_data = context.bot_data["quotas"][user_id]
                 remaining_quota = quota_data.get("simple" if sticker_type == "simple" else "advanced", 0)
                 user_data["state"] = "awaiting_sticker_image"
 
