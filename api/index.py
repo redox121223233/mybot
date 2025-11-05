@@ -11,16 +11,10 @@ import asyncio
 import random
 import tempfile
 import io
-import base64
 from datetime import datetime
-import httpx
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, InputSticker
-from telegram.error import BadRequest
-import re
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
-import arabic_reshaper
-from bidi.algorithm import get_display
+from PIL import Image, ImageDraw, ImageFont
 
 # Configure logging
 logging.basicConfig(
@@ -29,887 +23,744 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-ADMIN_ID = 6053579919
-SUPPORT_USERNAME = "@onedaytoalive"
+# Global variables for user states
+user_states = {}
 
-# ============ Data Persistence (Upstash REST API) ============
-
-USERS: dict[int, dict] = {}
-SESSIONS: dict[int, dict] = {}
-
-class UpstashRedisREST:
-    def __init__(self, url: str, token: str):
-        self.url = url
-        self.headers = {"Authorization": f"Bearer {token}"}
-
-    async def get(self, key: str) -> str | None:
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.get(f"{self.url}/get/{key}", headers=self.headers)
-                response.raise_for_status()
-                result = response.json().get("result")
-                return result
-            except httpx.HTTPStatusError as e:
-                logger.error(f"Upstash GET error for key '{key}': {e.response.text}")
-                return None
-            except Exception as e:
-                logger.error(f"Upstash GET failed for key '{key}': {e}")
-                return None
-
-    async def set(self, key: str, value: str):
-        async with httpx.AsyncClient() as client:
-            try:
-                response = await client.post(f"{self.url}/set/{key}", headers=self.headers, data=value)
-                response.raise_for_status()
-            except httpx.HTTPStatusError as e:
-                logger.error(f"Upstash SET error for key '{key}': {e.response.text}")
-            except Exception as e:
-                logger.error(f"Upstash SET failed for key '{key}': {e}")
-
-db_client = None
-
-def get_db_client():
-    global db_client
-    if db_client is None:
-        url = os.environ.get("UPSTASH_REDIS_REST_URL")
-        token = os.environ.get("UPSTASH_REDIS_REST_TOKEN")
-        if not url or not token:
-            logger.error("Upstash environment variables not found.")
-            return None
-        db_client = UpstashRedisREST(url, token)
-    return db_client
-
-async def load_data():
-    global USERS
-    client = get_db_client()
-    if not client:
-        USERS = {}
-        return
-    try:
-        data_str = await client.get("USERS")
-        if data_str:
-            USERS = {int(k): v for k, v in json.loads(data_str).items()}
-        else:
-            USERS = {}
-    except Exception as e:
-        logger.error(f"Failed to load user data from Upstash: {e}")
-        USERS = {}
-
-async def save_data():
-    client = get_db_client()
-    if not client:
-        return
-    try:
-        await client.set("USERS", json.dumps(USERS))
-    except Exception as e:
-        logger.error(f"Failed to save user data to Upstash: {e}")
-
-async def load_sessions():
-    global SESSIONS
-    client = get_db_client()
-    if not client:
-        SESSIONS = {}
-        return
-    try:
-        data_str = await client.get("SESSIONS")
-        if data_str:
-            SESSIONS = {int(k): v for k, v in json.loads(data_str).items()}
-        else:
-            SESSIONS = {}
-    except Exception as e:
-        logger.error(f"Failed to load session data from Upstash: {e}")
-        SESSIONS = {}
-
-async def save_sessions():
-    client = get_db_client()
-    if not client:
-        return
-    try:
-        await client.set("SESSIONS", json.dumps(SESSIONS))
-    except Exception as e:
-        logger.error(f"Failed to save session data to Upstash: {e}")
-
-
-async def user(uid: int) -> dict:
-    if uid not in USERS:
-        USERS[uid] = { "packs": [], "current_pack": None, "daily_limit": 3, "ai_used": 0, "day_start": 0 }
-        await save_data()
-    return USERS[uid]
-
-async def sess(uid: int) -> dict:
-    if uid not in SESSIONS:
-        SESSIONS[uid] = { "mode": "main", "sticker_data": {} }
-        await save_sessions()
-    return SESSIONS[uid]
-
-async def reset_mode(uid: int):
-    SESSIONS[uid] = { "mode": "main", "sticker_data": {} }
-    await save_sessions()
-
-# ============ Sticker Pack Management ============
-async def get_user_packs(uid: int) -> list:
-    u = await user(uid)
-    return u.get("packs", [])
-
-async def add_user_pack(uid: int, pack_name: str, pack_short_name: str):
-    u = await user(uid)
-    packs = u.get("packs", [])
-    if not any(p['short_name'] == pack_short_name for p in packs):
-        packs.append({"name": pack_name, "short_name": pack_short_name})
-    u["packs"] = packs
-    u["current_pack"] = pack_short_name
-    await save_data()
-
-async def set_current_pack(uid: int, pack_short_name: str):
-    u = await user(uid)
-    u["current_pack"] = pack_short_name
-    await save_data()
-
-from datetime import datetime, timezone
-
-def _today_start_ts() -> int:
-    now = datetime.now(timezone.utc)
-    midnight = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
-    return int(midnight.timestamp())
-
-async def _reset_daily_if_needed(u: dict):
-    day_start = u.get("day_start", 0)
-    today = _today_start_ts()
-    if day_start < today:
-        u["day_start"] = today
-        u["ai_used"] = 0
-        await save_data()
-
-async def _quota_left(uid: int) -> int:
-    u = await user(uid)
-    await _reset_daily_if_needed(u)
-    limit = u.get("daily_limit", 3)
-    return max(0, limit - u.get("ai_used", 0))
-
-async def _seconds_to_reset(uid: int) -> int:
-    u = await user(uid)
-    await _reset_daily_if_needed(u)
-    now = int(datetime.now(timezone.utc).timestamp())
-    end = u.get("day_start", 0) + 86400
-    return max(0, end - now)
-
-def _fmt_eta(secs: int) -> str:
-    h = secs // 3600
-    m = (secs % 3600) // 60
-    if h <= 0 and m <= 0: return "کمتر از ۱ دقیقه"
-    if h <= 0: return f"{m} دقیقه"
-    if m == 0: return f"{h} ساعت"
-    return f"{h} ساعت و {m} دقیقه"
-
-CHANNEL_USERNAME = "@redoxbot_sticker"
-
-async def require_channel_membership(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    user_id = update.effective_user.id
-    try:
-        member = await context.bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
-        if member.status in ["member", "administrator", "creator"]:
-            return True
-    except Exception:
-        pass
-
-    keyboard = [
-        [InlineKeyboardButton("عضویت در کانال", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}")],
-        [InlineKeyboardButton("✅ بررسی عضویت", callback_data="check_membership")]
-    ]
-
-    text = f"برای استفاده از ربات، لطفاً ابتدا در کانال ما عضو شوید:\n{CHANNEL_USERNAME}"
-
-    if update.callback_query:
-        await update.callback_query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-    else:
-        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-    return False
-
-
-async def get_current_pack_short_name(uid: int) -> str | None:
-    u = await user(uid)
-    return u.get("current_pack")
-
-async def check_pack_exists(bot, short_name: str) -> bool:
-    try:
-        await bot.get_sticker_set(name=short_name)
-        return True
-    except Exception:
-        return False
-
-def is_valid_pack_name(name: str) -> bool:
-    if not (1 <= len(name) <= 50):
-        return False
-    if not name[0].isalpha():
-        return False
-    if name.endswith('_'):
-        return False
-    if '__' in name:
-        return False
-    for char in name:
-        if not (char.isalnum() or char == '_'):
-            return False
-    return True
-
-# ============ Font and Rendering Logic ============
-FONT_DIR = os.path.join(os.path.dirname(__file__), "..", "fonts")
-LOCAL_FONT_FILES = {
-    "Vazirmatn": "Vazirmatn-Regular.ttf",
-    "Sahel": "Sahel.ttf",
-    "IRANSans": "IRANSans.ttf",
-    "Roboto": "Roboto-Regular.ttf",
-    "Default": "Vazirmatn-Regular.ttf",
-}
-
-_LOCAL_FONTS = {
-    key: os.path.join(FONT_DIR, path)
-    for key, path in LOCAL_FONT_FILES.items()
-    if os.path.isfile(os.path.join(FONT_DIR, path))
-}
-
-def _prepare_text(text: str) -> str:
-    if not text:
-        return ""
-    reshaped_text = arabic_reshaper.reshape(text)
-    bidi_text = get_display(reshaped_text)
-    return bidi_text
-
-def resolve_font_path(font_key: str, text: str = "") -> str:
-    return _LOCAL_FONTS.get(font_key, _LOCAL_FONTS.get("Default", ""))
-
-def fit_font_size(draw: ImageDraw.ImageDraw, text: str, font_path: str, base: int, max_w: int, max_h: int) -> int:
-    size = base
-    while size > 12:
-        try:
-            font = ImageFont.truetype(font_path, size=size) if font_path else ImageFont.load_default()
-        except Exception:
-            font = ImageFont.load_default()
-        bbox = draw.textbbox((0, 0), text, font=font)
-        tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
-        if tw <= max_w and th <= max_h:
-            return size
-        size -= 1
-    return max(size, 12)
-
-def _parse_hex(hx: str) -> tuple[int, int, int, int]:
-    hx = (hx or "#ffffff").strip().lstrip("#")
-    if len(hx) == 3:
-        r, g, b = [int(c * 2, 16) for c in hx]
-    else:
-        r = int(hx[0:2], 16)
-        g = int(hx[2:4], 16)
-        b = int(hx[4:6], 16)
-    return (r, g, b, 255)
-
-async def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: str, size_key: str, bg_mode: str = "transparent", bg_photo_path: str | None = None, as_webp: bool = False) -> bytes:
-    W, H = (512, 512)
-
-    img = None
-    try:
-        if bg_photo_path and os.path.exists(bg_photo_path):
-            try:
-                img = Image.open(bg_photo_path).convert("RGBA").resize((W, H))
-                logger.info(f"Successfully loaded background image from {bg_photo_path}")
-            except Exception as e:
-                logger.error(f"Failed to open or process image from path {bg_photo_path}: {e}", exc_info=True)
-                # Fallback to transparent if the file is invalid
-                img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-        else:
-            # Default to transparent if no path is provided
-            img = Image.new("RGBA", (W, H), (0, 0, 0, 0) if bg_mode == "transparent" else (255, 255, 255, 255))
-
-        draw = ImageDraw.Draw(img)
-    color = _parse_hex(color_hex)
-    padding = 40
-    box_w, box_h = W - 2 * padding, H - 2 * padding
-    size_map = {"small": 64, "medium": 96, "large": 128}
-    base_size = size_map.get(size_key, 96)
-
-    font_path = resolve_font_path(font_key, text)
-    txt = _prepare_text(text)
-    final_size = fit_font_size(draw, txt, font_path, base_size, box_w, box_h)
-
-    try:
-        font = ImageFont.truetype(font_path, size=final_size) if font_path else ImageFont.load_default()
-    except Exception:
-        font = ImageFont.load_default()
-
-    bbox = draw.textbbox((0, 0), txt, font=font)
-    text_width = bbox[2] - bbox[0]
-    text_height = bbox[3] - bbox[1]
-
-    if v_pos == "top": y = padding
-    elif v_pos == "bottom": y = H - padding - text_height
-    else: y = (H - text_height) / 2
-
-    if h_pos == "left": x = padding
-    elif h_pos == "right": x = W - padding - text_width
-    else: x = W / 2
-
-    draw.text((x, y), txt, font=font, fill=color, anchor="mm" if h_pos == "center" else "lm", stroke_width=2, stroke_fill=(0, 0, 0, 220))
-
-    buf = io.BytesIO()
-    img.save(buf, format="WEBP" if as_webp else "PNG")
-    return buf.getvalue()
-    finally:
-        # --- Cleanup: Ensure the temporary file is always deleted ---
-        if bg_photo_path and os.path.exists(bg_photo_path):
-            try:
-                os.remove(bg_photo_path)
-                logger.info(f"Successfully cleaned up temporary file: {bg_photo_path}")
-            except Exception as e:
-                logger.error(f"Failed to clean up temporary file {bg_photo_path}: {e}", exc_info=True)
-
-# ============ Bot Features Class ============
 class TelegramBotFeatures:
-    
-    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        welcome_text = """🎉 به ربات استیکر ساز خوش آمدید! 🎉
+    """Complete bot features class"""
 
-از منوی زیر یکی از گزینه‌ها را انتخاب کنید:
+    def __init__(self):
+        self.user_data = {}
+        self.coupons = self.load_coupons()
+        self.music_data = self.load_music_data()
+
+    def load_coupons(self):
+        return [
+            {"code": "SAVE10", "discount": "10%", "category": "electronics"},
+            {"code": "FOOD20", "discount": "20%", "category": "food"},
+            {"code": "STYLE15", "discount": "15%", "category": "fashion"},
+            {"code": "TECH25", "discount": "25%", "category": "technology"},
+            {"code": "HOME30", "discount": "30%", "category": "home"},
+        ]
+
+    def load_music_data(self):
+        return {
+            "pop": ["Artist1 - Song1", "Artist2 - Song2", "Artist3 - Song3"],
+            "rock": ["Band1 - Track1", "Band2 - Track2", "Band3 - Track3"],
+            "classical": ["Composer1 - Piece1", "Composer2 - Piece2", "Composer3 - Piece3"],
+            "jazz": ["JazzArtist1 - JazzSong1", "JazzArtist2 - JazzSong2", "JazzArtist3 - JazzSong3"],
+        }
+
+    async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        welcome_text = """🎉 به ربات من خوش آمدید! 🎉
+
+🎮 **بازی‌ها و سرگرمی‌ها:**
+• 🔢 حدس عدد - یک عدد بین ۱ تا ۱۰۰ را حدس بزنید
+• ✂️ سنگ کاغذ قیچی - بازی کلاسیک
+• 📝 بازی کلمات - حدس کلمات
+• 🧠 بازی حافظه - تست حافظه شما
+• 🎲 بازی تصادفی - شانس خود را امتحان کنید
+
+🎨 **سازنده استیکر:**
+• 🖼️ استیکر سریع با دستور /sticker <متن>
+• 🎨 استیکر سفارشی با دستور /customsticker
+
+📚 **راهنما:**
+/help - دیدن تمام دستورات
+
+انتخاب کنید:
 """
-        
+
         keyboard = [
-            [InlineKeyboardButton("🎨 استیکر ساز", callback_data="sticker_creator"), InlineKeyboardButton("🗂 پک‌های من", callback_data="my_packs")],
-            [InlineKeyboardButton("📊 سهمیه من", callback_data="my_quota"), InlineKeyboardButton("📞 پشتیبانی", callback_data="support")],
+            [InlineKeyboardButton("🔢 حدس عدد", callback_data="guess_number")],
+            [InlineKeyboardButton("✂️ سنگ کاغذ قیچی", callback_data="rock_paper_scissors")],
+            [InlineKeyboardButton("📝 بازی کلمات", callback_data="word_game")],
+            [InlineKeyboardButton("🧠 بازی حافظه", callback_data="memory_game")],
+            [InlineKeyboardButton("🎲 بازی تصادفی", callback_data="random_game")],
+            [InlineKeyboardButton("🎨 استیکر ساز", callback_data="sticker_creator")],
             [InlineKeyboardButton("📚 راهنما", callback_data="help")]
         ]
-        if update.effective_user.id == ADMIN_ID:
-            keyboard.append([InlineKeyboardButton("👑 پنل ادمین", callback_data="admin:panel")])
-        
-        reply_markup = InlineKeyboardMarkup(keyboard)
 
-        if update.callback_query:
-            await update.callback_query.edit_message_text(welcome_text, reply_markup=reply_markup)
-        else:
-            await update.message.reply_text(welcome_text, reply_markup=reply_markup)
-    
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.message.reply_text(welcome_text, reply_markup=reply_markup)
+
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         help_text = """📚 **راهنمای کامل ربات:**
 
-🎨 **استیکر ساز:**
-برای ساخت استیکر، از دکمه "استیکر ساز" در منوی اصلی استفاده کنید. شما باید یک پک استیکر بسازید یا یکی از پک‌های موجود خود را انتخاب کنید.
+🎮 **بازی‌ها:**
+/guess - شروع بازی حدس عدد
+/rps - سنگ کاغذ قیچی
+/word - بازی کلمات
+/memory - بازی حافظه
+/random - بازی تصادفی
 
-📞 **پشتیبانی:**
-در صورت بروز مشکل، با پشتیبانی در تماس باشید.
-"""
+🎨 **استیکر ساز:**
+/sticker <متن> - ساخت استیکر سریع
+/customsticker - منوی استیکر ساز سفارشی
+
+💬 **سایر:**
+/start - منوی اصلی
+/help - این راهنما
+
+مثال استیکر:
+/sticker سلام دنیا! 🌍
+
+❓ برای هر سوالی از منوی اصلی استفاده کنید!"""
+
+        await update.message.reply_text(help_text)
+
+    async def create_sticker(self, text, bg_color="white"):
+        """Create a simple text sticker"""
+        try:
+            # Create image
+            img_size = (512, 512)
+            img = Image.new('RGB', img_size, bg_color)
+            draw = ImageDraw.Draw(img)
+
+            # Try to use default font
+            try:
+                font = ImageFont.load_default()
+            except:
+                font = None
+
+            # Calculate text position
+            if font:
+                bbox = draw.textbbox((0, 0), text, font=font)
+                text_width = bbox[2] - bbox[0]
+                text_height = bbox[3] - bbox[1]
+            else:
+                text_width = len(text) * 10
+                text_height = 20
+
+            x = (img_size[0] - text_width) // 2
+            y = (img_size[1] - text_height) // 2
+
+            # Draw text
+            text_color = "black" if bg_color == "white" else "white"
+            draw.text((x, y), text, fill=text_color, font=font)
+
+            # Save to bytes
+            img_bytes = io.BytesIO()
+            img.save(img_bytes, format='PNG')
+            img_bytes.seek(0)
+
+            return img_bytes
+
+        except Exception as e:
+            logger.error(f"Error creating sticker: {e}")
+            return None
+    
+    async def guess_number_game(self):
+        """Setup guess number game"""
+        number = random.randint(1, 100)
+        self.user_data['guess_number'] = number
+        self.user_data['guess_attempts'] = 0
         
-        keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="back_to_main")]]
+        keyboard = [
+            [InlineKeyboardButton("💭 حدس بزن", callback_data="guess_prompt")],
+            [InlineKeyboardButton("💡 راهنمایی", callback_data="guess_hint")],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]
+        ]
+        
+        message = "🔢 **بازی حدس عدد!**\n\nمن یک عدد بین ۱ تا ۱۰۰ انتخاب کردم. حدس شما چیه؟"
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        if update.callback_query:
-            await update.callback_query.edit_message_text(help_text, reply_markup=reply_markup)
-        else:
-            await update.message.reply_text(help_text, reply_markup=reply_markup)
+        return {"message": message, "reply_markup": reply_markup}
 
+    async def check_guess(self, guess):
+        """Check user's guess"""
+        if 'guess_number' not in self.user_data:
+            return {"message": "بازی شروع نشده! /guess رو بزنید", "reply_markup": None}
+
+        number = self.user_data['guess_number']
+        self.user_data['guess_attempts'] += 1
+        attempts = self.user_data['guess_attempts']
+
+        keyboard = [
+            [InlineKeyboardButton("💭 حدس دوباره", callback_data="guess_prompt")],
+            [InlineKeyboardButton("💡 راهنمایی", callback_data="guess_hint")],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        if guess == number:
+            message = f"🎉 **آفرین!**\n\nعدد {number} بود!\nتعداد تلاش‌ها: {attempts}"
+            del self.user_data['guess_number']
+            del self.user_data['guess_attempts']
+            keyboard = [[InlineKeyboardButton("🎮 بازی دوباره", callback_data="guess_number")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+        elif guess < number:
+            message = f"📈 **برو بالاتر!**\n\nحدس شما ({guess}) کوچکتره\nتعداد تلاش‌ها: {attempts}"
+        else:
+            message = f"📉 **برو پایین‌تر!**\n\nحدس شما ({guess}) بزرگتره\nتعداد تلاش‌ها: {attempts}"
+
+        return {"message": message, "reply_markup": reply_markup}
+    
+    async def rock_paper_scissors_game(self):
+        """Setup rock paper scissors game"""
+        keyboard = [
+            [
+                InlineKeyboardButton("✊ سنگ", callback_data="rps_choice_rock"),
+                InlineKeyboardButton("📄 کاغذ", callback_data="rps_choice_paper"),
+                InlineKeyboardButton("✂️ قیچی", callback_data="rps_choice_scissors")
+            ],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]
+        ]
+        
+        message = "✂️ **سنگ کاغذ قیچی!**\n\nانتخاب کنید:"
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        return {"message": message, "reply_markup": reply_markup}
+
+    async def check_rps_choice(self, user_choice):
+        """Check RPS choice"""
+        choices = ["rock", "paper", "scissors"]
+        bot_choice = random.choice(choices)
+
+        choice_emoji = {"rock": "✊", "paper": "📄", "scissors": "✂️"}
+        choice_text = {"rock": "سنگ", "paper": "کاغذ", "scissors": "قیچی"}
+
+        user_emoji = choice_emoji[user_choice]
+        bot_emoji = choice_emoji[bot_choice]
+
+        keyboard = [
+            [InlineKeyboardButton("🎮 بازی دوباره", callback_data="rock_paper_scissors")],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        if user_choice == bot_choice:
+            result = "🤝 **مساوی!**"
+        elif (
+            (user_choice == "rock" and bot_choice == "scissors") or
+            (user_choice == "paper" and bot_choice == "rock") or
+            (user_choice == "scissors" and bot_choice == "paper")
+        ):
+            result = "🎉 **شما بردید!**"
+        else:
+            result = "😔 **من بردم!**"
+
+        message = f"{result}\n\nشما: {user_emoji} {choice_text[user_choice]}\nمن: {bot_emoji} {choice_text[bot_choice]}"
+
+        return {"message": message, "reply_markup": reply_markup}
+
+    async def word_game(self):
+        """Setup word game"""
+        words = ["پرتقال", "موز", "سیب", "هلو", "انگور", "توت", "گیلاس", "آلبالو"]
+        word = random.choice(words)
+        self.user_data['word_game'] = {'word': word, 'attempts': 0, 'max_attempts': 6}
+
+        display = "_ " * len(word)
+
+        keyboard = [
+            [InlineKeyboardButton("💡 راهنمایی", callback_data="word_hint")],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]
+        ]
+
+        message = f"📝 **بازی کلمات!**\n\nکلمه: {display}\nتعداد حدس‌ها: 6"
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        return {"message": message, "reply_markup": reply_markup}
+
+    async def memory_game(self):
+        """Setup memory game"""
+        # Simple memory game implementation
+        numbers = [str(random.randint(1, 9)) for _ in range(5)]
+        self.user_data['memory_game'] = {'sequence': numbers, 'showing': True}
+
+        sequence_str = " - ".join(numbers)
+
+        message = f"🧠 **بازی حافظه!**\n\nاین اعداد رو حفظ کن:\n{sequence_str}\n\n5 ثانیه فرصت داری!"
+        reply_markup = None
+
+        return {"message": message, "reply_markup": reply_markup}
+
+    async def random_game(self):
+        """Setup random game"""
+        games = [
+            {"name": "تاس", "emoji": "🎲", "result": str(random.randint(1, 6))},
+            {"name": "شیر یا خط", "emoji": "🪙", "result": random.choice(["شیر", "خط"])},
+            {"name": "کارت", "emoji": "🃏", "result": random.choice(["آس", "شاه", "بیبی", "دو", "سه", "چهار"])},
+        ]
+
+        selected = random.choice(games)
+
+        keyboard = [
+            [InlineKeyboardButton("🎲 دوباره", callback_data="random_game")],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]
+        ]
+
+        message = f"🎲 **بازی تصادفی!**\n\n{selected['emoji']} {selected['name']}\nنتیجه: {selected['result']}"
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        return {"message": message, "reply_markup": reply_markup}
+
+    async def custom_sticker_menu(self):
+        """Show custom sticker menu"""
+        keyboard = [
+            [
+                InlineKeyboardButton("⚪ سفید", callback_data="sticker_bg_white"),
+                InlineKeyboardButton("⚫ سیاه", callback_data="sticker_bg_black")
+            ],
+            [
+                InlineKeyboardButton("🔵 آبی", callback_data="sticker_bg_blue"),
+                InlineKeyboardButton("🔴 قرمز", callback_data="sticker_bg_red")
+            ],
+            [
+                InlineKeyboardButton("🟢 سبز", callback_data="sticker_bg_green"),
+                InlineKeyboardButton("🟡 زرد", callback_data="sticker_bg_yellow")
+            ],
+            [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]
+        ]
+
+        message = "🎨 **سازنده استیکر سفارشی!**\n\nرنگ پس‌زمینه را انتخاب کنید:"
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        return {"message": message, "reply_markup": reply_markup}
+
+# Initialize bot features
 bot_features = TelegramBotFeatures()
 
 # Handler functions
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await require_channel_membership(update, context): return
+    """Handle /start command"""
     user_id = update.effective_user.id
-    await reset_mode(user_id)
+    user_states[user_id] = {"mode": "main"}
     await bot_features.start_command(update, context)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not await require_channel_membership(update, context): return
+    """Handle /help command"""
     await bot_features.help_command(update, context)
 
+async def sticker_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /sticker command"""
+    if context.args:
+        text = ' '.join(context.args)
+        sticker_bytes = await bot_features.create_sticker(text)
+
+        if sticker_bytes:
+            sticker_bytes.seek(0)
+            await update.message.reply_sticker(
+                sticker=InputFile(sticker_bytes, filename="sticker.png")
+            )
+        else:
+            await update.message.reply_text("❌ خطا در ساخت استیکر!")
+    else:
+        await update.message.reply_text("❌ لطفاً متن استیکر را وارد کنید:\nمثال: /sticker سلام دنیا")
+
+async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /guess command"""
+    game_data = await bot_features.guess_number_game()
+    await update.message.reply_text(
+        game_data["message"],
+        reply_markup=game_data["reply_markup"]
+    )
+
+async def rps_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /rps command"""
+    game_data = await bot_features.rock_paper_scissors_game()
+    await update.message.reply_text(
+        game_data["message"],
+        reply_markup=game_data["reply_markup"]
+    )
+
+async def word_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /word command"""
+    game_data = await bot_features.word_game()
+    await update.message.reply_text(
+        game_data["message"],
+        reply_markup=game_data["reply_markup"]
+    )
+
+async def memory_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /memory command"""
+    game_data = await bot_features.memory_game()
+    await update.message.reply_text(
+        game_data["message"],
+        reply_markup=game_data["reply_markup"]
+    )
+
+async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /random command"""
+    game_data = await bot_features.random_game()
+    await update.message.reply_text(
+        game_data["message"],
+        reply_markup=game_data["reply_markup"]
+    )
+
+async def customsticker_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /customsticker command"""
+    menu_data = await bot_features.custom_sticker_menu()
+    await update.message.reply_text(
+        menu_data["message"],
+        reply_markup=menu_data["reply_markup"]
+    )
+
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle button callbacks"""
     query = update.callback_query
     await query.answer()
     
     user_id = update.effective_user.id
     callback_data = query.data
-
-    if callback_data == "check_membership":
-        if await require_channel_membership(update, context):
-            await query.message.delete()
-            await bot_features.start_command(update, context)
-        else:
-            await query.answer("شما هنوز عضو کانال نیستید.", show_alert=True)
-        return
-
-    if not await require_channel_membership(update, context): return
     
     if callback_data == "back_to_main":
         await bot_features.start_command(update, context)
         return
 
-    elif callback_data == "sticker_creator":
-        packs = await get_user_packs(user_id)
-        keyboard = [[InlineKeyboardButton(f"📦 {p['name']}", callback_data=f"pack:select:{p['short_name']}")] for p in packs]
-        keyboard.append([InlineKeyboardButton("➕ ساخت پک جدید", callback_data="pack:new")])
+    elif callback_data == "guess_number":
+        game_data = await bot_features.guess_number_game()
         await query.edit_message_text(
-            "یک پک استیکر را برای اضافه کردن انتخاب کنید، یا یک پک جدید بسازید:",
-            reply_markup=InlineKeyboardMarkup(keyboard)
+            game_data["message"],
+            reply_markup=game_data["reply_markup"]
         )
 
-    elif callback_data.startswith("pack:select:"):
-        pack_short_name = callback_data.split(":")[-1]
-        await set_current_pack(user_id, pack_short_name)
-        keyboard = [
-            [InlineKeyboardButton("🖼 استیکر ساده", callback_data="sticker:simple")],
-            [InlineKeyboardButton("✨ استیکر پیشرفته", callback_data="sticker:advanced")]
-        ]
-        await query.edit_message_text("نوع استیکر را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
+    elif callback_data == "guess_prompt":
+        keyboard = [[
+            InlineKeyboardButton("ارسال عدد", callback_data="guess_send_number")
+        ]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await query.edit_message_text(
+            "🔢 لطفاً عدد مورد نظر خود را به صورت پیام متنی ارسال کنید (بین 1 تا 100):",
+            reply_markup=reply_markup
+        )
+        if user_id not in user_states:
+            user_states[user_id] = {}
+        user_states[user_id]["waiting_for_guess"] = True
 
-    elif callback_data == "pack:new":
-        current_sess = await sess(user_id)
-        current_sess["mode"] = "pack_create_start"
-        await save_sessions()
-        await query.edit_message_text("""نام پک را بنویس (مثال: my_stickers):
-
-• فقط حروف انگلیسی، عدد و آندرلاین (_)
-• باید با حرف شروع شود
-• نباید با آندرلاین (_) تمام شود
-• نباید دو آندرلاین (__) پشت سر هم داشته باشد
-• حداکثر ۵۰ کاراکتر (به خاطر اضافه شدن نام ربات)""")
-
-    elif callback_data == "sticker:simple":
-        current_sess = await sess(user_id)
-        current_sess['sticker_mode'] = 'simple'
-        current_sess['sticker_data'] = {
-            "v_pos": "center", "h_pos": "center", "font_key": "Default",
-            "color_hex": "#FFFFFF", "size_key": "medium", "bg_photo": None
-        }
-        await save_sessions()
-        await query.edit_message_text("لطفاً متن استیکر ساده را ارسال کنید:")
-
-    elif callback_data == "sticker:advanced":
-        if user_id != ADMIN_ID and await _quota_left(user_id) <= 0:
-            eta_str = _fmt_eta(await _seconds_to_reset(user_id))
-            await query.answer(f"سهمیه شما تمام شده است. زمان بازنشانی: {eta_str}", show_alert=True)
-            return
-        current_sess = await sess(user_id)
-        current_sess['sticker_mode'] = 'advanced'
-        current_sess['sticker_data'] = {"v_pos": "center", "h_pos": "center", "font_key": "Default", "color_hex": "#FFFFFF", "size_key": "large", "bg_photo": None}
-        await save_sessions()
-        await query.edit_message_text("لطفاً متن استیکر پیشرفته را ارسال کنید:")
-
-    elif callback_data.startswith("sticker_adv:"):
-        parts = callback_data.split(':')
-        action = parts[1]
-        current_sess = await sess(user_id)
-        sticker_data = current_sess.get('sticker_data', {})
-
-        if action == 'custom_bg':
-            choice = parts[2]
-            if choice == 'yes':
-                current_sess['mode'] = 'awaiting_custom_bg'
-                await save_sessions()
-                await query.edit_message_text("لطفاً عکس پس‌زمینه را ارسال کنید.")
-            else:
-                # If no custom bg, proceed based on sticker mode
-                if current_sess.get("sticker_mode") == "simple":
-                    # For simple stickers, this is the final step, show preview
-                    preview_data = sticker_data.copy()
-                    preview_text = preview_data.pop("text", "پیش‌نمایش")
-                    defaults = { "v_pos": "center", "h_pos": "center", "font_key": "Default", "color_hex": "#FFFFFF", "size_key": "medium", "bg_photo": None }
-                    defaults.update(preview_data)
-                    img_bytes = await render_image(text=preview_text, **defaults, as_webp=False)
-                    await query.message.reply_photo(photo=InputFile(img_bytes, filename="preview.png"), caption="این هم پیش‌نمایش. آیا تایید می‌کنید؟", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ تایید", callback_data="sticker:confirm"), InlineKeyboardButton("✏️ ویرایش", callback_data="sticker:simple:edit")]]))
-                else: # Advanced mode
-                    keyboard = [[InlineKeyboardButton("بالا", callback_data="sticker_adv:vpos:top"), InlineKeyboardButton("وسط", callback_data="sticker_adv:vpos:center"), InlineKeyboardButton("پایین", callback_data="sticker_adv:vpos:bottom")]]
-                    await query.edit_message_text("موقعیت عمودی متن را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
-            return
-
-        if action == 'vpos':
-            sticker_data['v_pos'] = parts[2]
-        elif action == 'hpos':
-            sticker_data['h_pos'] = parts[2]
-        elif action == 'color':
-            sticker_data['color_hex'] = parts[2]
-        elif action == 'size':
-            sticker_data['size_key'] = parts[2]
-
-        await save_sessions()
-
-        # Determine next step
-        if action == 'vpos':
-            keyboard = [[InlineKeyboardButton("چپ", callback_data="sticker_adv:hpos:left"), InlineKeyboardButton("وسط", callback_data="sticker_adv:hpos:center"), InlineKeyboardButton("راست", callback_data="sticker_adv:hpos:right")]]
-            await query.edit_message_text("موقعیت افقی متن را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
-        elif action == 'hpos':
-            keyboard = [[InlineKeyboardButton("سفید", callback_data="sticker_adv:color:#FFFFFF"), InlineKeyboardButton("مشکی", callback_data="sticker_adv:color:#000000")], [InlineKeyboardButton("قرمز", callback_data="sticker_adv:color:#F43F5E"), InlineKeyboardButton("آبی", callback_data="sticker_adv:color:#3B82F6")]]
-            await query.edit_message_text("رنگ متن را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
-        elif action == 'color':
-            keyboard = [[InlineKeyboardButton("کوچک", callback_data="sticker_adv:size:small"), InlineKeyboardButton("متوسط", callback_data="sticker_adv:size:medium"), InlineKeyboardButton("بزرگ", callback_data="sticker_adv:size:large")]]
-            await query.edit_message_text("اندازه فونت را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
-        elif action == 'size':
-            preview_data = sticker_data.copy()
-            preview_text = preview_data.pop("text", "پیش‌نمایش")
-            # Ensure all keys are present for robustness
-            defaults = {
-                "v_pos": "center", "h_pos": "center", "font_key": "Default",
-                "color_hex": "#FFFFFF", "size_key": "medium", "bg_photo": None
-            }
-            defaults.update(preview_data)
-            img_bytes = await render_image(text=preview_text, **defaults)
-            await query.message.reply_photo(photo=InputFile(img_bytes, filename="preview.png"), caption="این هم پیش‌نمایش. آیا تایید می‌کنید؟", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ تایید", callback_data="sticker:confirm"), InlineKeyboardButton("✏️ ویرایش", callback_data="sticker:advanced:edit")]]))
-
-    elif callback_data == "sticker:advanced:edit" or callback_data == "sticker:advanced:restart_edit":
-        keyboard = [[InlineKeyboardButton("بالا", callback_data="sticker_adv:vpos:top"), InlineKeyboardButton("وسط", callback_data="sticker_adv:vpos:center"), InlineKeyboardButton("پایین", callback_data="sticker_adv:vpos:bottom")]]
-        await query.edit_message_text("موقعیت عمودی متن را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
-
-import secrets
-
-    elif callback_data == "sticker:confirm":
-        # --- STAGE 1 of 2: Render and Upload ---
-        await query.edit_message_caption("⏳ در حال پردازش و آپلود اولیه استیکر...", reply_markup=None)
-
-        current_sess = await sess(user_id)
-        sticker_data = current_sess.get('sticker_data', {})
-
-        try:
-            # Final render with safety defaults
-            final_data = sticker_data.copy()
-            final_text = final_data.pop("text", "")
-            defaults = {
-                "v_pos": "center", "h_pos": "center", "font_key": "Default",
-                "color_hex": "#FFFFFF", "size_key": "medium"
-            }
-            # Pass the file path instead of raw data
-            defaults["bg_photo_path"] = final_data.pop("bg_photo_path", None)
-            defaults.update(final_data)
-
-            img_bytes_png = await render_image(text=final_text, **defaults, as_webp=False)
-
-            # --- Session Cleanup ---
-            # Clear the temp file path from the session immediately after use.
-            if 'bg_photo_path' in current_sess.get('sticker_data', {}):
-                del current_sess['sticker_data']['bg_photo_path']
-                logger.info("Cleared background photo path from session.")
-
-            logger.info(f"Uploading sticker file for user {user_id} (Stage 1)...")
-            uploaded_sticker = await context.bot.upload_sticker_file(user_id=user_id, sticker=InputFile(img_bytes_png, "sticker.png"), sticker_format="static")
-            logger.info(f"Sticker file uploaded successfully. File ID: {uploaded_sticker.file_id}")
-
-            # Generate a short, secure key to reference the file_id
-            lookup_key = secrets.token_urlsafe(8)
-
-            # Store the file_id in the session
-            if 'pending_stickers' not in current_sess:
-                current_sess['pending_stickers'] = {}
-            current_sess['pending_stickers'][lookup_key] = uploaded_sticker.file_id
-            await save_sessions()
-
-            # Deduct quota now
-            if current_sess.get("sticker_mode") == "advanced" and user_id != ADMIN_ID:
-                u = await user(user_id)
-                u["ai_used"] = u.get("ai_used", 0) + 1
-                await save_data()
-
-            # Now, send the confirmation message with the new button
-            keyboard = [[InlineKeyboardButton("✅ افزودن به پک", callback_data=f"add_sticker:{lookup_key}")]]
-            await query.message.reply_text(
-                "✅ استیکر شما با موفقیت ساخته و آپلود شد!\n\n"
-                "برای اضافه کردن نهایی به پک، دکمه زیر را فشار دهید.",
-                reply_markup=InlineKeyboardMarkup(keyboard)
+    elif callback_data == "guess_hint":
+        if 'guess_number' in bot_features.user_data:
+            number = bot_features.user_data['guess_number']
+            hint = "بزرگتر از 50" if number > 50 else "کوچکتر از 50"
+            await query.edit_message_text(
+                f"💡 **راهنمایی:** عدد {hint} است!\n\nدوباره تلاش کنید:",
+                reply_markup=query.message.reply_markup
             )
 
-        except Exception as e:
-            logger.error(f"STAGE 1 FAILED for user {user_id}: {e}", exc_info=True)
-            await query.message.reply_text(f"خطا در مرحله اول ساخت استیکر: {e}")
+    elif callback_data == "rock_paper_scissors":
+        game_data = await bot_features.rock_paper_scissors_game()
+        await query.edit_message_text(
+            game_data["message"],
+            reply_markup=game_data["reply_markup"]
+        )
 
-    elif callback_data.startswith("add_sticker:"):
-        # --- STAGE 2 of 2: Add to Set ---
-        await query.edit_message_text("⏳ در حال اضافه کردن استیکر به پک...", reply_markup=None)
+    elif callback_data.startswith("rps_choice_"):
+        user_choice = callback_data.replace("rps_choice_", "")
+        result = await bot_features.check_rps_choice(user_choice)
+        await query.edit_message_text(
+            result["message"],
+            reply_markup=result["reply_markup"]
+        )
 
-        lookup_key = callback_data.split(":")[-1]
-        current_sess = await sess(user_id)
+    elif callback_data == "word_game":
+        game_data = await bot_features.word_game()
+        await query.edit_message_text(
+            game_data["message"],
+            reply_markup=game_data["reply_markup"]
+        )
 
-        # Retrieve the file_id from the session
-        pending_stickers = current_sess.get('pending_stickers', {})
-        file_id = pending_stickers.get(lookup_key)
+    elif callback_data == "word_hint":
+        if 'word_game' in bot_features.user_data:
+            word = bot_features.user_data['word_game']['word']
+            first_letter = word[0]
+            last_letter = word[-1]
+            await query.edit_message_text(
+                f"💡 **راهنمایی:**\n\nحرف اول: {first_letter}\nحرف آخر: {last_letter}\n\nتعداد حروف: {len(word)}",
+                reply_markup=query.message.reply_markup
+            )
 
-        if not file_id:
-            await query.message.reply_text("خطا: اطلاعات استیکر یافت نشد. ممکن است منقضی شده باشد. لطفاً دوباره تلاش کنید.")
-            return
+    elif callback_data == "memory_game":
+        game_data = await bot_features.memory_game()
+        await query.edit_message_text(
+            game_data["message"],
+            reply_markup=game_data["reply_markup"]
+        )
 
-        pack_short_name = await get_current_pack_short_name(user_id)
+    elif callback_data == "random_game":
+        game_data = await bot_features.random_game()
+        await query.edit_message_text(
+            game_data["message"],
+            reply_markup=game_data["reply_markup"]
+        )
 
-        if not pack_short_name:
-            await query.message.reply_text("خطا: پکی انتخاب نشده است. لطفاً دوباره شروع کنید.")
-            return
+    elif callback_data == "sticker_creator":
+        menu_data = await bot_features.custom_sticker_menu()
+        await query.edit_message_text(
+            menu_data["message"],
+            reply_markup=menu_data["reply_markup"]
+        )
 
-        try:
-            logger.info(f"Adding sticker to set {pack_short_name} for user {user_id} (Stage 2)...")
-            await context.bot.add_sticker_to_set(user_id=user_id, name=pack_short_name, sticker=InputSticker(sticker=file_id, emoji_list=["😃"]))
-            logger.info("Sticker added to set successfully.")
+    elif callback_data.startswith("sticker_bg_"):
+        color = callback_data.replace("sticker_bg_", "")
+        color_map = {
+            "white": "white",
+            "black": "black",
+            "blue": "#3498db",
+            "red": "#e74c3c",
+            "green": "#2ecc71",
+            "yellow": "#f1c40f"
+        }
 
-            pack_link = f"https://t.me/addstickers/{pack_short_name}"
-            await query.message.reply_text(f"✅ استیکر شما با موفقیت به پک اضافه شد!\n\n{pack_link}")
+        bg_color = color_map.get(color, "white")
+        if user_id not in user_states:
+            user_states[user_id] = {}
+        user_states[user_id]["sticker_bg"] = bg_color
 
-            # Clean up the used key and reset user mode
-            pending_stickers.pop(lookup_key, None)
-            await save_sessions()
-            await reset_mode(user_id)
+        keyboard = [[
+            InlineKeyboardButton("✏️ نوشتن متن", callback_data="sticker_text")
+        ]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
-        except Exception as e:
-            logger.error(f"STAGE 2 FAILED for user {user_id}: {e}", exc_info=True)
-            await query.message.reply_text(f"خطا در مرحله دوم افزودن استیکر: {e}")
+        await query.edit_message_text(
+            f"✅ رنگ پس‌زمینه انتخاب شد!\n\nحالا متن استیکر خود را بنویسید:",
+            reply_markup=reply_markup
+        )
 
-    elif callback_data == "sticker:simple:edit":
-        current_sess = await sess(user_id)
-        current_sess['sticker_mode'] = 'simple'
-        await save_sessions()
-        await query.edit_message_text("لطفاً متن جدید استیکر ساده را ارسال کنید:")
+    elif callback_data == "sticker_text":
+        if user_id not in user_states:
+            user_states[user_id] = {}
+        user_states[user_id]["waiting_for_sticker_text"] = True
+
+        await query.edit_message_text(
+            "✏️ لطفاً متن مورد نظر خود را برای استیکر بنویسید:"
+        )
     
     elif callback_data == "help":
         await bot_features.help_command(update, context)
 
-    elif callback_data == "support":
-        keyboard = [[InlineKeyboardButton("تماس با پشتیبانی", url=f"https://t.me/{SUPPORT_USERNAME.replace('@', '')}")]]
-        await query.edit_message_text("برای تماس با پشتیبانی، از دکمه زیر استفاده کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
-
-    elif callback_data == "admin:panel":
-        if user_id != ADMIN_ID: return
-        keyboard = [[InlineKeyboardButton("ارسال پیام همگانی", callback_data="admin:broadcast_prompt")], [InlineKeyboardButton("ارسال پیام به کاربر", callback_data="admin:dm_prompt")], [InlineKeyboardButton("تغییر سهمیه کاربر", callback_data="admin:quota_prompt")]]
-        await query.edit_message_text("👑 **پنل ادمین** 👑", reply_markup=InlineKeyboardMarkup(keyboard))
-
-    elif callback_data.startswith("admin:"):
-        action = callback_data.split(":")[1]
-        if user_id != ADMIN_ID: return
-        current_sess = await sess(user_id)
-        if action == "broadcast_prompt":
-            current_sess["mode"] = "admin_broadcast"
-            await query.edit_message_text("پیام همگانی را ارسال کنید:")
-        elif action == "dm_prompt":
-            current_sess["mode"] = "admin_dm_id"
-            await query.edit_message_text("آیدی عددی کاربر مورد نظر را ارسال کنید:")
-        elif action == "quota_prompt":
-            current_sess["mode"] = "admin_quota_id"
-            await query.edit_message_text("آیدی عددی کاربر مورد نظر را ارسال کنید:")
-        await save_sessions()
-
-    elif callback_data.startswith("rate:"):
-        await query.message.reply_text("از بازخورد شما متشکریم!")
-        await reset_mode(user_id)
-        await bot_features.start_command(update, context)
-
-    elif callback_data == "my_quota":
-        left = await _quota_left(user_id)
-        total = (await user(user_id)).get("daily_limit", 3)
-        eta_str = _fmt_eta(await _seconds_to_reset(user_id))
-        text = f"📊 **سهمیه شما** 📊\n\nشما **{left}** از **{total}** سهمیه ساخت استیکر پیشرفته خود را باقی دارید.\n\nزمان بازنشانی بعدی: **{eta_str}**"
-        await query.edit_message_text(text)
-
-    elif callback_data == "my_packs":
-        packs = await get_user_packs(user_id)
-        if not packs:
-            await query.edit_message_text("شما هنوز هیچ پکی نساخته‌اید.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]]))
-            return
-        message_text = "🗂 **پک‌های استیکر شما:**\n\n" + "\n".join([f"• <a href='https://t.me/addstickers/{p['short_name']}'>{p['name']}</a>" for p in packs])
-        await query.edit_message_text(message_text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]]), disable_web_page_preview=True)
-
-import uuid
-
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    current_sess = await sess(user_id)
-    if current_sess.get("mode") == "awaiting_custom_bg":
-        photo_file = await update.message.photo[-1].get_file()
-
-        # Use /tmp directory to avoid loading the entire file into memory
-        temp_dir = "/tmp"
-        if not os.path.exists(temp_dir):
-            os.makedirs(temp_dir)
-
-        file_path = os.path.join(temp_dir, f"{uuid.uuid4()}.jpg")
-
-        try:
-            await photo_file.download_to_drive(file_path)
-            logger.info(f"Photo downloaded to temporary file: {file_path}")
-
-            sticker_data = current_sess.get("sticker_data", {})
-            sticker_data["bg_photo_path"] = file_path # Store the path
-            current_sess["mode"] = "main"
-            await save_sessions()
-
-        except Exception as e:
-            logger.error(f"Failed to download photo to drive: {e}", exc_info=True)
-            await update.message.reply_text("خطا در ذخیره عکس موقت.")
-            return
-
-        # After receiving photo, proceed based on sticker mode
-        if current_sess.get("sticker_mode") == "simple":
-            # For simple stickers, show preview immediately
-            preview_data = sticker_data.copy()
-            preview_text = preview_data.pop("text", "پیش‌نمایش")
-            defaults = { "v_pos": "center", "h_pos": "center", "font_key": "Default", "color_hex": "#FFFFFF", "size_key": "medium" }
-            defaults.update(preview_data)
-            img_bytes = await render_image(text=preview_text, **defaults, as_webp=False)
-            await update.message.reply_photo(photo=InputFile(img_bytes, filename="preview.png"), caption="این هم پیش‌نمایش. آیا تایید می‌کنید؟", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ تایید", callback_data="sticker:confirm"), InlineKeyboardButton("✏️ ویرایش", callback_data="sticker:simple:edit")]]))
-        else: # Advanced mode
-            keyboard = [[InlineKeyboardButton("بالا", callback_data="sticker_adv:vpos:top"), InlineKeyboardButton("وسط", callback_data="sticker_adv:vpos:center"), InlineKeyboardButton("پایین", callback_data="sticker_adv:vpos:bottom")]]
-            await update.message.reply_text("عکس پس‌زمینه دریافت شد. حالا موقعیت عمودی متن را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
-
 async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.photo:
-        await handle_photo(update, context)
-        return
-
+    """Handle text messages"""
     user_id = update.effective_user.id
     text = update.message.text
-    current_sess = await sess(user_id)
-    current_mode = current_sess.get("mode")
 
-    if user_id == ADMIN_ID:
-        client = get_db_client()
-        if current_mode == "admin_broadcast" and client:
-            all_users_data = await client.get("USERS")
-            if all_users_data:
-                all_users = json.loads(all_users_data)
-                for uid_str in all_users:
-                    try: await context.bot.send_message(int(uid_str), text)
-                    except Exception: pass
-            await update.message.reply_text(f"پیام به {len(all_users)} کاربر ارسال شد.")
-            await reset_mode(user_id)
-            return
-        elif current_mode == "admin_dm_id":
-            current_sess["admin_target_id"] = int(text)
-            current_sess["mode"] = "admin_dm_text"
-            await save_sessions()
-            await update.message.reply_text("پیام را برای ارسال بنویسید:")
-            return
-        elif current_mode == "admin_dm_text":
-            target_id = current_sess.get("admin_target_id")
-            try:
-                await context.bot.send_message(target_id, text)
-                await update.message.reply_text("پیام با موفقیت ارسال شد.")
-            except Exception as e:
-                await update.message.reply_text(f"خطا در ارسال پیام: {e}")
-            await reset_mode(user_id)
-            return
-        elif current_mode == "admin_quota_id":
-            current_sess["admin_target_id"] = int(text)
-            current_sess["mode"] = "admin_quota_value"
-            await save_sessions()
-            await update.message.reply_text("مقدار سهمیه جدید را وارد کنید:")
-            return
-        elif current_mode == "admin_quota_value":
-            target_id = current_sess.get("admin_target_id")
-            target_user = await user(target_id)
-            target_user["daily_limit"] = int(text)
-            await save_data()
-            await update.message.reply_text(f"سهمیه کاربر {target_id} به {text} تغییر یافت.")
-            await reset_mode(user_id)
-            return
-
-    if current_mode == "pack_create_start":
-        if not is_valid_pack_name(text):
-            await update.message.reply_text("نام پک نامعتبر است. لطفاً دوباره تلاش کنید.")
-            return
-
-        bot_username = (await context.bot.get_me()).username
-        pack_short_name = f"{text}_by_{bot_username}"
-
-        if await check_pack_exists(context.bot, pack_short_name):
-            await update.message.reply_text("این پک قبلاً وجود دارد. لطفاً یک نام دیگر انتخاب کنید.")
-            return
-
-        await update.message.reply_text("...لطفا کمی صبر کنید، پک استیکر شما در حال ساخته شدن است")
-        dummy_sticker_bytes = await render_image("اولین", "center", "center", "Default", "#FFFFFF", "medium", as_webp=False)
-
+    # Handle waiting for guess
+    if user_id in user_states and user_states[user_id].get("waiting_for_guess"):
         try:
-            uploaded_sticker = await context.bot.upload_sticker_file(user_id=user_id, sticker=InputFile(dummy_sticker_bytes, "dummy.png"), sticker_format="static")
-            await context.bot.create_new_sticker_set(user_id=user_id, name=pack_short_name, title=text, stickers=[InputSticker(sticker=uploaded_sticker.file_id, emoji_list=["🎉"])], sticker_format="static")
-            await add_user_pack(user_id, text, pack_short_name)
-            await set_current_pack(user_id, pack_short_name)
-
-            keyboard = [[InlineKeyboardButton("🖼 استیکر ساده", callback_data="sticker:simple"), InlineKeyboardButton("✨ استیکر پیشرفته", callback_data="sticker:advanced")]]
-            await context.bot.send_message(chat_id=user_id, text=f"پک «{text}» با موفقیت ساخته شد! حالا نوع استیکر را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
-            await reset_mode(user_id)
-        except BadRequest as e:
-            error_message = str(e)
-            if "Sticker set name is already occupied" in error_message:
-                await update.message.reply_text("این نام قبلاً گرفته شده است. لطفاً یک نام دیگر انتخاب کنید.")
-            elif "Invalid sticker set name is specified" in error_message:
-                await update.message.reply_text("""نامی که وارد کردید نامعتبر است. لطفاً دوباره وارد کنید.""")
+            guess = int(text)
+            if 1 <= guess <= 100:
+                result = await bot_features.check_guess(guess)
+                await update.message.reply_text(
+                    result["message"],
+                    reply_markup=result["reply_markup"]
+                )
+                user_states[user_id]["waiting_for_guess"] = False
             else:
-                await update.message.reply_text(f"خطا در ساخت پک: {e}")
-                await reset_mode(user_id)
-        except Exception as e:
-            await update.message.reply_text(f"یک خطای غیرمنتظره رخ داد: {e}")
-            await reset_mode(user_id)
-        return
+                await update.message.reply_text("❌ لطفاً عددی بین 1 تا 100 وارد کنید!")
+        except ValueError:
+            await update.message.reply_text("❌ لطفاً یک عدد صحیح وارد کنید!")
     
-    elif current_sess.get("sticker_mode") in ["simple", "advanced"]:
-        sticker_data = current_sess.get("sticker_data", {})
-        sticker_data["text"] = text
-        current_sess["sticker_data"] = sticker_data
-        await save_sessions()
+    # Handle waiting for sticker text
+    elif user_id in user_states and user_states[user_id].get("waiting_for_sticker_text"):
+        bg_color = user_states[user_id].get("sticker_bg", "white")
+        sticker_bytes = await bot_features.create_sticker(text, bg_color)
 
-        keyboard = [[InlineKeyboardButton("🏞 بله، عکس ارسال می‌کنم", callback_data="sticker_adv:custom_bg:yes")], [InlineKeyboardButton(" خیر، ادامه می‌دهم", callback_data="sticker_adv:custom_bg:no")]]
-        await update.message.reply_text("آیا می‌خواهید از عکس دلخواه به عنوان پس‌زمینه استفاده کنید؟", reply_markup=InlineKeyboardMarkup(keyboard))
+        if sticker_bytes:
+            sticker_bytes.seek(0)
+            await update.message.reply_sticker(
+                sticker=InputFile(sticker_bytes, filename="sticker.png")
+            )
+            await update.message.reply_text("✅ استیکر شما با موفقیت ساخته شد!")
+        else:
+            await update.message.reply_text("❌ خطا در ساخت استیکر!")
+
+        user_states[user_id]["waiting_for_sticker_text"] = False
+
+    # Handle quick sticker command
+    elif text.startswith("/sticker "):
+        sticker_text = text.replace("/sticker ", "")
+        sticker_bytes = await bot_features.create_sticker(sticker_text)
+
+        if sticker_bytes:
+            sticker_bytes.seek(0)
+            await update.message.reply_sticker(
+                sticker=InputFile(sticker_bytes, filename="sticker.png")
+            )
+        else:
+            await update.message.reply_text("❌ خطا در ساخت استیکر!")
+
+    # Default message
+    else:
+        await update.message.reply_text(
+            "🤖 ربات شما پیام را دریافت کرد! برای دیدن دستورات، /help را وارد کنید.\n\n"
+            "دستورات موجود:\n"
+            "/start - شروع ربات\n"
+            "/help - راهنما\n"
+            "/guess - بازی حدس عدد\n"
+            "/rps - سنگ کاغذ قیچی\n"
+            "/word - بازی کلمات\n"
+            "/memory - بازی حافظه\n"
+            "/random - بازی تصادفی\n"
+            "/sticker <متن> - ساخت استیکر سریع\n"
+            "/customsticker - استیکر ساز سفارشی\n"
+            "و بسیار دیگر..."
+        )
 
 def setup_application(application):
+    """Setup all handlers for the application"""
+    # Command handlers
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(CommandHandler("help", help_command))
+    application.add_handler(CommandHandler("sticker", sticker_command))
+    application.add_handler(CommandHandler("guess", guess_command))
+    application.add_handler(CommandHandler("rps", rps_command))
+    application.add_handler(CommandHandler("word", word_command))
+    application.add_handler(CommandHandler("memory", memory_command))
+    application.add_handler(CommandHandler("random", random_command))
+    application.add_handler(CommandHandler("customsticker", customsticker_command))
+
+    # Callback and message handlers
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 
-# Vercel Serverless entry point
-from flask import Flask, request, jsonify
-app = Flask(__name__)
+# Initialize Telegram application
+TELEGRAM_TOKEN = os.getenv('BOT_TOKEN') or os.getenv('TELEGRAM_BOT_TOKEN')
+application = None
 
-async def main_async():
-    """The main asynchronous logic of the bot."""
-    logger.info("Webhook received.")
-    client = get_db_client()
-    if not client:
-        logger.error("Database client is not available.")
-        # We cannot easily send a message back here, so we log and exit.
-        return jsonify(status="error", message="Database not configured"), 500
-
-    logger.info("Loading data and sessions...")
-    await load_data()
-    await load_sessions()
-    logger.info("Data and sessions loaded.")
-
-    TELEGRAM_TOKEN = os.getenv('BOT_TOKEN') or os.getenv('TELEGRAM_BOT_TOKEN')
-    if not TELEGRAM_TOKEN:
-        logger.error("No Telegram token found!")
-        return jsonify(status="error", message="Bot token not configured"), 500
-
-    logger.info("Building application...")
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
-    setup_application(application)
-    logger.info("Application built.")
-
+if TELEGRAM_TOKEN:
     try:
-        logger.info("Initializing application...")
-        await application.initialize()
-        logger.info("Application initialized.")
-
-        logger.info("Processing update...")
-        update = Update.de_json(request.get_json(force=True), application.bot)
-        await application.process_update(update)
-        logger.info("Update processed.")
-
-        logger.info("Shutting down application...")
-        await application.shutdown()
-        logger.info("Application shut down.")
-
-        return jsonify(status="ok"), 200
+        application = Application.builder().token(TELEGRAM_TOKEN).build()
+        setup_application(application)
+        logger.info("Handlers setup completed successfully")
     except Exception as e:
-        logger.error(f"!!! CRITICAL ERROR processing webhook: {e}", exc_info=True)
-        if 'application' in locals() and application.is_initialized:
-            await application.shutdown()
-        return jsonify(status="error", message=str(e)), 500
+        logger.error(f"Error setting up application: {e}")
+        application = None
+else:
+    logger.error("No Telegram token found in environment variables")
 
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    """
-    This is the synchronous entry point for Vercel.
-    It runs the main asynchronous logic using asyncio.run().
-    """
-    return asyncio.run(main_async())
+# Flask app for webhook
+try:
+    from flask import Flask, request, jsonify
 
-@app.route('/')
-def index():
-    return "Bot is running!"
+    app = Flask(__name__)
 
-from telegram import Bot
+    @app.route('/')
+    def home():
+        return "Telegram Bot is running! All handlers are active."
 
+    @app.route('/webhook', methods=['POST'])
+    def webhook():
+        if request.method == 'POST':
+            try:
+                update_data = request.get_json()
+                logger.info(f"Received webhook data: {update_data}")
+
+                if application:
+                    update = Update.de_json(update_data, application.bot)
+                    application.process_update(update)
+                else:
+                    logger.warning("Telegram application not initialized")
+
+                return jsonify({"status": "ok"}), 200
+            except Exception as e:
+                logger.error(f"Error processing webhook: {e}")
+                return jsonify({"status": "error", "message": str(e)}), 500
+        return jsonify({"status": "error"}), 400
+
+    @app.route('/health')
+    def health():
+        return jsonify({"status": "healthy", "handlers": "active", "telegram_app": application is not None})
+
+    # Vercel serverless handler
+    def handler(environ, start_response):
+        """Vercel serverless function handler"""
+        return app(environ, start_response)
+
+    # Export for Vercel
+    app_handler = handler
+
+except ImportError:
+    # Fallback if Flask is not available
+    def handler(environ, start_response):
+        """Simple WSGI handler for Vercel without Flask"""
+        try:
+            method = environ.get('REQUEST_METHOD', 'GET')
+            path = environ.get('PATH_INFO', '/')
+
+            if path == '/' and method == 'GET':
+                response_data = {
+                    'status': 'ok',
+                    'message': 'Telegram Bot API is running',
+                    'version': '1.0.0',
+                    'telegram_app': application is not None
+                }
+                body = json.dumps(response_data, indent=2)
+
+                status = '200 OK'
+                headers = [('Content-Type', 'application/json')]
+                start_response(status, headers)
+                return [body.encode('utf-8')]
+
+            elif path == '/health' and method == 'GET':
+                health_data = {
+                    'status': 'healthy',
+                    'timestamp': str(datetime.now()),
+                    'telegram_app': application is not None
+                }
+                body = json.dumps(health_data, indent=2)
+
+                status = '200 OK'
+                headers = [('Content-Type', 'application/json')]
+                start_response(status, headers)
+                return [body.encode('utf-8')]
+
+            elif path == '/webhook' and method == 'POST':
+                try:
+                    content_length = int(environ.get('CONTENT_LENGTH', 0))
+                    if content_length > 0:
+                        body_bytes = environ['wsgi.input'].read(content_length)
+                        body_str = body_bytes.decode('utf-8')
+
+                        webhook_data = json.loads(body_str)
+                        logger.info(f"Webhook received: {webhook_data}")
+
+                        if application:
+                            update = Update.de_json(webhook_data, application.bot)
+                            application.process_update(update)
+
+                        response_data = {'status': 'ok', 'processed': True}
+                    else:
+                        response_data = {'error': 'No data received'}
+
+                    body = json.dumps(response_data)
+                    status = '200 OK'
+                    headers = [('Content-Type', 'application/json')]
+                    start_response(status, headers)
+                    return [body.encode('utf-8')]
+
+                except Exception as e:
+                    logger.error(f"Webhook error: {e}")
+                    error_data = {'error': 'Processing failed'}
+                    body = json.dumps(error_data)
+                    status = '500 Internal Server Error'
+                    headers = [('Content-Type', 'application/json')]
+                    start_response(status, headers)
+                    return [body.encode('utf-8')]
+
+            else:
+                error_data = {'error': 'Not found'}
+                body = json.dumps(error_data)
+                status = '404 Not Found'
+                headers = [('Content-Type', 'application/json')]
+                start_response(status, headers)
+                return [body.encode('utf-8')]
+
+        except Exception as e:
+            logger.error(f"Handler error: {e}")
+            error_data = {'error': 'Internal server error'}
+            body = json.dumps(error_data)
+            status = '500 Internal Server Error'
+            headers = [('Content-Type', 'application/json')]
+            start_response(status, headers)
+            return [body.encode('utf-8')]
+
+    app_handler = handler
+
+# For Vercel compatibility
+app = app_handler if 'app_handler' in locals() else handler
+
+if __name__ == '__main__':
+    # For local testing
+    if 'app' in globals() and hasattr(app, 'run'):
+        app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    else:
+        print("Handler ready for deployment")
