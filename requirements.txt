@@ -3,7 +3,6 @@ python-telegram-bot[ext]
 Pillow
 arabic-reshaper
 python-bidi
-httpx==0.25.0
 # Flask is usually included in Vercel's Python runtime,
 # but we add it here for local testing and explicitness.
 Flask
