@@ -21,8 +21,6 @@ from telegram.error import BadRequest
 import re
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
-import os
-import json
 import arabic_reshaper
 from bidi.algorithm import get_display
 
@@ -802,13 +800,14 @@ async def main_async(update_json):
             await application.shutdown()
 
 @app.route('/webhook', methods=['POST'])
-async def webhook():
+def webhook():
     """
-    This is the async entry point for Vercel.
+    This synchronous entry point is compatible with Vercel's runtime.
+    It runs the main async logic using asyncio.run().
     """
     try:
-        data = request.get_json() # This is a synchronous method
-        await main_async(data)
+        data = request.get_json()
+        asyncio.run(main_async(data))
         return jsonify(status="ok"), 200
     except Exception as e:
         logger.error(f"!!! CRITICAL ERROR in webhook handler: {e}", exc_info=True)
