@@ -1,8 +1,5 @@
-# requirements.txt
-python-telegram-bot[ext]
-Pillow
-arabic-reshaper
-python-bidi
-# Flask is usually included in Vercel's Python runtime,
-# but we add it here for local testing and explicitness.
-Flask
+python-telegram-bot==20.7
+requests==2.31.0
+beautifulsoup4==4.12.2
+Pillow==10.1.0
+Flask==2.3.3
