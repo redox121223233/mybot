@@ -796,7 +796,7 @@ async def main_async(update_json):
     except Exception as e:
         logger.error(f"!!! CRITICAL ERROR processing update: {e}", exc_info=True)
     finally:
-        if application.is_initialized:
+        if 'application' in locals() and hasattr(application, 'shutdown'):
             await application.shutdown()
 
 @app.route('/webhook', methods=['POST'])
