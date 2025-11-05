@@ -21,6 +21,8 @@ from telegram.error import BadRequest
 import re
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
+import os
+import json
 import arabic_reshaper
 from bidi.algorithm import get_display
 
@@ -35,10 +37,32 @@ ADMIN_ID = 6053579919
 SUPPORT_USERNAME = "@onedaytoalive"
 CHANNEL_USERNAME = "@redoxbot_sticker"
 
-# ============ Data Persistence (File-based Sessions) ============
-USERS: dict[int, dict] = {} # User data remains in-memory as it's less critical
+# ============ Data Persistence (File-based) ============
+USERS: dict[int, dict] = {}
 SESSIONS: dict[int, dict] = {}
+USER_FILE = "/tmp/users.json"
 SESSION_FILE = "/tmp/sessions.json"
+
+def save_users():
+    """Saves the USERS dictionary to a file."""
+    try:
+        with open(USER_FILE, 'w') as f:
+            json.dump(USERS, f)
+    except Exception as e:
+        logger.error(f"Failed to save users: {e}", exc_info=True)
+
+def load_users():
+    """Loads the USERS dictionary from a file."""
+    global USERS
+    if os.path.exists(USER_FILE):
+        try:
+            with open(USER_FILE, 'r') as f:
+                USERS = {int(k): v for k, v in json.load(f).items()}
+        except Exception as e:
+            logger.error(f"Failed to load users: {e}", exc_info=True)
+            USERS = {}
+    else:
+        USERS = {}
 
 def save_sessions():
     """Saves the SESSIONS dictionary to a file."""
@@ -87,10 +111,12 @@ def add_user_pack(uid: int, pack_name: str, pack_short_name: str):
         packs.append({"name": pack_name, "short_name": pack_short_name})
     u["packs"] = packs
     u["current_pack"] = pack_short_name
+    save_users()
 
 def set_current_pack(uid: int, pack_short_name: str):
     u = user(uid)
     u["current_pack"] = pack_short_name
+    save_users()
 
 def get_current_pack_short_name(uid: int) -> str | None:
     u = user(uid)
@@ -108,6 +134,7 @@ def _reset_daily_if_needed(u: dict):
     if day_start < today:
         u["day_start"] = today
         u["ai_used"] = 0
+        save_users()
 
 def _quota_left(uid: int) -> int:
     u = user(uid)
@@ -501,6 +528,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if current_sess.get("sticker_mode") == "advanced" and user_id != ADMIN_ID:
                 u = user(user_id)
                 u["ai_used"] = u.get("ai_used", 0) + 1
+                save_users()
 
             keyboard = [[InlineKeyboardButton("✅ افزودن به پک", callback_data=f"add_sticker:{lookup_key}")]]
             await query.message.reply_text(
@@ -682,6 +710,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             target_id = current_sess.get("admin_target_id")
             target_user = user(target_id)
             target_user["daily_limit"] = int(text)
+            save_users()
             await update.message.reply_text(f"سهمیه کاربر {target_id} به {text} تغییر یافت.")
             reset_mode(user_id)
             return
@@ -734,8 +763,9 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sticker_data = current_sess.get("sticker_data", {})
         sticker_data["text"] = text
         current_sess["sticker_data"] = sticker_data
+        save_sessions() # <-- CRITICAL FIX
 
-        keyboard = [[InlineKeyboardButton("🏞 بله، عکس ارسال می‌کنم", callback_data="sticker_adv:custom_bg:yes")], [InlineKeyboardButton(" خیر، ادامه می‌دهم", callback_data="sticker_adv:custom_bg:no")]]
+        keyboard = [[InlineKeyboardButton("🏞 بله، عکس ارسال می‌کن-م", callback_data="sticker_adv:custom_bg:yes")], [InlineKeyboardButton(" خیر، ادامه می‌دهم", callback_data="sticker_adv:custom_bg:no")]]
         await update.message.reply_text("آیا می‌خواهید از عکس دلخواه به عنوان پس‌زمینه استفاده کنید؟", reply_markup=InlineKeyboardMarkup(keyboard))
 
 def setup_application(application):
@@ -751,6 +781,7 @@ app = Flask(__name__)
 
 async def main_async(update_json):
     """The main asynchronous logic of the bot."""
+    load_users()
     load_sessions() # Load sessions from file at the start of each request
     TELEGRAM_TOKEN = os.getenv('BOT_TOKEN') or os.getenv('TELEGRAM_BOT_TOKEN')
     if not TELEGRAM_TOKEN:
@@ -776,7 +807,7 @@ async def webhook():
     This is the async entry point for Vercel.
     """
     try:
-        data = await request.get_json()
+        data = request.get_json() # This is a synchronous method
         await main_async(data)
         return jsonify(status="ok"), 200
     except Exception as e:
