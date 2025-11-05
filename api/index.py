@@ -561,19 +561,23 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         try:
             logger.info(f"Adding sticker to set {pack_short_name} for user {user_id} (Stage 2)...")
-            await context.bot.add_sticker_to_set(user_id=user_id, name=pack_short_name, sticker=InputSticker(sticker=file_id, emoji_list=["😃"], format='static'))
-            logger.info("Sticker added to set successfully.")
+            success = await context.bot.add_sticker_to_set(user_id=user_id, name=pack_short_name, sticker=InputSticker(sticker=file_id, emoji_list=["😃"], format='static'))
 
-            pack_link = f"https://t.me/addstickers/{pack_short_name}"
-            await query.message.reply_text(f"✅ استیکر شما با موفقیت به پک اضافه شد!\n\n{pack_link}")
+            if success:
+                logger.info("Sticker added to set successfully.")
+                pack_link = f"https://t.me/addstickers/{pack_short_name}"
+                await query.message.reply_text(f"✅ استیکر شما با موفقیت به پک اضافه شد!\n\n{pack_link}")
 
-            pending_stickers.pop(lookup_key, None)
-            save_sessions() # Save after popping the key
+                pending_stickers.pop(lookup_key, None)
+                save_sessions() # Save after popping the key
+            else:
+                logger.error(f"STAGE 2 FAILED for user {user_id}: add_sticker_to_set returned False.")
+                await query.message.reply_text("متاسفانه تلگرام اجازه اضافه کردن این استیکر به پک را نداد. این ممکن است به دلیل محدودیت‌های موقتی تلگرام باشد. لطفاً چند دقیقه دیگر دوباره امتحان کنید.")
             reset_mode(user_id)
 
         except Exception as e:
             logger.error(f"STAGE 2 FAILED for user {user_id}: {e}", exc_info=True)
-            await query.message.reply_text(f"خطا در مرحله دوم افزودن استیکر: {e}")
+            await query.message.reply_text(f"یک خطای غیرمنتظره در مرحله دوم رخ داد: {e}")
 
     elif callback_data == "sticker:simple:edit":
         current_sess = sess(user_id)
