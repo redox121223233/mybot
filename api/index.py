@@ -541,11 +541,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif callback_data.startswith("add_sticker:"):
         # --- STAGE 2 of 2: Add to Set (User-guided workaround) ---
-        await query.edit_message_text(
-            "✅ استیکر شما برای اضافه شدن به پک ارسال شد.\n\n"
-            "**نکته:** اگر استیکر به طور خودکار اضافه نشد، لطفاً آن را به صورت دستی ذخیره کرده و به پک خود اضافه کنید.",
-            reply_markup=None
-        )
+        await query.edit_message_text("⏳ در حال ارسال استیکر نهایی...", reply_markup=None)
 
         lookup_key = callback_data.split(":")[-1]
         current_sess = sess(user_id)
@@ -555,17 +551,29 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         if not file_id:
             logger.error(f"File ID not found for lookup key {lookup_key} for user {user_id}.")
+            await query.message.reply_text("خطا: اطلاعات استیکر یافت نشد. لطفاً دوباره تلاش کنید.")
             return
+
+        # 1. Send the sticker to the user so they can save it.
+        await context.bot.send_sticker(chat_id=user_id, sticker=file_id)
+
+        # 2. Send the instructional message.
+        await query.message.reply_text(
+            "✅ استیکر شما ارسال شد.\n\n"
+            "**نکته:** اگر استیکر به طور خودکار به پک اضافه نشد، لطفاً روی استیکر بالا کلیک کرده و آن را به صورت دستی به پک خود اضافه کنید."
+        )
 
         pack_short_name = get_current_pack_short_name(user_id)
 
         if not pack_short_name:
             logger.error(f"Current pack not found for user {user_id}.")
+            # Don't notify the user, as they can still add it manually
             return
 
         try:
-            # Best-effort attempt to add the sticker
+            # 3. Best-effort attempt to add the sticker automatically
             logger.info(f"Attempting to add sticker to set {pack_short_name} for user {user_id}...")
+            await asyncio.sleep(1) # Small delay before the API call
             await context.bot.add_sticker_to_set(user_id=user_id, name=pack_short_name, sticker=InputSticker(sticker=file_id, emoji_list=["😃"], format='static'))
             logger.info("API call to add_sticker_to_set completed.")
         except Exception as e:
