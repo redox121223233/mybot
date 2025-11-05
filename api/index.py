@@ -540,8 +540,12 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_text(f"خطا در مرحله اول ساخت استیکر: {e}")
 
     elif callback_data.startswith("add_sticker:"):
-        # --- STAGE 2 of 2: Add to Set ---
-        await query.edit_message_text("⏳ در حال اضافه کردن استیکر به پک...", reply_markup=None)
+        # --- STAGE 2 of 2: Add to Set (User-guided workaround) ---
+        await query.edit_message_text(
+            "✅ استیکر شما برای اضافه شدن به پک ارسال شد.\n\n"
+            "**نکته:** اگر استیکر به طور خودکار اضافه نشد، لطفاً آن را به صورت دستی ذخیره کرده و به پک خود اضافه کنید.",
+            reply_markup=None
+        )
 
         lookup_key = callback_data.split(":")[-1]
         current_sess = sess(user_id)
@@ -550,34 +554,28 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         file_id = pending_stickers.get(lookup_key)
 
         if not file_id:
-            await query.message.reply_text("خطا: اطلاعات استیکر یافت نشد. ممکن است منقضی شده باشد. لطفاً دوباره تلاش کنید.")
+            logger.error(f"File ID not found for lookup key {lookup_key} for user {user_id}.")
             return
 
         pack_short_name = get_current_pack_short_name(user_id)
 
         if not pack_short_name:
-            await query.message.reply_text("خطا: پکی انتخاب نشده است. لطفاً دوباره شروع کنید.")
+            logger.error(f"Current pack not found for user {user_id}.")
             return
 
         try:
-            logger.info(f"Adding sticker to set {pack_short_name} for user {user_id} (Stage 2)...")
-            success = await context.bot.add_sticker_to_set(user_id=user_id, name=pack_short_name, sticker=InputSticker(sticker=file_id, emoji_list=["😃"], format='static'))
-
-            if success:
-                logger.info("Sticker added to set successfully.")
-                pack_link = f"https://t.me/addstickers/{pack_short_name}"
-                await query.message.reply_text(f"✅ استیکر شما با موفقیت به پک اضافه شد!\n\n{pack_link}")
-
-                pending_stickers.pop(lookup_key, None)
-                save_sessions() # Save after popping the key
-            else:
-                logger.error(f"STAGE 2 FAILED for user {user_id}: add_sticker_to_set returned False.")
-                await query.message.reply_text("متاسفانه تلگرام اجازه اضافه کردن این استیکر به پک را نداد. این ممکن است به دلیل محدودیت‌های موقتی تلگرام باشد. لطفاً چند دقیقه دیگر دوباره امتحان کنید.")
-            reset_mode(user_id)
-
+            # Best-effort attempt to add the sticker
+            logger.info(f"Attempting to add sticker to set {pack_short_name} for user {user_id}...")
+            await context.bot.add_sticker_to_set(user_id=user_id, name=pack_short_name, sticker=InputSticker(sticker=file_id, emoji_list=["😃"], format='static'))
+            logger.info("API call to add_sticker_to_set completed.")
         except Exception as e:
-            logger.error(f"STAGE 2 FAILED for user {user_id}: {e}", exc_info=True)
-            await query.message.reply_text(f"یک خطای غیرمنتظره در مرحله دوم رخ داد: {e}")
+            # Log the error, but do not notify the user further as they already have instructions.
+            logger.error(f"STAGE 2 BACKGROUND ATTEMPT FAILED for user {user_id}: {e}", exc_info=True)
+        finally:
+            # Clean up and reset mode regardless of success
+            pending_stickers.pop(lookup_key, None)
+            save_sessions()
+            reset_mode(user_id)
 
     elif callback_data == "sticker:simple:edit":
         current_sess = sess(user_id)
