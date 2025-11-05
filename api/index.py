@@ -301,14 +301,24 @@ def _parse_hex(hx: str) -> tuple[int, int, int, int]:
         b = int(hx[4:6], 16)
     return (r, g, b, 255)
 
-async def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: str, size_key: str, bg_mode: str = "transparent", bg_photo: bytes | None = None, bg_photo_b64: str | None = None, as_webp: bool = False) -> bytes:
+async def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: str, size_key: str, bg_mode: str = "transparent", bg_photo_path: str | None = None, as_webp: bool = False) -> bytes:
     W, H = (512, 512)
 
-    # --- DIAGNOSTIC: Force transparent background to isolate Pillow crash ---
-    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
-    logger.warning("DIAGNOSTIC MODE: Forcing transparent background.")
+    img = None
+    try:
+        if bg_photo_path and os.path.exists(bg_photo_path):
+            try:
+                img = Image.open(bg_photo_path).convert("RGBA").resize((W, H))
+                logger.info(f"Successfully loaded background image from {bg_photo_path}")
+            except Exception as e:
+                logger.error(f"Failed to open or process image from path {bg_photo_path}: {e}", exc_info=True)
+                # Fallback to transparent if the file is invalid
+                img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+        else:
+            # Default to transparent if no path is provided
+            img = Image.new("RGBA", (W, H), (0, 0, 0, 0) if bg_mode == "transparent" else (255, 255, 255, 255))
 
-    draw = ImageDraw.Draw(img)
+        draw = ImageDraw.Draw(img)
     color = _parse_hex(color_hex)
     padding = 40
     box_w, box_h = W - 2 * padding, H - 2 * padding
@@ -341,6 +351,14 @@ async def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_h
     buf = io.BytesIO()
     img.save(buf, format="WEBP" if as_webp else "PNG")
     return buf.getvalue()
+    finally:
+        # --- Cleanup: Ensure the temporary file is always deleted ---
+        if bg_photo_path and os.path.exists(bg_photo_path):
+            try:
+                os.remove(bg_photo_path)
+                logger.info(f"Successfully cleaned up temporary file: {bg_photo_path}")
+            except Exception as e:
+                logger.error(f"Failed to clean up temporary file {bg_photo_path}: {e}", exc_info=True)
 
 # ============ Bot Features Class ============
 class TelegramBotFeatures:
@@ -548,17 +566,19 @@ import secrets
             final_text = final_data.pop("text", "")
             defaults = {
                 "v_pos": "center", "h_pos": "center", "font_key": "Default",
-                "color_hex": "#FFFFFF", "size_key": "medium", "bg_photo": None
+                "color_hex": "#FFFFFF", "size_key": "medium"
             }
+            # Pass the file path instead of raw data
+            defaults["bg_photo_path"] = final_data.pop("bg_photo_path", None)
             defaults.update(final_data)
 
             img_bytes_png = await render_image(text=final_text, **defaults, as_webp=False)
 
-            # --- Memory Optimization ---
-            # Clear the large background photo data from the session immediately after use.
-            if 'bg_photo_b64' in current_sess.get('sticker_data', {}):
-                del current_sess['sticker_data']['bg_photo_b64']
-                logger.info("Cleared background photo from session to conserve memory.")
+            # --- Session Cleanup ---
+            # Clear the temp file path from the session immediately after use.
+            if 'bg_photo_path' in current_sess.get('sticker_data', {}):
+                del current_sess['sticker_data']['bg_photo_path']
+                logger.info("Cleared background photo path from session.")
 
             logger.info(f"Uploading sticker file for user {user_id} (Stage 1)...")
             uploaded_sticker = await context.bot.upload_sticker_file(user_id=user_id, sticker=InputFile(img_bytes_png, "sticker.png"), sticker_format="static")
@@ -682,18 +702,34 @@ import secrets
         message_text = "🗂 **پک‌های استیکر شما:**\n\n" + "\n".join([f"• <a href='https://t.me/addstickers/{p['short_name']}'>{p['name']}</a>" for p in packs])
         await query.edit_message_text(message_text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]]), disable_web_page_preview=True)
 
+import uuid
+
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     current_sess = await sess(user_id)
     if current_sess.get("mode") == "awaiting_custom_bg":
         photo_file = await update.message.photo[-1].get_file()
-        photo_bytes = await photo_file.download_as_bytearray()
 
-        # --- DIAGNOSTIC: Do not save the photo to the session to test memory pressure hypothesis ---
-        logger.warning("DIAGNOSTIC MODE: Photo received but not saved to session.")
+        # Use /tmp directory to avoid loading the entire file into memory
+        temp_dir = "/tmp"
+        if not os.path.exists(temp_dir):
+            os.makedirs(temp_dir)
 
-        current_sess["mode"] = "main"
-        # No save_sessions() call here, as we are not persisting the photo data.
+        file_path = os.path.join(temp_dir, f"{uuid.uuid4()}.jpg")
+
+        try:
+            await photo_file.download_to_drive(file_path)
+            logger.info(f"Photo downloaded to temporary file: {file_path}")
+
+            sticker_data = current_sess.get("sticker_data", {})
+            sticker_data["bg_photo_path"] = file_path # Store the path
+            current_sess["mode"] = "main"
+            await save_sessions()
+
+        except Exception as e:
+            logger.error(f"Failed to download photo to drive: {e}", exc_info=True)
+            await update.message.reply_text("خطا در ذخیره عکس موقت.")
+            return
 
         # After receiving photo, proceed based on sticker mode
         if current_sess.get("sticker_mode") == "simple":
