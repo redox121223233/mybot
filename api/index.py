@@ -451,7 +451,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     defaults = { "v_pos": "center", "h_pos": "center", "font_key": "Default", "color_hex": "#FFFFFF", "size_key": "medium" }
                     defaults.update(preview_data)
                     img_bytes = await render_image(text=preview_text, **defaults)
-                    await query.message.reply_photo(photo=InputFile(img_bytes, filename="preview.webp"), caption="این هم پیش‌نمایش. آیا تایید می‌کنید؟", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ تایید", callback_data="sticker:confirm"), InlineKeyboardButton("✏️ ویرایش", callback_data="sticker:simple:edit")]]))
+                    await query.message.reply_sticker(sticker=InputFile(img_bytes, filename="preview.webp"))
+                    await query.message.reply_text("این هم پیش‌نمایش. آیا تایید می‌کنید؟", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ تایید", callback_data="sticker:confirm"), InlineKeyboardButton("✏️ ویرایش", callback_data="sticker:simple:edit")]]))
                 else:
                     keyboard = [[InlineKeyboardButton("بالا", callback_data="sticker_adv:vpos:top"), InlineKeyboardButton("وسط", callback_data="sticker_adv:vpos:center"), InlineKeyboardButton("پایین", callback_data="sticker_adv:vpos:bottom")]]
                     await query.edit_message_text("موقعیت عمودی متن را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
@@ -483,7 +484,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             defaults = { "v_pos": "center", "h_pos": "center", "font_key": "Default", "color_hex": "#FFFFFF", "size_key": "medium" }
             defaults.update(preview_data)
             img_bytes = await render_image(text=preview_text, **defaults)
-            await query.message.reply_photo(photo=InputFile(img_bytes, filename="preview.webp"), caption="این هم پیش‌نمایش. آیا تایید می‌کنید؟", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ تایید", callback_data="sticker:confirm"), InlineKeyboardButton("✏️ ویرایش", callback_data="sticker:advanced:edit")]]))
+            await query.message.reply_sticker(sticker=InputFile(img_bytes, filename="preview.webp"))
+            await query.message.reply_text("این هم پیش‌نمایش. آیا تایید می‌کنید؟", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ تایید", callback_data="sticker:confirm"), InlineKeyboardButton("✏️ ویرایش", callback_data="sticker:advanced:edit")]]))
 
     elif callback_data == "sticker:advanced:edit" or callback_data == "sticker:advanced:restart_edit":
         keyboard = [[InlineKeyboardButton("بالا", callback_data="sticker_adv:vpos:top"), InlineKeyboardButton("وسط", callback_data="sticker_adv:vpos:center"), InlineKeyboardButton("پایین", callback_data="sticker_adv:vpos:bottom")]]
@@ -670,7 +672,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             defaults = { "v_pos": "center", "h_pos": "center", "font_key": "Default", "color_hex": "#FFFFFF", "size_key": "medium" }
             defaults.update(preview_data)
             img_bytes = await render_image(text=preview_text, **defaults)
-            await update.message.reply_photo(photo=InputFile(img_bytes, filename="preview.webp"), caption="این هم پیش‌نمایش. آیا تایید می‌کنید؟", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ تایید", callback_data="sticker:confirm"), InlineKeyboardButton("✏️ ویرایش", callback_data="sticker:simple:edit")]]))
+            await update.message.reply_sticker(sticker=InputFile(img_bytes, filename="preview.webp"))
+            await update.message.reply_text("این هم پیش‌نمایش. آیا تایید می‌کنید؟", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("✅ تایید", callback_data="sticker:confirm"), InlineKeyboardButton("✏️ ویرایش", callback_data="sticker:simple:edit")]]))
         else:
             keyboard = [[InlineKeyboardButton("بالا", callback_data="sticker_adv:vpos:top"), InlineKeyboardButton("وسط", callback_data="sticker_adv:vpos:center"), InlineKeyboardButton("پایین", callback_data="sticker_adv:vpos:bottom")]]
             await update.message.reply_text("عکس پس‌زمینه دریافت شد. حالا موقعیت عمودی متن را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
