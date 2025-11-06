@@ -549,14 +549,14 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             defaults["bg_photo_path"] = final_data.pop("bg_photo_path", None)
             defaults.update(final_data)
 
-            img_bytes_png = await render_image(text=final_text, **defaults)
+            img_bytes_webp = await render_image(text=final_text, **defaults)
 
             if 'bg_photo_path' in current_sess.get('sticker_data', {}):
                 del current_sess['sticker_data']['bg_photo_path']
                 logger.info("Cleared background photo path from session.")
 
             logger.info(f"Uploading sticker file for user {user_id} (Stage 1)...")
-            uploaded_sticker = await context.bot.upload_sticker_file(user_id=user_id, sticker=InputFile(img_bytes_png, filename="sticker.webp"), sticker_format="static")
+            uploaded_sticker = await context.bot.upload_sticker_file(user_id=user_id, sticker=InputFile(img_bytes_webp, filename="sticker.webp"))
             logger.info(f"Sticker file uploaded successfully. File ID: {uploaded_sticker.file_id}")
 
             lookup_key = secrets.token_urlsafe(8)
@@ -626,7 +626,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # 3. Best-effort attempt to add the sticker automatically
             logger.info(f"Attempting to add sticker to set {pack_short_name} for user {user_id}...")
             await asyncio.sleep(1) # Small delay before the API call
-            await context.bot.add_sticker_to_set(user_id=user_id, name=pack_short_name, sticker=InputSticker(sticker=file_id, emoji_list=["😃"]), sticker_format='static')
+            await context.bot.add_sticker_to_set(user_id=user_id, name=pack_short_name, sticker=InputSticker(sticker=file_id, emoji_list=["😃"]))
             logger.info("API call to add_sticker_to_set completed.")
         except Exception as e:
             # Log the error, but do not notify the user further as they already have instructions.
