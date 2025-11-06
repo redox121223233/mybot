@@ -12,8 +12,9 @@ import random
 import tempfile
 import io
 from datetime import datetime
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile, StickerSet
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+from telegram.error import TelegramError
 from PIL import Image, ImageDraw, ImageFont
 
 # Configure logging
@@ -109,45 +110,132 @@ class TelegramBotFeatures:
         
         await update.message.reply_text(help_text)
     
-    async def create_sticker(self, text, bg_color="white"):
-        """Create a simple text sticker"""
+    async def create_sticker_webp(self, text, bg_color="white"):
+        """Create a WebP sticker for Telegram"""
         try:
-            # Create image
+            # Create image with RGBA (transparency support)
             img_size = (512, 512)
-            img = Image.new('RGB', img_size, bg_color)
+            img = Image.new('RGBA', img_size, bg_color)
             draw = ImageDraw.Draw(img)
-            
-            # Try to use default font
+
+            # Try to use default font with larger size
             try:
-                font = ImageFont.load_default()
+                font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 60)
             except:
-                font = None
-            
-            # Calculate text position
-            if font:
-                bbox = draw.textbbox((0, 0), text, font=font)
+                try:
+                    font = ImageFont.truetype("arial.ttf", 60)
+                except:
+                    font = ImageFont.load_default()
+
+            # Split text into multiple lines if needed
+            words = text.split()
+            lines = []
+            current_line = []
+
+            for word in words:
+                test_line = ' '.join(current_line + [word])
+                bbox = draw.textbbox((0, 0), test_line, font=font)
+                if bbox[2] - bbox[0] < 450:  # Max width
+                    current_line.append(word)
+                else:
+                    if current_line:
+                        lines.append(' '.join(current_line))
+                        current_line = [word]
+                    else:
+                        lines.append(word)
+
+            if current_line:
+                lines.append(' '.join(current_line))
+
+            # Calculate total height
+            line_height = 70
+            total_height = len(lines) * line_height
+            start_y = (img_size[1] - total_height) // 2
+
+            # Draw text with shadow for better visibility
+            text_color = "black" if bg_color in ["white", "#f1c40f", "#2ecc71"] else "white"
+            shadow_color = "white" if text_color == "black" else "black"
+
+            for i, line in enumerate(lines):
+                bbox = draw.textbbox((0, 0), line, font=font)
                 text_width = bbox[2] - bbox[0]
-                text_height = bbox[3] - bbox[1]
-            else:
-                text_width = len(text) * 10
-                text_height = 20
-            
-            x = (img_size[0] - text_width) // 2
-            y = (img_size[1] - text_height) // 2
-            
-            # Draw text
-            text_color = "black" if bg_color == "white" else "white"
-            draw.text((x, y), text, fill=text_color, font=font)
-            
-            # Save to bytes
+                x = (img_size[0] - text_width) // 2
+                y = start_y + i * line_height
+
+                # Draw shadow
+                draw.text((x + 2, y + 2), line, fill=shadow_color, font=font)
+                # Draw text
+                draw.text((x, y), line, fill=text_color, font=font)
+
+            # Save as WebP format (required by Telegram for stickers)
+            img_bytes = io.BytesIO()
+            img.save(img_bytes, format='WEBP', quality=95)
+            img_bytes.seek(0)
+
+            return img_bytes
+
+        except Exception as e:
+            logger.error(f"Error creating sticker: {e}")
+            return None
+
+    async def create_sticker_png(self, text, bg_color="white"):
+        """Create a PNG sticker (fallback)"""
+        try:
+            img_size = (512, 512)
+            img = Image.new('RGBA', img_size, bg_color)
+            draw = ImageDraw.Draw(img)
+
+            try:
+                font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 60)
+            except:
+                try:
+                    font = ImageFont.truetype("arial.ttf", 60)
+                except:
+                    font = ImageFont.load_default()
+
+            words = text.split()
+            lines = []
+            current_line = []
+
+            for word in words:
+                test_line = ' '.join(current_line + [word])
+                bbox = draw.textbbox((0, 0), test_line, font=font)
+                if bbox[2] - bbox[0] < 450:
+                    current_line.append(word)
+                else:
+                    if current_line:
+                        lines.append(' '.join(current_line))
+                        current_line = [word]
+                    else:
+                        lines.append(word)
+
+            if current_line:
+                lines.append(' '.join(current_line))
+
+            line_height = 70
+            total_height = len(lines) * line_height
+            start_y = (img_size[1] - total_height) // 2
+
+            text_color = "black" if bg_color in ["white", "#f1c40f", "#2ecc71"] else "white"
+            shadow_color = "white" if text_color == "black" else "black"
+
+            for i, line in enumerate(lines):
+                bbox = draw.textbbox((0, 0), line, font=font)
+                text_width = bbox[2] - bbox[0]
+                x = (img_size[0] - text_width) // 2
+                y = start_y + i * line_height
+
+                draw.text((x + 2, y + 2), line, fill=shadow_color, font=font)
+                draw.text((x, y), line, fill=text_color, font=font)
+
             img_bytes = io.BytesIO()
             img.save(img_bytes, format='PNG')
             img_bytes.seek(0)
-            
+
             return img_bytes
-            
+
         except Exception as e:
-            logger.error(f"Error creating sticker: {e}")
+            logger.error(f"Error creating PNG sticker: {e}")
             return None
     
     async def guess_number_game(self):
@@ -333,16 +421,76 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await bot_features.help_command(update, context)
 
 async def sticker_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /sticker command"""
+    """Handle /sticker command with sticker pack support"""
     if context.args:
         text = ' '.join(context.args)
-        sticker_bytes = await bot_features.create_sticker(text)
-        
-        if sticker_bytes:
-            sticker_bytes.seek(0)
-            await update.message.reply_sticker(
-                sticker=InputFile(sticker_bytes, filename="sticker.png")
-            )
+        user_id = update.effective_user.id
+
+        # Create sticker in WebP format
+        sticker_webp = await bot_features.create_sticker_webp(text)
+
+        if sticker_webp:
+            try:
+                # Try to add to sticker pack
+                pack_name = f"user_{user_id}_pack_by_{context.bot.username}"
+                pack_title = f"استیکرهای {update.effective_user.first_name}"
+
+                sticker_webp.seek(0)
+
+                # Try to get existing sticker set
+                try:
+                    sticker_set = await context.bot.get_sticker_set(pack_name)
+                    # Add to existing set
+                    await context.bot.add_sticker_to_set(
+                        user_id=user_id,
+                        name=pack_name,
+                        sticker=InputFile(sticker_webp, filename="sticker.webp"),
+                        emojis="😊"
+                    )
+                    await update.message.reply_text(
+                        f"✅ استیکر به پک اضافه شد!\n\n"
+                        f"🔗 لینک پک: https://t.me/addstickers/{pack_name}"
+                    )
+                except TelegramError as e:
+                    # Pack doesn't exist, create new one
+                    if "STICKERSET_INVALID" in str(e) or "not found" in str(e).lower():
+                        sticker_webp.seek(0)
+                        await context.bot.create_new_sticker_set(
+                            user_id=user_id,
+                            name=pack_name,
+                            title=pack_title,
+                            stickers=[
+                                {
+                                    "sticker": InputFile(sticker_webp, filename="sticker.webp"),
+                                    "emoji_list": ["😊"]
+                                }
+                            ]
+                        )
+                        await update.message.reply_text(
+                            f"✅ پک استیکر جدید ساخته شد!\n\n"
+                            f"🔗 لینک پک: https://t.me/addstickers/{pack_name}"
+                        )
+                    else:
+                        # Other error, send as regular sticker
+                        logger.error(f"Sticker pack error: {e}")
+                        sticker_webp.seek(0)
+                        await update.message.reply_document(
+                            document=InputFile(sticker_webp, filename="sticker.webp"),
+                            caption="⚠️ نتوانستم به پک اضافه کنم. استیکر به صورت فایل ارسال شد."
+                        )
+
+            except Exception as e:
+                logger.error(f"Error adding to sticker pack: {e}")
+                # Fallback: send as image
+                sticker_png = await bot_features.create_sticker_png(text)
+                if sticker_png:
+                    sticker_png.seek(0)
+                    await update.message.reply_photo(
+                        photo=InputFile(sticker_png, filename="sticker.png"),
+                        caption="⚠️ خطا در افزودن به پک. تصویر به صورت عکس ارسال شد."
+                    )
+                else:
+                    await update.message.reply_text("❌ خطا در ساخت استیکر!")
         else:
             await update.message.reply_text("❌ خطا در ساخت استیکر!")
     else:
@@ -552,31 +700,68 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Handle waiting for sticker text
     elif user_id in user_states and user_states[user_id].get("waiting_for_sticker_text"):
         bg_color = user_states[user_id].get("sticker_bg", "white")
-        sticker_bytes = await bot_features.create_sticker(text, bg_color)
-        
-        if sticker_bytes:
-            sticker_bytes.seek(0)
-            await update.message.reply_sticker(
-                sticker=InputFile(sticker_bytes, filename="sticker.png")
-            )
-            await update.message.reply_text("✅ استیکر شما با موفقیت ساخته شد!")
+        sticker_webp = await bot_features.create_sticker_webp(text, bg_color)
+
+        if sticker_webp:
+            try:
+                pack_name = f"user_{user_id}_pack_by_{context.bot.username}"
+                pack_title = f"استیکرهای {update.effective_user.first_name}"
+
+                sticker_webp.seek(0)
+
+                try:
+                    sticker_set = await context.bot.get_sticker_set(pack_name)
+                    await context.bot.add_sticker_to_set(
+                        user_id=user_id,
+                        name=pack_name,
+                        sticker=InputFile(sticker_webp, filename="sticker.webp"),
+                        emojis="😊"
+                    )
+                    await update.message.reply_text(
+                        f"✅ استیکر با رنگ {bg_color} به پک اضافه شد!\n\n"
+                        f"🔗 لینک پک: https://t.me/addstickers/{pack_name}"
+                    )
+                except TelegramError as e:
+                    if "STICKERSET_INVALID" in str(e) or "not found" in str(e).lower():
+                        sticker_webp.seek(0)
+                        await context.bot.create_new_sticker_set(
+                            user_id=user_id,
+                            name=pack_name,
+                            title=pack_title,
+                            stickers=[
+                                {
+                                    "sticker": InputFile(sticker_webp, filename="sticker.webp"),
+                                    "emoji_list": ["😊"]
+                                }
+                            ]
+                        )
+                        await update.message.reply_text(
+                            f"✅ پک استیکر جدید ساخته شد!\n\n"
+                            f"🔗 لینک پک: https://t.me/addstickers/{pack_name}"
+                        )
+                    else:
+                        logger.error(f"Sticker pack error: {e}")
+                        sticker_webp.seek(0)
+                        await update.message.reply_document(
+                            document=InputFile(sticker_webp, filename="sticker.webp"),
+                            caption="⚠️ نتوانستم به پک اضافه کنم. استیکر به صورت فایل ارسال شد."
+                        )
+
+            except Exception as e:
+                logger.error(f"Error in custom sticker: {e}")
+                sticker_png = await bot_features.create_sticker_png(text, bg_color)
+                if sticker_png:
+                    sticker_png.seek(0)
+                    await update.message.reply_photo(
+                        photo=InputFile(sticker_png, filename="sticker.png"),
+                        caption="⚠️ خطا در افزودن به پک. تصویر به صورت عکس ارسال شد."
+                    )
+                else:
+                    await update.message.reply_text("❌ خطا در ساخت استیکر!")
         else:
             await update.message.reply_text("❌ خطا در ساخت استیکر!")
-        
+
         user_states[user_id]["waiting_for_sticker_text"] = False
-    
-    # Handle quick sticker command
-    elif text.startswith("/sticker "):
-        sticker_text = text.replace("/sticker ", "")
-        sticker_bytes = await bot_features.create_sticker(sticker_text)
-        
-        if sticker_bytes:
-            sticker_bytes.seek(0)
-            await update.message.reply_sticker(
-                sticker=InputFile(sticker_bytes, filename="sticker.png")
-            )
-        else:
-            await update.message.reply_text("❌ خطا در ساخت استیکر!")
     
     # Default message
     else:
