@@ -250,7 +250,7 @@ def _parse_hex(hx: str) -> tuple[int, int, int, int]:
         b = int(hx[4:6], 16)
     return (r, g, b, 255)
 
-async def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: str, size_key: str, bg_mode: str = "transparent", bg_photo_path: str | None = None) -> bytes:
+async def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: str, size_key: str, bg_mode: str = "transparent", bg_photo_path: str | None = None, for_telegram_pack: bool = False) -> bytes:
     W, H = (512, 512)
     img = None
     try:
@@ -295,7 +295,13 @@ async def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_h
         draw.text((x, y), txt, font=font, fill=color, anchor="mm" if h_pos == "center" else "lm", stroke_width=2, stroke_fill=(0, 0, 0, 220))
 
         buf = io.BytesIO()
-        img.save(buf, format='WEBP', quality=90, method=4)
+        # Enhanced WebP settings for Telegram compatibility
+           if for_telegram_pack:
+            # Special settings for Telegram sticker packs
+               img.save(buf, format='WEBP', quality=95, method=4, lossless=False)
+           else:
+               # High quality for preview
+               img.save(buf, format='WEBP', quality=92, method=6)
         return buf.getvalue()
     finally:
         if bg_photo_path and os.path.exists(bg_photo_path):
@@ -376,7 +382,8 @@ async def sticker_confirm_logic(message, context: ContextTypes.DEFAULT_TYPE):
         defaults["bg_photo_path"] = final_data.pop("bg_photo_path", None)
         defaults.update(final_data)
 
-        img_bytes_webp = await render_image(text=final_text, **defaults)
+           # Generate WebP sticker optimized for Telegram
+           img_bytes_webp = await render_image(text=final_text, for_telegram_pack=True, **defaults)
 
         if 'bg_photo_path' in current_sess.get('sticker_data', {}):
             del current_sess['sticker_data']['bg_photo_path']
@@ -548,7 +555,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             }
             defaults["bg_photo_path"] = final_data.pop("bg_photo_path", None)
             defaults.update(final_data)
-
+           # Generate WebP sticker optimized for Telegram
+           img_bytes_webp = await render_image(text=final_text, for_telegram_pack=True, **defaults)
             img_bytes_webp = await render_image(text=final_text, **defaults)
 
             if 'bg_photo_path' in current_sess.get('sticker_data', {}):
@@ -597,10 +605,41 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_text("خطا: اطلاعات استیکر یافت نشد. لطفاً دوباره تلاش کنید.")
             return
 
-        # 1. Send the sticker to the user so they can save it.
-        await context.bot.send_sticker(chat_id=user_id, sticker=file_id)
+        # 1. Send the sticker as proper preview with fallback
+        try:
+            await context.bot.send_sticker(chat_id=user_id, sticker=file_id)
+            logger.info(f"Sticker preview sent successfully for user {user_id}")
+        except Exception as preview_error:
+            logger.error(f"Sticker preview failed: {preview_error}")
+            # Fallback: create and send WebP document
+            try:
+                current_sess = sess(user_id)
+                sticker_data = current_sess.get('sticker_data', {})
+                defaults = {
+                    "v_pos": "center",
+                    "h_pos": "center", 
+                    "font_key": "vazir",
+                    "color_hex": "#FFFFFF",
+                    "size_key": "medium"
+                }
+                defaults.update(sticker_data)
+                
+                img_bytes_preview = await render_image(text=final_text, for_telegram_pack=False, **defaults)
+                await context.bot.send_document(
+                    chat_id=user_id,
+                    document=InputFile(img_bytes_preview, "sticker.webp"),
+                    caption=f"🎨 **استیکر شما!**\n\n⚠️ برای افزودن به پک، فایل را دانلود کرده و به صورت دستی اضافه کنید."
+                )
+                logger.info(f"Fallback document sent for user {user_id}")
+            except Exception as fallback_error:
+                logger.error(f"Fallback also failed: {fallback_error}")
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text="❌ مشکلی در ارسال استیکر پیش آماد. لطفا دوباره تلاش کنید."
+                )
 
         pack_short_name = get_current_pack_short_name(user_id)
+           logger.info(f"📍 Current pack detected: {pack_short_name} for user {user_id}")
 
         # 2. Send the instructional message.
         if pack_short_name:
@@ -632,10 +671,18 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Log the error, but do not notify the user further as they already have instructions.
             logger.error(f"STAGE 2 BACKGROUND ATTEMPT FAILED for user {user_id}: {e}", exc_info=True)
         finally:
-            # Clean up and reset mode regardless of success
+            # Clean up but preserve pack state for continuous sticker creation
+            current_pack = get_current_pack_short_name(user_id)
             pending_stickers.pop(lookup_key, None)
             save_sessions()
-            reset_mode(user_id)
+            reset_mode(user_id, keep_pack=True)
+            
+            # Restore pack if it existed
+            if current_pack:
+                set_current_pack(user_id, current_pack)
+                logger.info(f"🔄 Pack state preserved: {current_pack} for user {user_id}")
+            
+            logger.info("✅ Sticker creation cycle completed - ready for next sticker!")
 
     elif callback_data == "sticker:simple:edit":
         current_sess = sess(user_id)
