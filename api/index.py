@@ -295,7 +295,7 @@ async def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_h
         draw.text((x, y), txt, font=font, fill=color, anchor="mm" if h_pos == "center" else "lm", stroke_width=2, stroke_fill=(0, 0, 0, 220))
 
         buf = io.BytesIO()
-        img.save(buf, format='WEBP')
+        img.save(buf, format='WEBP', quality=90, method=4)
         return buf.getvalue()
     finally:
         if bg_photo_path and os.path.exists(bg_photo_path):
@@ -626,7 +626,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # 3. Best-effort attempt to add the sticker automatically
             logger.info(f"Attempting to add sticker to set {pack_short_name} for user {user_id}...")
             await asyncio.sleep(1) # Small delay before the API call
-            await context.bot.add_sticker_to_set(user_id=user_id, name=pack_short_name, sticker=InputSticker(sticker=file_id, emoji_list=["😃"]))
+            await context.bot.add_sticker_to_set(user_id=user_id, name=pack_short_name, sticker=InputSticker(sticker=file_id, emoji_list=["😃"]), sticker_format='static')
             logger.info("API call to add_sticker_to_set completed.")
         except Exception as e:
             # Log the error, but do not notify the user further as they already have instructions.
