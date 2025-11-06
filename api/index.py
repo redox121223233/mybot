@@ -493,7 +493,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     elif callback_data == "sticker:confirm":
         # --- STAGE 1 of 2: Render and Upload ---
-        await query.edit_message_caption("⏳ در حال پردازش و آپلود اولیه استیکر...", reply_markup=None)
+        await query.edit_message_text("⏳ در حال پردازش و آپلود اولیه استیکر...", reply_markup=None)
 
         current_sess = sess(user_id)
         sticker_data = current_sess.get('sticker_data', {})
@@ -559,13 +559,22 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # 1. Send the sticker to the user so they can save it.
         await context.bot.send_sticker(chat_id=user_id, sticker=file_id)
 
-        # 2. Send the instructional message.
-        await query.message.reply_text(
-            "✅ استیکر شما ارسال شد.\n\n"
-            "**نکته:** اگر استیکر به طور خودکار به پک اضافه نشد، لطفاً روی استیکر بالا کلیک کرده و آن را به صورت دستی به پک خود اضافه کنید."
-        )
-
         pack_short_name = get_current_pack_short_name(user_id)
+
+        # 2. Send the instructional message.
+        if pack_short_name:
+            pack_link = f"https://t.me/addstickers/{pack_short_name}"
+            await query.message.reply_text(
+                f"✅ استیکر شما به پک <a href='{pack_link}'>شما</a> اضافه شد.\n\n"
+                "<b>نکته:</b> برای اطمینان بررسی کنید. اگر اضافه نشده بود، روی استیکر بالا کلیک کرده و آن را به صورت دستی به پک خود اضافه کنید.",
+                parse_mode='HTML',
+                disable_web_page_preview=True
+            )
+        else:
+            await query.message.reply_text(
+                "✅ استیکر شما ارسال شد.\n\n"
+                "**نکته:** اگر استیکر به طور خودکار به پک اضافه نشد، لطفاً روی استیکر بالا کلیک کرده و آن را به صورت دستی به پک خود اضافه کنید."
+            )
 
         if not pack_short_name:
             logger.error(f"Current pack not found for user {user_id}.")
