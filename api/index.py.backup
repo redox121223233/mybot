@@ -637,28 +637,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_sticker(chat_id=user_id, sticker=file_id)
             logger.info(f"Sticker preview sent successfully for user {user_id}")
-            
-            # Try to add sticker to pack
-            pack_short_name = get_current_pack_short_name(user_id)
-            if pack_short_name:
-                try:
-                    logger.info(f"Adding sticker to pack {pack_short_name}...")
-                    await context.bot.add_sticker_to_set(
-                        user_id=user_id,
-                        name=pack_short_name,
-                        sticker=file_id,
-                        emojis="😊"
-                    )
-                    logger.info("✅ Sticker added to pack successfully!")
-                except Exception as e:
-                    logger.error(f"❌ Failed to add sticker to pack: {e}")
-                    pack_link = f"https://t.me/addstickers/{pack_short_name}"
-                    await query.message.reply_text(
-                        f"⚠️ لطفا استیکر را دستی اضافه کنید:\n\n"
-                        f"1. روی استیکر کلیک کنید\n"
-                        f"2. «Add to Pack» را انتخاب کنید\n\n"
-                        f"لینک: {pack_link}"
-                    )
         except Exception as preview_error:
             logger.error(f"Sticker preview failed: {preview_error}")
             # Fallback: create and send WebP document
@@ -673,10 +651,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "size_key": "medium"
                 }
                 defaults.update(sticker_data)
-                final_text = sticker_data.get('text', '')
+                   final_text = sticker_data.get('text', '')
                 
                 img_bytes_preview = await render_image(text=final_text, for_telegram_pack=True, **defaults)
-                logger.info(f"Generated WebP preview, size: {len(img_bytes_preview)} bytes")
                 await context.bot.send_document(
                     chat_id=user_id,
                     document=InputFile(img_bytes_preview, "sticker.webp"),
