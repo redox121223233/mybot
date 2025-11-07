@@ -900,11 +900,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 if attempt > 0:
                                     await asyncio.sleep(2 ** attempt)
                                 
+                                from telegram import InputSticker
+                                
                                 await context.bot.add_sticker_to_set(
                                     user_id=user_id,
                                     name=pack_short_name,
-                                    sticker=file_id,
-                                    emojis="😊"
+                                    sticker=InputSticker(
+                                        sticker=file_id,
+                                        emoji_list=["😊"]
+                                    )
                                 )
                                 
                                 logger.info(f"✅ SUCCESS: Sticker added to pack {pack_short_name} on attempt {attempt + 1}")
@@ -1040,11 +1044,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 if attempt > 0:
                                     await asyncio.sleep(2 ** attempt)  # 2s, 4s delay
                                 
+                                from telegram import InputSticker
+                                
                                 await context.bot.add_sticker_to_set(
                                     user_id=user_id, 
                                     name=pack_short_name, 
-                                    sticker=file_id,
-                                    emojis="😊"
+                                    sticker=InputSticker(
+                                        sticker=file_id,
+                                        emoji_list=["😊"]
+                                    )
                                 )
                                 
                                 logger.info(f"✅ SUCCESS: Sticker added to pack {pack_short_name} on attempt {attempt + 1}")
