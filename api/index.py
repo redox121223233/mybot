@@ -154,6 +154,7 @@ def get_user_packs(uid: int) -> list:
 async def get_valid_user_packs(uid: int, context) -> list:
     """
     Get list of user's packs that actually exist and are accessible
+    Fixed for python-telegram-bot v20.7+
     """
     user_packs = get_user_packs(uid)
     valid_packs = []
@@ -162,8 +163,9 @@ async def get_valid_user_packs(uid: int, context) -> list:
         short_name = pack.get("short_name")
         if short_name and await check_pack_exists(context.bot, short_name):
             valid_packs.append(pack)
+            logger.info(f"✅ Pack {short_name} is valid for user {uid}")
         else:
-            logger.warning(f"Removing invalid pack {short_name} from user {uid}'s list")
+            logger.warning(f"❌ Removing invalid pack {short_name} from user {uid}'s list")
     
     # Update user's pack list with only valid packs
     if len(valid_packs) != len(user_packs):
@@ -173,9 +175,10 @@ async def get_valid_user_packs(uid: int, context) -> list:
         current_pack = u.get("current_pack")
         if current_pack and not any(p.get("short_name") == current_pack for p in valid_packs):
             u["current_pack"] = None
-            logger.info(f"Removed invalid current pack {current_pack} for user {uid}")
+            logger.info(f"🗑️ Removed invalid current pack {current_pack} for user {uid}")
         save_users()
     
+    logger.info(f"📊 User {uid} has {len(valid_packs)} valid packs out of {len(user_packs)} total")
     return valid_packs
 
 def add_user_pack(uid: int, pack_name: str, pack_short_name: str):
@@ -280,23 +283,49 @@ async def require_channel_membership(update: Update, context: ContextTypes.DEFAU
 # ============ Sticker Pack Utilities ============
 async def check_pack_exists(bot, short_name: str) -> bool:
     """
-    Enhanced pack existence check with detailed logging
+    Simple and reliable pack existence check using direct API
+    Bypasses python-telegram-bot library compatibility issues
     """
     try:
-        sticker_set = await bot.get_sticker_set(name=short_name)
-        logger.info(f"✅ Pack {short_name} exists with {len(sticker_set.stickers)} stickers")
-        return True
+        # Import aiohttp for direct API calls
+        import aiohttp
+        
+        # Get bot token from bot instance
+        bot_token = bot.token
+        
+        # Make direct API call
+        url = f"https://api.telegram.org/bot{bot_token}/getStickerSet"
+        params = {"name": short_name}
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, params=params) as response:
+                data = await response.json()
+                
+                if data.get("ok"):
+                    result = data.get("result", {})
+                    stickers = result.get("stickers", [])
+                    logger.info(f"✅ Pack {short_name} exists with {len(stickers)} stickers (direct API)")
+                    return True
+                else:
+                    error_desc = data.get("description", "").lower()
+                    if "stickerset_invalid" in error_desc or "not found" in error_desc:
+                        logger.error(f"🚨 Pack {short_name} does not exist")
+                        return False
+                    else:
+                        logger.warning(f"⚠️ API error for {short_name}: {data.get('description')}")
+                        return False
+                        
     except Exception as e:
-        error_message = str(e)
-        logger.warning(f"❌ Pack {short_name} check failed: {error_message}")
+        logger.error(f"❌ Direct API check failed for {short_name}: {e}")
         
-        # Specific error handling
-        if "STICKERSET_INVALID" in error_message or "sticker set not found" in error_message.lower():
-            logger.error(f"🚨 Pack {short_name} does not exist or was deleted")
-        elif "PEER_ID_INVALID" in error_message:
-            logger.error(f"🚨 User does not have access to pack {short_name}")
-        
-        return False
+        # Fallback: try the standard method (might still work for some cases)
+        try:
+            sticker_set = await bot.get_sticker_set(name=short_name)
+            logger.info(f"✅ Pack {short_name} exists (fallback method)")
+            return True
+        except Exception as fallback_error:
+            logger.warning(f"Fallback also failed: {fallback_error}")
+            return False
 
 def is_valid_pack_name(name: str) -> bool:
     if not (1 <= len(name) <= 50):
