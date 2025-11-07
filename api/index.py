@@ -401,8 +401,8 @@ async def sticker_confirm_logic(message, context: ContextTypes.DEFAULT_TYPE):
         defaults["bg_photo_path"] = final_data.pop("bg_photo_path", None)
         defaults.update(final_data)
 
-           # Generate WebP sticker optimized for Telegram
-           img_bytes_webp = await render_image(text=final_text, for_telegram_pack=True, **defaults)
+        # Generate WebP sticker optimized for Telegram
+        img_bytes_webp = await render_image(text=final_text, for_telegram_pack=True, **defaults)
 
         if 'bg_photo_path' in current_sess.get('sticker_data', {}):
             del current_sess['sticker_data']['bg_photo_path']
@@ -574,8 +574,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             }
             defaults["bg_photo_path"] = final_data.pop("bg_photo_path", None)
             defaults.update(final_data)
-           # Generate WebP sticker optimized for Telegram
-           img_bytes_webp = await render_image(text=final_text, for_telegram_pack=True, **defaults)
+        # Generate WebP sticker optimized for Telegram
             img_bytes_webp = await render_image(text=final_text, **defaults)
 
             if 'bg_photo_path' in current_sess.get('sticker_data', {}):
@@ -658,7 +657,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 )
 
         pack_short_name = get_current_pack_short_name(user_id)
-           logger.info(f"📍 Current pack detected: {pack_short_name} for user {user_id}")
+        logger.info(f"📍 Current pack detected: {pack_short_name} for user {user_id}")
 
         # 2. Send the instructional message.
         if pack_short_name:
@@ -684,38 +683,38 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # 3. Best-effort attempt to add the sticker automatically
             logger.info(f"Attempting to add sticker to set {pack_short_name} for user {user_id}...")
             await asyncio.sleep(1) # Small delay before the API call
-               # Enhanced sticker addition with multiple attempts
-               max_attempts = 3
-               for attempt in range(max_attempts):
-                   try:
-                       logger.info(f"Attempt {attempt + 1}/{max_attempts} to add sticker to pack...")
-                       await context.bot.add_sticker_to_set(
-                           user_id=user_id, 
-                           name=pack_short_name, 
-                           sticker=file_id,
-                           emojis="😊"
-                       )
-                       logger.info(f"✅ SUCCESS: Sticker added to pack {pack_short_name} on attempt {attempt + 1}")
-                       break
-                   except Exception as attempt_error:
-                       logger.warning(f"Attempt {attempt + 1} failed: {attempt_error}")
-                       if attempt < max_attempts - 1:
-                           await asyncio.sleep(1)  # Wait between attempts
-                       else:
-                           raise attempt_error
-            logger.info("API call to add_sticker_to_set completed.")
         except Exception as e:
-            # Log the error, but do not notify the user further as they already have instructions.
-           finally:
-               # Clean up but preserve pack state for continuous sticker creation
-               current_pack = get_current_pack_short_name(user_id)
-               cleanup_pending_sticker(user_id, lookup_key)
-               save_sessions()
-               reset_mode(user_id, keep_pack=True)  # This now automatically preserves the pack
-               
-               logger.info(f"✅ Sticker creation cycle completed - pack {current_pack} preserved for next sticker!")
-            
+            # Enhanced sticker addition with multiple attempts
+            max_attempts = 3
+            for attempt in range(max_attempts):
+                try:
+                    logger.info(f"Attempt {attempt + 1}/{max_attempts} to add sticker to pack...")
+                    await context.bot.add_sticker_to_set(
+                        user_id=user_id, 
+                        name=pack_short_name, 
+                        sticker=file_id,
+                        emojis="😊"
+                    )
+                    logger.info(f"✅ SUCCESS: Sticker added to pack {pack_short_name} on attempt {attempt + 1}")
+                    break
+                except Exception as attempt_error:
+                    logger.warning(f"Attempt {attempt + 1} failed: {attempt_error}")
+                    if attempt < max_attempts - 1:
+                        await asyncio.sleep(1)  # Wait between attempts
+                    else:
+                        raise attempt_error
             logger.info("✅ Sticker creation cycle completed - ready for next sticker!")
+        except Exception as e:
+            # Log detailed error information
+            logger.error(f"STAGE 2 BACKGROUND ATTEMPT FAILED for user {user_id}: {e}", exc_info=True)
+        finally:
+            # Clean up but preserve pack state for continuous sticker creation
+            current_pack = get_current_pack_short_name(user_id)
+            cleanup_pending_sticker(user_id, lookup_key)
+            save_sessions()
+            reset_mode(user_id, keep_pack=True)  # This now automatically preserves the pack
+            
+            logger.info(f"✅ Sticker creation cycle completed - pack {current_pack} preserved for next sticker!")
 
     elif callback_data == "sticker:simple:edit":
         current_sess = sess(user_id)
