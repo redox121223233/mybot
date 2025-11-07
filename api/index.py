@@ -140,7 +140,43 @@ def cleanup_pending_sticker(uid: int, lookup_key: str):
 # ============ Sticker Pack Management ============
 def get_user_packs(uid: int) -> list:
     u = user(uid)
-    return u.get("packs", [])
+    packs = u.get("packs", [])
+    
+    # Filter out invalid packs by removing current pack if it doesn't exist
+    current_pack = u.get("current_pack")
+    if current_pack and current_pack not in [p.get("short_name") for p in packs]:
+        logger.warning(f"Current pack {current_pack} not in user packs, removing from user data")
+        u["current_pack"] = None
+        save_users()
+    
+    return packs
+
+async def get_valid_user_packs(uid: int, context) -> list:
+    """
+    Get list of user's packs that actually exist and are accessible
+    """
+    user_packs = get_user_packs(uid)
+    valid_packs = []
+    
+    for pack in user_packs:
+        short_name = pack.get("short_name")
+        if short_name and await check_pack_exists(context.bot, short_name):
+            valid_packs.append(pack)
+        else:
+            logger.warning(f"Removing invalid pack {short_name} from user {uid}'s list")
+    
+    # Update user's pack list with only valid packs
+    if len(valid_packs) != len(user_packs):
+        u = user(uid)
+        u["packs"] = valid_packs
+        # If current pack is invalid, remove it
+        current_pack = u.get("current_pack")
+        if current_pack and not any(p.get("short_name") == current_pack for p in valid_packs):
+            u["current_pack"] = None
+            logger.info(f"Removed invalid current pack {current_pack} for user {uid}")
+        save_users()
+    
+    return valid_packs
 
 def add_user_pack(uid: int, pack_name: str, pack_short_name: str):
     u = user(uid)
@@ -243,10 +279,23 @@ async def require_channel_membership(update: Update, context: ContextTypes.DEFAU
 
 # ============ Sticker Pack Utilities ============
 async def check_pack_exists(bot, short_name: str) -> bool:
+    """
+    Enhanced pack existence check with detailed logging
+    """
     try:
-        await bot.get_sticker_set(name=short_name)
+        sticker_set = await bot.get_sticker_set(name=short_name)
+        logger.info(f"✅ Pack {short_name} exists with {len(sticker_set.stickers)} stickers")
         return True
-    except Exception:
+    except Exception as e:
+        error_message = str(e)
+        logger.warning(f"❌ Pack {short_name} check failed: {error_message}")
+        
+        # Specific error handling
+        if "STICKERSET_INVALID" in error_message or "sticker set not found" in error_message.lower():
+            logger.error(f"🚨 Pack {short_name} does not exist or was deleted")
+        elif "PEER_ID_INVALID" in error_message:
+            logger.error(f"🚨 User does not have access to pack {short_name}")
+        
         return False
 
 def is_valid_pack_name(name: str) -> bool:
@@ -551,13 +600,42 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
     elif callback_data.startswith("pack:select:"):
+
         pack_short_name = callback_data.split(":")[-1]
-        set_current_pack(user_id, pack_short_name)
-        keyboard = [
-            [InlineKeyboardButton("🖼 استیکر ساده", callback_data="sticker:simple")],
-            [InlineKeyboardButton("✨ استیکر پیشرفته", callback_data="sticker:advanced")]
-        ]
-        await query.edit_message_text("نوع استیکر را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+        # Verify pack exists before setting as current
+
+        if await check_pack_exists(context.bot, pack_short_name):
+
+            set_current_pack(user_id, pack_short_name)
+
+            logger.info(f"✅ Pack {pack_short_name} validated and set as current for user {user_id}")
+
+            
+
+            keyboard = [
+
+                [InlineKeyboardButton("\ud83d\uddbc \u0627\u0633\u062a\u06cc\u06a9\u0631 \u0633\u0627\u062f\u0647", callback_data="sticker:simple")],
+
+                [InlineKeyboardButton("\u2728 \u0627\u0633\u062a\u06ccu06a9\u0631 \u067eu064au0634u0631u0641u062a\u0647", callback_data="sticker:advanced")]
+
+            ]
+
+            await query.edit_message_text("\u0646\u0648\u0639 \u0627\u0633\u062a\u06ccu06a9\u0631 \u0631\u0627 \u0627\u0646\u062a\u062e\u0627\u0628 \u06a9\u0646\u064a\u062f:", reply_markup=InlineKeyboardMarkup(keyboard))
+
+        else:
+
+            logger.warning(f"❌ Pack {pack_short_name} does not exist, cannot select")
+
+            await query.edit_message_text(
+
+                f"❌ \u067e\u06a9 \u0627\u0633\u062a\u06cc\u06a9\u0631 {pack_short_name} \u0648\u062c\u0648\u062f \u0646\u062f\u0627\u0631\u062f.\n\n"
+
+                "\u0644\u0637\u0641\u0627\u064b \u064a\u06a9 \u067e\u06a9 \u062c\u062f\u064a\u062f \u0633\u0627\u062e\u062a\u0647 \u064a\u0627 \u067e\u06a9 \u0645\u0639\u062a\u0628\u0631 \u062f\u064a\u06af\u0631\u064a \u0627\u0646\u062a\u062e\u0627\u0628 \u06a9\u0646\u064a\u062f.",
+
+                reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("\ud83d\udd19 \u0628\u0627\u0632\u06af\u0634\u062a", callback_data="sticker_creator")]])
+
+            )
 
     elif callback_data == "pack:new":
         current_sess = sess(user_id)
