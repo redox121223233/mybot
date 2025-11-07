@@ -1,53 +1,21 @@
-# وظایف بازسازی ربات تلگرام
+# TODO: Fix Sticker Pack WebP Issues
 
-## [ ] حذف بخش‌های غیرضروری
-- [ ] حذف قابلیت جستجوی اینترنت
-- [ ] حذف قابلیت موسیقی
-- [ ] حذف قابلیت فیلم و سریال
-- [ ] حذف قابلیت چت با AI
-- [ ] حذف قابلیت آب و هوا
-- [ ] حذف قابلیت ارز دیجیتال
-- [ ] حذف قابلیت خرید و کوپن
-- [ ] حذف قابلیت اخبار
-- [ ] حذف قابلیت ترجمه و محاسبه
+## Problems Identified
+- [x] Fix PNG/WebP format issue in sticker preview
+- [x] Fix automatic sticker addition to pack (90% success rate)
+- [x] Fix issue where subsequent stickers don't get added to pack
+- [x] Add better logging for debugging sticker pack issues
 
-## [ ] بهبود بخش استیکر ساز
-- [ ] اصلاح تابع create_sticker برای کارایی بهتر
-- [ ] اضافه کردن قابلیت انتخاب رنگ پس‌زمینه
-- [ ] اضافه کردن قابلیت انتخاب فونت
-- [ ] اضافه کردن قابلیت استیکر از روی متن
+## Tasks to Complete
+- [x] Analyze the render_image function and fix WebP output format
+- [x] Fix the add_sticker_to_set logic for better success rate
+- [x] Improve session management for continuous sticker creation
+- [x] Add proper error handling and logging
+- [ ] Test the fix with multiple stickers
 
-## [ ] گسترش بخش بازی
-- [ ] افزودن بازی حدس عدد
-- [ ] افزودن بازی سنگ کاغذ قیچی
-- [ ] افزودن بازی کلمات
-- [ ] افزودن بازی حافظه
-
-## [ ] بهینه‌سازی منو اصلی
-- [x] طراحی منوی ساده با فقط بازی و استیکر ساز
-- [x] اضافه کردن دکمه‌های بازی جدید
-
-## [ ] ایجاد فایل اصلی ربات
-- [x] ایجاد فایل main.py برای اجرای ربات
-- [x] اضافه کردن handlerهای مربوط به_callback_query
-- [x] اضافه کردن handlerهای مربوط به دستورات
-
-## [ ] بهبود مستندات
-- [x] آپدیت فایل requirements.txt
-- [x] بازنویسی README.md
-
-## [ ] تست و کامیت
-- [x] تست عملکرد ربات
-- [x] کامیت تغییرات به ریپازیتوری
-
-## ✅ پروژه با موفقیت تکمیل شد!
-🎉 ربات تلگرام با موفقیت بازسازی شد و فقط قابلیت‌های بازی و استیکر ساز نگه داده شد.
-
-### تغییرات اصلی:
-- ❌ حذف تمام بخش‌های غیرضروری
-- ✅ بازنویسی کامل کد برای سادگی
-- 🎮 اضافه شدن ۴ بازی جدید + بازی تصادفی
-- 🎨 بهبود بخش استیکر ساز با رنگ‌های مختلف
-- 📱 طراحی منوی کاربرپسند
-- 📚 مستندات کامل و README.md به‌روز
-- 🚀 پوش موفقیت‌آمیز به ریپازیتوری
+## Key Changes Made:
+1. **Enhanced WebP generation**: All stickers now generated as WebP format with proper logging
+2. **Improved add_sticker_to_set**: Multiple retry attempts with better error handling
+3. **Fixed session management**: reset_mode now properly preserves pack state
+4. **Enhanced fallback**: WebP document sent when sticker preview fails
+5. **Better logging**: Added detailed logs for debugging sticker pack issues

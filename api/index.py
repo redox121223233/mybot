@@ -93,9 +93,26 @@ def sess(uid: int) -> dict:
         SESSIONS[uid] = { "mode": "main", "sticker_data": {}, "pending_stickers": {} }
     return SESSIONS[uid]
 
-def reset_mode(uid: int):
+def reset_mode(uid: int, keep_pack: bool = False):
+    current_pack = get_current_pack_short_name(uid) if keep_pack else None
     SESSIONS[uid] = { "mode": "main", "sticker_data": {}, "pending_stickers": {} }
     save_sessions()
+    
+    # Restore pack if it should be kept
+    if keep_pack and current_pack:
+        set_current_pack(uid, current_pack)
+
+def cleanup_pending_sticker(uid: int, lookup_key: str):
+    """Clean up a specific pending sticker after processing"""
+    try:
+        current_sess = sess(uid)
+        pending_stickers = current_sess.get('pending_stickers', {})
+        if lookup_key in pending_stickers:
+            del pending_stickers[lookup_key]
+            logger.info(f"Cleaned up pending sticker {lookup_key} for user {uid}")
+        save_sessions()
+    except Exception as e:
+        logger.error(f"Error cleaning up pending sticker {lookup_key} for user {uid}: {e}")
 
 # ============ Sticker Pack Management ============
 def get_user_packs(uid: int) -> list:
@@ -296,12 +313,14 @@ async def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_h
 
         buf = io.BytesIO()
         # Enhanced WebP settings for Telegram compatibility
-           if for_telegram_pack:
-            # Special settings for Telegram sticker packs
-               img.save(buf, format='WEBP', quality=95, method=4, lossless=False)
-           else:
-               # High quality for preview
-               img.save(buf, format='WEBP', quality=92, method=6)
+        if for_telegram_pack:
+            # Special settings for Telegram sticker packs - ensure WebP format
+            img.save(buf, format='WEBP', quality=95, method=4, lossless=False)
+            logger.info(f"Generated WebP sticker for Telegram pack, size: {len(buf.getvalue())} bytes")
+        else:
+            # High quality for preview - also WebP for consistency
+            img.save(buf, format='WEBP', quality=92, method=6)
+            logger.info(f"Generated WebP preview, size: {len(buf.getvalue())} bytes")
         return buf.getvalue()
     finally:
         if bg_photo_path and os.path.exists(bg_photo_path):
@@ -618,17 +637,17 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 defaults = {
                     "v_pos": "center",
                     "h_pos": "center", 
-                    "font_key": "vazir",
+                    "font_key": "Default",
                     "color_hex": "#FFFFFF",
                     "size_key": "medium"
                 }
                 defaults.update(sticker_data)
                 
-                img_bytes_preview = await render_image(text=final_text, for_telegram_pack=False, **defaults)
+                img_bytes_preview = await render_image(text=final_text, for_telegram_pack=True, **defaults)
                 await context.bot.send_document(
                     chat_id=user_id,
                     document=InputFile(img_bytes_preview, "sticker.webp"),
-                    caption=f"🎨 **استیکر شما!**\n\n⚠️ برای افزودن به پک، فایل را دانلود کرده و به صورت دستی اضافه کنید."
+                    caption=f"🎨 **استیکر WebP شما!**\n\n⚠️ 💡 **نحوه افزودن به پک:**\n1. روی فایل بالا کلیک کنید\n2. استیکر را ذخیره کنید\n3. به پک خود اضافه کنید\n\n⚠️ این فایل WebP است و برای تلگرام بهینه شده است."
                 )
                 logger.info(f"Fallback document sent for user {user_id}")
             except Exception as fallback_error:
@@ -665,22 +684,36 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # 3. Best-effort attempt to add the sticker automatically
             logger.info(f"Attempting to add sticker to set {pack_short_name} for user {user_id}...")
             await asyncio.sleep(1) # Small delay before the API call
-            await context.bot.add_sticker_to_set(user_id=user_id, name=pack_short_name, sticker=InputSticker(sticker=file_id, emoji_list=["😃"]), sticker_format='static')
+               # Enhanced sticker addition with multiple attempts
+               max_attempts = 3
+               for attempt in range(max_attempts):
+                   try:
+                       logger.info(f"Attempt {attempt + 1}/{max_attempts} to add sticker to pack...")
+                       await context.bot.add_sticker_to_set(
+                           user_id=user_id, 
+                           name=pack_short_name, 
+                           sticker=file_id,
+                           emojis="😊"
+                       )
+                       logger.info(f"✅ SUCCESS: Sticker added to pack {pack_short_name} on attempt {attempt + 1}")
+                       break
+                   except Exception as attempt_error:
+                       logger.warning(f"Attempt {attempt + 1} failed: {attempt_error}")
+                       if attempt < max_attempts - 1:
+                           await asyncio.sleep(1)  # Wait between attempts
+                       else:
+                           raise attempt_error
             logger.info("API call to add_sticker_to_set completed.")
         except Exception as e:
             # Log the error, but do not notify the user further as they already have instructions.
-            logger.error(f"STAGE 2 BACKGROUND ATTEMPT FAILED for user {user_id}: {e}", exc_info=True)
-        finally:
-            # Clean up but preserve pack state for continuous sticker creation
-            current_pack = get_current_pack_short_name(user_id)
-            pending_stickers.pop(lookup_key, None)
-            save_sessions()
-            reset_mode(user_id, keep_pack=True)
-            
-            # Restore pack if it existed
-            if current_pack:
-                set_current_pack(user_id, current_pack)
-                logger.info(f"🔄 Pack state preserved: {current_pack} for user {user_id}")
+           finally:
+               # Clean up but preserve pack state for continuous sticker creation
+               current_pack = get_current_pack_short_name(user_id)
+               cleanup_pending_sticker(user_id, lookup_key)
+               save_sessions()
+               reset_mode(user_id, keep_pack=True)  # This now automatically preserves the pack
+               
+               logger.info(f"✅ Sticker creation cycle completed - pack {current_pack} preserved for next sticker!")
             
             logger.info("✅ Sticker creation cycle completed - ready for next sticker!")
 
