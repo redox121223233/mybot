@@ -190,10 +190,20 @@ async def require_channel_membership(update: Update, context: ContextTypes.DEFAU
     text = f"برای استفاده از ربات، لطفاً ابتدا در کانال ما عضو شوید:\n{CHANNEL_USERNAME}"
     
     if update.callback_query:
-        await update.callback_query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-    else:
-        await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-    return False
+       try:
+           if update.callback_query:
+               await update.callback_query.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+           else:
+               await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+       except Exception as e:
+           logger.warning(f"Could not send membership message to user {user_id}: {e}")
+           # For callback queries, try to show an alert
+           if update.callback_query:
+               try:
+                   await update.callback_query.answer("Please message me directly first!", show_alert=True)
+               except:
+                   pass
+       return False
 
 # ============ Sticker Pack Utilities ============
 async def check_pack_exists(bot, short_name: str) -> bool:
