@@ -1,6 +1,5 @@
 python-telegram-bot==20.3
 Pillow==10.3.0
-Flask==2.3.3
 arabic-reshaper==3.0.0
 python-bidi==0.4.2
 aiohttp==3.9.1

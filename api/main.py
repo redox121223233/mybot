@@ -1,6 +1,6 @@
 """
-Ultra-simple Vercel compatible handler with Telegram bot functionality
-Minimal dependencies, proper error handling
+Vercel-compatible handler for Telegram bot
+Follows Vercel Python runtime requirements
 """
 
 import os
@@ -8,92 +8,87 @@ import json
 import sys
 import logging
 import asyncio
+from http.server import BaseHTTPRequestHandler
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Import our bot handler
+# Import bot handler with fallback
 try:
     from bot_handler import process_telegram_update
     BOT_ENABLED = True
     logger.info("✅ Bot handler imported successfully")
 except ImportError as e:
-    logger.error(f"⚠️ Bot handler not available: {e}")
+    logger.warning(f"⚠️ Bot handler not available: {e}")
     BOT_ENABLED = False
 
-class SimpleResponse:
-    def __init__(self, status_code=200, headers=None, body=''):
-        self.status_code = status_code
-        self.headers = headers or {'Content-Type': 'text/plain'}
-        self.body = body
-
-def handler(environ, start_response):
+class handler(BaseHTTPRequestHandler):
     """
-    WSGI compatible handler for Vercel
+    Vercel-compatible HTTP handler
+    Must inherit from BaseHTTPRequestHandler for Vercel Python runtime
     """
-    try:
-        method = environ.get('REQUEST_METHOD', 'GET')
-        path = environ.get('PATH_INFO', '/')
-
-        # Log the request
-        logger.info(f"📥 Request: {method} {path}")
-
-        # Handle different paths
-        if path == '/' and method == 'GET':
-            response_data = {
-                'status': 'ok',
-                'message': 'Telegram Bot API is running',
-                'version': '2.0.0',
-                'bot_enabled': BOT_ENABLED,
-                'endpoints': {
-                    'webhook': 'POST /webhook',
-                    'health': 'GET /health'
-                },
-                'features': {
-                    'sticker_creation': True,
-                    'webp_format': True,
-                    'pack_management': True
+    
+    def do_GET(self):
+        """Handle GET requests"""
+        try:
+            logger.info(f"📥 GET request: {self.path}")
+            
+            if self.path == '/' or self.path == '':
+                response_data = {
+                    'status': 'ok',
+                    'message': 'Telegram Bot API is running',
+                    'version': '2.0.0',
+                    'bot_enabled': BOT_ENABLED,
+                    'endpoints': {
+                        'webhook': 'POST /webhook',
+                        'health': 'GET /health'
+                    },
+                    'features': {
+                        'sticker_creation': True,
+                        'webp_format': True,
+                        'pack_management': True
+                    }
                 }
-            }
-            body = json.dumps(response_data, indent=2)
-            response = SimpleResponse(
-                status_code=200,
-                headers={'Content-Type': 'application/json'},
-                body=body
-            )
-
-        elif path == '/health' and method == 'GET':
-            health_data = {
-                'status': 'healthy',
-                'timestamp': str(environ.get('HTTP_X_VERCEL_TIMESTAMP', 'unknown')),
-                'region': environ.get('VERCEL_REGION', 'unknown'),
-                'bot_status': 'enabled' if BOT_ENABLED else 'disabled',
-                'python_version': sys.version
-            }
-            body = json.dumps(health_data, indent=2)
-            response = SimpleResponse(
-                status_code=200,
-                headers={'Content-Type': 'application/json'},
-                body=body
-            )
-
-        elif path == '/webhook' and method == 'POST':
-            try:
+                self.send_json_response(200, response_data)
+                
+            elif self.path == '/health':
+                health_data = {
+                    'status': 'healthy',
+                    'bot_status': 'enabled' if BOT_ENABLED else 'disabled',
+                    'python_version': sys.version,
+                    'platform': sys.platform
+                }
+                self.send_json_response(200, health_data)
+                
+            else:
+                error_data = {
+                    'error': 'Not found',
+                    'available_endpoints': ['/', '/health', '/webhook']
+                }
+                self.send_json_response(404, error_data)
+                
+        except Exception as e:
+            logger.error(f"❌ GET error: {e}", exc_info=True)
+            self.send_json_response(500, {'error': 'Internal server error'})
+    
+    def do_POST(self):
+        """Handle POST requests"""
+        try:
+            logger.info(f"📥 POST request: {self.path}")
+            
+            if self.path == '/webhook' or self.path == '/api/webhook':
                 # Read request body
-                content_length = int(environ.get('CONTENT_LENGTH', 0))
+                content_length = int(self.headers.get('Content-Length', 0))
                 if content_length > 0:
-                    body_bytes = environ['wsgi.input'].read(content_length)
-                    body_str = body_bytes.decode('utf-8')
-
-                    # Parse JSON
-                    webhook_data = json.loads(body_str)
-                    logger.info(f"📨 Webhook received: {type(webhook_data)}")
-
+                    body = self.rfile.read(content_length)
+                    webhook_data = json.loads(body.decode('utf-8'))
+                    
+                    logger.info(f"📨 Webhook received: update_id={webhook_data.get('update_id', 'unknown')}")
+                    
                     if BOT_ENABLED:
-                        # Process with bot handler
                         try:
-                            # Run async processing
+                            # Process with bot handler
                             loop = asyncio.new_event_loop()
                             asyncio.set_event_loop(loop)
                             result = loop.run_until_complete(
@@ -101,116 +96,62 @@ def handler(environ, start_response):
                             )
                             loop.close()
                             
-                            logger.info(f"✅ Webhook processed: {result}")
-                            response_data = {
-                                'status': 'ok', 
+                            logger.info(f"✅ Webhook processed successfully")
+                            self.send_json_response(200, {
+                                'status': 'ok',
                                 'processed': True,
                                 'result': result
-                            }
+                            })
                         except Exception as bot_error:
-                            logger.error(f"❌ Bot processing error: {bot_error}")
-                            response_data = {
-                                'status': 'error', 
-                                'message': f'Bot processing failed: {str(bot_error)}'
-                            }
+                            logger.error(f"❌ Bot processing error: {bot_error}", exc_info=True)
+                            self.send_json_response(500, {
+                                'status': 'error',
+                                'message': str(bot_error)
+                            })
                     else:
-                        # Simple echo when bot is disabled
-                        logger.info("📋 Bot disabled, echoing webhook data")
-                        response_data = {
-                            'status': 'ok', 
+                        # Echo when bot disabled
+                        logger.info("📋 Bot disabled, echoing webhook")
+                        self.send_json_response(200, {
+                            'status': 'ok',
                             'echo': webhook_data,
                             'note': 'Bot functionality is currently disabled'
-                        }
-
-                    body = json.dumps(response_data)
-                    response = SimpleResponse(
-                        status_code=200,
-                        headers={'Content-Type': 'application/json'},
-                        body=body
-                    )
+                        })
                 else:
-                    response_data = {'error': 'No data received'}
-                    body = json.dumps(response_data)
-                    response = SimpleResponse(
-                        status_code=400,
-                        headers={'Content-Type': 'application/json'},
-                        body=body
-                    )
+                    self.send_json_response(400, {'error': 'No data received'})
+            else:
+                self.send_json_response(404, {'error': 'Endpoint not found'})
+                
+        except json.JSONDecodeError as e:
+            logger.error(f"❌ JSON decode error: {e}")
+            self.send_json_response(400, {'error': 'Invalid JSON'})
+        except Exception as e:
+            logger.error(f"❌ POST error: {e}", exc_info=True)
+            self.send_json_response(500, {'error': 'Internal server error'})
+    
+    def send_json_response(self, status_code, data):
+        """Send JSON response"""
+        try:
+            self.send_response(status_code)
+            self.send_header('Content-Type', 'application/json')
+            self.end_headers()
+            response_body = json.dumps(data, indent=2)
+            self.wfile.write(response_body.encode('utf-8'))
+        except Exception as e:
+            logger.error(f"❌ Error sending response: {e}")
+    
+    def log_message(self, format, *args):
+        """Override to use our logger"""
+        logger.info(f"{self.address_string()} - {format % args}")
 
-            except json.JSONDecodeError as e:
-                logger.error(f"❌ JSON decode error: {e}")
-                response_data = {'error': 'Invalid JSON'}
-                body = json.dumps(response_data)
-                response = SimpleResponse(
-                    status_code=400,
-                    headers={'Content-Type': 'application/json'},
-                    body=body
-                )
-            except Exception as e:
-                logger.error(f"❌ Webhook processing error: {e}", exc_info=True)
-                response_data = {'error': 'Processing failed'}
-                body = json.dumps(response_data)
-                response = SimpleResponse(
-                    status_code=500,
-                    headers={'Content-Type': 'application/json'},
-                    body=body
-                )
-
-        else:
-            response_data = {
-                'error': 'Not found',
-                'available_endpoints': ['/', '/health', '/webhook']
-            }
-            body = json.dumps(response_data)
-            response = SimpleResponse(
-                status_code=404,
-                headers={'Content-Type': 'application/json'},
-                body=body
-            )
-
-        # Start response
-        status = f"{response.status_code} OK"
-        headers = list(response.headers.items())
-        start_response(status, headers)
-
-        # Return response body
-        return [response.body.encode('utf-8')]
-
-    except Exception as e:
-        logger.error(f"❌ Handler error: {e}", exc_info=True)
-        error_response = SimpleResponse(
-            status_code=500,
-            headers={'Content-Type': 'application/json'},
-            body=json.dumps({'error': 'Internal server error'})
-        )
-
-        status = f"{error_response.status_code} ERROR"
-        headers = list(error_response.headers.items())
-        start_response(status, headers)
-
-        return [error_response.body.encode('utf-8')]
-
-# For Vercel compatibility
-app = handler
-
-# Test function
-def test_handler():
-    """Test the handler locally"""
-    def start_response(status, headers):
-        print(f"Status: {status}")
-        print(f"Headers: {headers}")
-
-    # Test GET request
-    environ = {
-        'REQUEST_METHOD': 'GET',
-        'PATH_INFO': '/',
-        'CONTENT_LENGTH': '0',
-        'wsgi.input': type('', (), {'read': lambda self, n: b''})()
-    }
-
-    print("🧪 Testing GET /")
-    response = handler(environ, start_response)
-    print(f"Response: {response[0].decode('utf-8')[:200]}...")
-
+# For local testing
 if __name__ == '__main__':
-    test_handler()
+    from http.server import HTTPServer
+    
+    print("🧪 Starting test server on http://localhost:8000")
+    server = HTTPServer(('localhost', 8000), handler)
+    
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\n🛑 Server stopped")
+        server.shutdown()
