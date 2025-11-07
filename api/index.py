@@ -318,14 +318,9 @@ async def check_pack_exists(bot, short_name: str) -> bool:
     except Exception as e:
         logger.error(f"❌ Direct API check failed for {short_name}: {e}")
         
-        # Fallback: try the standard method (might still work for some cases)
-        try:
-            sticker_set = await bot.get_sticker_set(name=short_name)
-            logger.info(f"✅ Pack {short_name} exists (fallback method)")
-            return True
-        except Exception as fallback_error:
-            logger.warning(f"Fallback also failed: {fallback_error}")
-            return False
+        # Fallback: return False to avoid StickerSet errors
+        logger.warning(f"Direct API failed and fallback avoided due to StickerSet issues")
+        return False
 
 def is_valid_pack_name(name: str) -> bool:
     if not (1 <= len(name) <= 50):
@@ -343,16 +338,36 @@ def is_valid_pack_name(name: str) -> bool:
 
 async def get_pack_status(context, pack_short_name: str) -> dict:
     """
-    Get detailed status of a sticker pack
+    Get detailed status of a sticker pack using direct API
     """
     try:
-        sticker_set = await context.bot.get_sticker_set(pack_short_name)
-        return {
-            "exists": True,
-            "count": len(sticker_set.stickers),
-            "title": sticker_set.title,
-            "is_full": len(sticker_set.stickers) >= 120
-        }
+        import aiohttp
+        bot_token = context.bot.token
+        url = f"https://api.telegram.org/bot{bot_token}/getStickerSet"
+        params = {"name": pack_short_name}
+        
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, params=params) as response:
+                data = await response.json()
+                
+                if data.get("ok"):
+                    result = data.get("result", {})
+                    stickers = result.get("stickers", [])
+                    return {
+                        "exists": True,
+                        "count": len(stickers),
+                        "title": result.get("title"),
+                        "is_full": len(stickers) >= 120
+                    }
+                else:
+                    return {
+                        "exists": False,
+                        "count": 0,
+                        "title": None,
+                        "is_full": False,
+                        "error": data.get("description", "Unknown error")
+                    }
+                    
     except Exception as e:
         logger.warning(f"Could not get pack status for {pack_short_name}: {e}")
         return {
@@ -564,7 +579,17 @@ async def sticker_confirm_logic(message, context: ContextTypes.DEFAULT_TYPE):
         defaults.update(final_data)
 
         # Generate WebP sticker optimized for Telegram
-        img_bytes_webp = await render_image(text=final_text, for_telegram_pack=True, **defaults)
+        img_bytes_webp = await render_image(
+            text=final_text,
+            v_pos=defaults.get('v_pos', 'center'),
+            h_pos=defaults.get('h_pos', 'center'),
+            font_key=defaults.get('font_key', 'Default'),
+            color_hex=defaults.get('color_hex', '#FFFFFF'),
+            size_key=defaults.get('size_key', 'medium'),
+            bg_mode=defaults.get('bg_mode', 'transparent'),
+            bg_photo_path=defaults.get('bg_photo_path'),
+            for_telegram_pack=True
+        )
 
         if 'bg_photo_path' in current_sess.get('sticker_data', {}):
             del current_sess['sticker_data']['bg_photo_path']
@@ -766,7 +791,17 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             defaults["bg_photo_path"] = final_data.pop("bg_photo_path", None)
             defaults.update(final_data)
         # Generate WebP sticker optimized for Telegram
-            img_bytes_webp = await render_image(text=final_text, **defaults)
+            img_bytes_webp = await render_image(
+                text=final_text,
+                v_pos=defaults.get('v_pos', 'center'),
+                h_pos=defaults.get('h_pos', 'center'),
+                font_key=defaults.get('font_key', 'Default'),
+                color_hex=defaults.get('color_hex', '#FFFFFF'),
+                size_key=defaults.get('size_key', 'medium'),
+                bg_mode=defaults.get('bg_mode', 'transparent'),
+                bg_photo_path=defaults.get('bg_photo_path'),
+                for_telegram_pack=True
+            )
 
             if 'bg_photo_path' in current_sess.get('sticker_data', {}):
                 del current_sess['sticker_data']['bg_photo_path']
@@ -826,9 +861,25 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 
                 # Verify pack exists first
                 if await check_pack_exists(context.bot, pack_short_name):
-                    # Get current sticker count
-                    current_count = await context.bot.get_sticker_set(pack_short_name)
-                    sticker_count = len(current_count.stickers)
+                    # Get current sticker count using direct API
+                    import aiohttp
+                    bot_token = context.bot.token
+                    url = f"https://api.telegram.org/bot{bot_token}/getStickerSet"
+                    params = {"name": pack_short_name}
+                    
+                    try:
+                        async with aiohttp.ClientSession() as session:
+                            async with session.get(url, params=params) as response:
+                                data = await response.json()
+                                if data.get("ok"):
+                                    stickers = data.get("result", {}).get("stickers", [])
+                                    sticker_count = len(stickers)
+                                else:
+                                    sticker_count = 0
+                                    logger.warning(f"Could not get sticker count: {data.get('description')}")
+                    except Exception as count_error:
+                        logger.warning(f"Failed to get sticker count: {count_error}")
+                        sticker_count = 0
                     
                     if sticker_count >= 120:
                         logger.warning(f"Pack {pack_short_name} is full with {sticker_count} stickers")
@@ -897,7 +948,17 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 defaults.update(sticker_data)
                 final_text = sticker_data.get('text', '')
                 
-                img_bytes_preview = await render_image(text=final_text, for_telegram_pack=True, **defaults)
+                img_bytes_preview = await render_image(
+                    text=final_text,
+                    v_pos=defaults.get('v_pos', 'center'),
+                    h_pos=defaults.get('h_pos', 'center'),
+                    font_key=defaults.get('font_key', 'Default'),
+                    color_hex=defaults.get('color_hex', '#FFFFFF'),
+                    size_key=defaults.get('size_key', 'medium'),
+                    bg_mode=defaults.get('bg_mode', 'transparent'),
+                    bg_photo_path=defaults.get('bg_photo_path'),
+                    for_telegram_pack=True
+                )
                 logger.info(f"Generated WebP preview, size: {len(img_bytes_preview)} bytes")
                 await context.bot.send_document(
                     chat_id=user_id,
@@ -942,8 +1003,22 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Verify pack exists and get current count
             if await check_pack_exists(context.bot, pack_short_name):
                 try:
-                    sticker_set = await context.bot.get_sticker_set(pack_short_name)
-                    current_count = len(sticker_set.stickers)
+                    # Use direct API to get sticker count
+                    import aiohttp
+                    bot_token = context.bot.token
+                    url = f"https://api.telegram.org/bot{bot_token}/getStickerSet"
+                    params = {"name": pack_short_name}
+                    
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(url, params=params) as response:
+                            data = await response.json()
+                            if data.get("ok"):
+                                stickers = data.get("result", {}).get("stickers", [])
+                                current_count = len(stickers)
+                            else:
+                                current_count = 0
+                                logger.warning(f"Could not get sticker count: {data.get('description')}")
+                    
                     logger.info(f"Pack {pack_short_name} currently has {current_count} stickers")
                     
                     if current_count >= 120:
