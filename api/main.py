@@ -1,14 +1,26 @@
 """
-Ultra-simple Vercel compatible handler - no Flask, minimal dependencies
+Ultra-simple Vercel compatible handler with Telegram bot functionality
+Minimal dependencies, proper error handling
 """
+
 import os
 import json
 import sys
 import logging
+import asyncio
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# Import our bot handler
+try:
+    from bot_handler import process_telegram_update
+    BOT_ENABLED = True
+    logger.info("✅ Bot handler imported successfully")
+except ImportError as e:
+    logger.error(f"⚠️ Bot handler not available: {e}")
+    BOT_ENABLED = False
 
 class SimpleResponse:
     def __init__(self, status_code=200, headers=None, body=''):
@@ -25,17 +37,23 @@ def handler(environ, start_response):
         path = environ.get('PATH_INFO', '/')
 
         # Log the request
-        logger.info(f"Request: {method} {path}")
+        logger.info(f"📥 Request: {method} {path}")
 
         # Handle different paths
         if path == '/' and method == 'GET':
             response_data = {
                 'status': 'ok',
                 'message': 'Telegram Bot API is running',
-                'version': '1.0.0',
+                'version': '2.0.0',
+                'bot_enabled': BOT_ENABLED,
                 'endpoints': {
                     'webhook': 'POST /webhook',
                     'health': 'GET /health'
+                },
+                'features': {
+                    'sticker_creation': True,
+                    'webp_format': True,
+                    'pack_management': True
                 }
             }
             body = json.dumps(response_data, indent=2)
@@ -49,7 +67,9 @@ def handler(environ, start_response):
             health_data = {
                 'status': 'healthy',
                 'timestamp': str(environ.get('HTTP_X_VERCEL_TIMESTAMP', 'unknown')),
-                'region': environ.get('VERCEL_REGION', 'unknown')
+                'region': environ.get('VERCEL_REGION', 'unknown'),
+                'bot_status': 'enabled' if BOT_ENABLED else 'disabled',
+                'python_version': sys.version
             }
             body = json.dumps(health_data, indent=2)
             response = SimpleResponse(
@@ -68,10 +88,40 @@ def handler(environ, start_response):
 
                     # Parse JSON
                     webhook_data = json.loads(body_str)
-                    logger.info(f"Webhook received: {webhook_data}")
+                    logger.info(f"📨 Webhook received: {type(webhook_data)}")
 
-                    # Simple response for now
-                    response_data = {'status': 'ok', 'processed': True}
+                    if BOT_ENABLED:
+                        # Process with bot handler
+                        try:
+                            # Run async processing
+                            loop = asyncio.new_event_loop()
+                            asyncio.set_event_loop(loop)
+                            result = loop.run_until_complete(
+                                process_telegram_update(webhook_data)
+                            )
+                            loop.close()
+                            
+                            logger.info(f"✅ Webhook processed: {result}")
+                            response_data = {
+                                'status': 'ok', 
+                                'processed': True,
+                                'result': result
+                            }
+                        except Exception as bot_error:
+                            logger.error(f"❌ Bot processing error: {bot_error}")
+                            response_data = {
+                                'status': 'error', 
+                                'message': f'Bot processing failed: {str(bot_error)}'
+                            }
+                    else:
+                        # Simple echo when bot is disabled
+                        logger.info("📋 Bot disabled, echoing webhook data")
+                        response_data = {
+                            'status': 'ok', 
+                            'echo': webhook_data,
+                            'note': 'Bot functionality is currently disabled'
+                        }
+
                     body = json.dumps(response_data)
                     response = SimpleResponse(
                         status_code=200,
@@ -88,7 +138,7 @@ def handler(environ, start_response):
                     )
 
             except json.JSONDecodeError as e:
-                logger.error(f"JSON decode error: {e}")
+                logger.error(f"❌ JSON decode error: {e}")
                 response_data = {'error': 'Invalid JSON'}
                 body = json.dumps(response_data)
                 response = SimpleResponse(
@@ -97,7 +147,7 @@ def handler(environ, start_response):
                     body=body
                 )
             except Exception as e:
-                logger.error(f"Webhook processing error: {e}")
+                logger.error(f"❌ Webhook processing error: {e}", exc_info=True)
                 response_data = {'error': 'Processing failed'}
                 body = json.dumps(response_data)
                 response = SimpleResponse(
@@ -107,7 +157,10 @@ def handler(environ, start_response):
                 )
 
         else:
-            response_data = {'error': 'Not found'}
+            response_data = {
+                'error': 'Not found',
+                'available_endpoints': ['/', '/health', '/webhook']
+            }
             body = json.dumps(response_data)
             response = SimpleResponse(
                 status_code=404,
@@ -124,7 +177,7 @@ def handler(environ, start_response):
         return [response.body.encode('utf-8')]
 
     except Exception as e:
-        logger.error(f"Handler error: {e}")
+        logger.error(f"❌ Handler error: {e}", exc_info=True)
         error_response = SimpleResponse(
             status_code=500,
             headers={'Content-Type': 'application/json'},
@@ -155,9 +208,9 @@ def test_handler():
         'wsgi.input': type('', (), {'read': lambda self, n: b''})()
     }
 
-    print("Testing GET /")
+    print("🧪 Testing GET /")
     response = handler(environ, start_response)
-    print(f"Response: {response[0].decode('utf-8')}")
+    print(f"Response: {response[0].decode('utf-8')[:200]}...")
 
 if __name__ == '__main__':
     test_handler()
