@@ -1042,6 +1042,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         success = False
                         
                         last_error = None
+                        
+                        for attempt in range(max_attempts):
                             try:
                                 logger.info(f"Attempt {attempt + 1}/{max_attempts} to add sticker to pack...")
                                 
@@ -1113,13 +1115,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             # Enhanced pack preservation logic
             user_data = user(user_id)
-            preserved_pack = user_data.get(\'current_pack\') or current_pack
+            preserved_pack = user_data.get('current_pack') or current_pack
             
             if preserved_pack:
                 # Ensure pack is preserved in both user data and session
-                user_data[\'current_pack\'] = preserved_pack
+                user_data['current_pack'] = preserved_pack
                 sess_data = sess(user_id)
-                sess_data[\'last_pack\'] = preserved_pack
+                sess_data['last_pack'] = preserved_pack
                 
                 logger.info(f"📦 Preserved pack {preserved_pack} for continuous creation")
                 
