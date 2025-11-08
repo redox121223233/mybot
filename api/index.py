@@ -1157,3 +1157,88 @@ async def add_sticker_to_pack_improved(context, user_id, pack_short_name, sticke
         return False
     except:
         return False
+
+# ============ Vercel Serverless Function Handler ============
+from http.server import BaseHTTPRequestHandler
+import urllib.parse
+
+class handler(BaseHTTPRequestHandler):
+    """Vercel serverless function handler"""
+    
+    def do_POST(self):
+        """Handle POST requests from Telegram webhook"""
+        try:
+            # Read the request body
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            
+            # Log the request
+            logger.info(f"Received webhook request: {len(post_data)} bytes")
+            
+            # Process the update
+            asyncio.run(self.process_update(post_data))
+            
+            # Send success response
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(b'{"status": "ok"}')
+            
+        except Exception as e:
+            logger.error(f"Error in webhook handler: {e}", exc_info=True)
+            self.send_response(500)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(b'{"status": "error"}')
+    
+    def do_GET(self):
+        """Handle GET requests for health check"""
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(b'{"status": "running", "bot": "telegram_sticker_bot"}')
+    
+    async def process_update(self, post_data):
+        """Process Telegram update"""
+        try:
+            # Parse the update
+            update_data = json.loads(post_data.decode('utf-8'))
+            update = Update.de_json(update_data, bot_app.bot)
+            
+            # Process the update
+            await bot_app.process_update(update)
+            
+            logger.info("Update processed successfully")
+            
+        except Exception as e:
+            logger.error(f"Error processing update: {e}", exc_info=True)
+
+# Initialize the bot application
+bot_token = os.getenv('BOT_TOKEN')
+if not bot_token:
+    logger.error("BOT_TOKEN environment variable not set!")
+    raise ValueError("BOT_TOKEN is required")
+
+bot_app = Application.builder().token(bot_token).build()
+
+# Register command handlers
+bot_app.add_handler(CommandHandler("start", start_command))
+bot_app.add_handler(CommandHandler("help", help_command))
+
+# Register callback query handlers
+bot_app.add_handler(CallbackQueryHandler(button_callback))
+
+# Simple message handlers
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle photo messages"""
+    await update.message.reply_text("عکس دریافت شد! لطفاً از منو استفاده کنید.")
+
+async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle text messages"""
+    await update.message.reply_text("متن دریافت شد! لطفاً از دستور /start استفاده کنید.")
+
+# Register message handlers for sticker creation
+bot_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+bot_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
+
+logger.info("Bot application initialized successfully")
