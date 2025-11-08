@@ -573,7 +573,7 @@ async def sticker_confirm_logic(message, context: ContextTypes.DEFAULT_TYPE):
         final_text = final_data.pop("text", "")
         defaults = {
             "v_pos": "center", "h_pos": "center", "font_key": "Default",
-            "color_hex": "#FFFFFF", "size_key": "medium"
+            "color_hex": "#000000", "size_key": "medium"
         }
         defaults["bg_photo_path"] = final_data.pop("bg_photo_path", None)
         defaults.update(final_data)
@@ -708,7 +708,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         current_sess['sticker_mode'] = 'simple'
         current_sess['sticker_data'] = {
             "v_pos": "center", "h_pos": "center", "font_key": "Default",
-            "color_hex": "#FFFFFF", "size_key": "medium"
+            "color_hex": "#000000", "size_key": "medium"
         }
         save_sessions()
         await query.edit_message_text("لطفاً متن استیکر ساده را ارسال کنید:")
@@ -720,7 +720,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
         current_sess = sess(user_id)
         current_sess['sticker_mode'] = 'advanced'
-        current_sess['sticker_data'] = {"v_pos": "center", "h_pos": "center", "font_key": "Default", "color_hex": "#FFFFFF", "size_key": "large"}
+        current_sess['sticker_data'] = {"v_pos": "center", "h_pos": "center", "font_key": "Default", "color_hex": "#000000", "size_key": "large"}
         save_sessions()
         await query.edit_message_text("لطفاً متن استیکر پیشرفته را ارسال کنید:")
         
@@ -786,7 +786,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             final_text = final_data.pop("text", "")
             defaults = {
                 "v_pos": "center", "h_pos": "center", "font_key": "Default",
-                "color_hex": "#FFFFFF", "size_key": "medium"
+                "color_hex": "#000000", "size_key": "medium"
             }
             defaults["bg_photo_path"] = final_data.pop("bg_photo_path", None)
             defaults.update(final_data)
@@ -951,7 +951,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     "v_pos": "center",
                     "h_pos": "center", 
                     "font_key": "Default",
-                    "color_hex": "#FFFFFF",
+                    "color_hex": "#000000",
                     "size_key": "medium"
                 }
                 defaults.update(sticker_data)
@@ -1113,325 +1113,23 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             current_pack = get_current_pack_short_name(user_id)
             cleanup_pending_sticker(user_id, lookup_key)
             
-            # Enhanced pack preservation logic
+            # Enhanced pack preservation for continuous creation
             user_data = user(user_id)
             preserved_pack = user_data.get('current_pack') or current_pack
             
             if preserved_pack:
-                # Ensure pack is preserved in both user data and session
-                user_data['current_pack'] = preserved_pack
-                sess_data = sess(user_id)
-                sess_data['last_pack'] = preserved_pack
+                # Reset mode but preserve only pack info (clear sticker data for next creation)
+                reset_mode(user_id, keep_pack=True)
                 
-                logger.info(f"📦 Preserved pack {preserved_pack} for continuous creation")
-                
-                # Send a quick continuation prompt
+                # Send success and continuation prompt
                 try:
                     await query.message.reply_text(
-                        f"🎨 آماده ساختن استیکر بعدی هستید؟\\n\\n"
-                        f"پک فعلی: {preserved_pack}\\n\\n"
-                        f"از دسته 2️⃣ برای ساختن استیکر ساده استفاده کنید یا از منوی ربات!"
+                        f"✅ استیکر با موفقیت به پک اضافه شد!\\n\\n"
+                        f"🎯 برای استیکر بعدی: دوباره متن مورد نظرتون رو بفرستید"
+                        f" یا از دسته ۲⃣ استفاده کنید."
                     )
                 except Exception as prompt_error:
                     logger.warning(f"Could not send continuation prompt: {prompt_error}")
-            
-            save_sessions()
-            reset_mode(user_id, keep_pack=True)  # This now automatically preserves the pack
-            
-            logger.info(f"✅ Sticker creation cycle completed - pack {current_pack} preserved for next sticker!")
-
-    elif callback_data == "sticker:simple:edit":
-        current_sess = sess(user_id)
-        current_sess['sticker_mode'] = 'simple'
-        save_sessions()
-        await query.edit_message_text("لطفاً متن جدید استیکر ساده را ارسال کنید:")
-    
-    elif callback_data == "help":
-        await bot_features.help_command(update, context)
-
-    elif callback_data == "support":
-        keyboard = [[InlineKeyboardButton("تماس با پشتیبانی", url=f"https://t.me/{SUPPORT_USERNAME.replace('@', '')}")]]
-        await query.edit_message_text("برای تماس با پشتیبانی، از دکمه زیر استفاده کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
-
-    elif callback_data == "admin:panel":
-        if user_id != ADMIN_ID: return
-        keyboard = [[InlineKeyboardButton("ارسال پیام همگانی", callback_data="admin:broadcast_prompt")], [InlineKeyboardButton("ارسال پیام به کاربر", callback_data="admin:dm_prompt")], [InlineKeyboardButton("تغییر سهمیه کاربر", callback_data="admin:quota_prompt")]]
-        await query.edit_message_text("👑 **پنل ادمین** 👑", reply_markup=InlineKeyboardMarkup(keyboard))
-
-    elif callback_data.startswith("admin:"):
-        action = callback_data.split(":")[1]
-        if user_id != ADMIN_ID: return
-        current_sess = sess(user_id)
-        if action == "broadcast_prompt":
-            current_sess["mode"] = "admin_broadcast"
-            await query.edit_message_text("پیام همگانی را ارسال کنید:")
-        elif action == "dm_prompt":
-            current_sess["mode"] = "admin_dm_id"
-            await query.edit_message_text("آیدی عددی کاربر مورد نظر را ارسال کنید:")
-        elif action == "quota_prompt":
-            current_sess["mode"] = "admin_quota_id"
-            await query.edit_message_text("آیدی عددی کاربر مورد نظر را ارسال کنید:")
-        save_sessions()
-
-    elif callback_data.startswith("rate:"):
-        await query.message.reply_text("از بازخورد شما متشکریم!")
-        reset_mode(user_id)
-        await bot_features.start_command(update, context)
-
-    elif callback_data == "my_quota":
-        left = _quota_left(user_id)
-        total = user(user_id).get("daily_limit", 3)
-        eta_str = _fmt_eta(_seconds_to_reset(user_id))
-        text = f"📊 **سهمیه شما** 📊\n\nشما **{left}** از **{total}** سهمیه ساخت استیکر پیشرفته خود را باقی دارید.\n\nزمان بازنشانی بعدی: **{eta_str}**"
-        await query.edit_message_text(text)
-
-    elif callback_data == "my_packs":
-        packs = get_user_packs(user_id)
-        if not packs:
-            await query.edit_message_text("شما هنوز هیچ پکی نساخته‌اید.", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]]))
-            return
-        message_text = "🗂 **پک‌های استیکر شما:**\n\n" + "\n".join([f"• <a href='https://t.me/addstickers/{p['short_name']}'>{p['name']}</a>" for p in packs])
-        await query.edit_message_text(message_text, parse_mode='HTML', reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]]), disable_web_page_preview=True)
-
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    current_sess = sess(user_id)
-    if current_sess.get("mode") == "awaiting_custom_bg":
-        photo_file = await update.message.photo[-1].get_file()
-
-        temp_dir = "/tmp"
-        if not os.path.exists(temp_dir):
-            os.makedirs(temp_dir)
-
-        file_path = os.path.join(temp_dir, f"{uuid.uuid4()}.jpg")
-
-        try:
-            await photo_file.download_to_drive(file_path)
-            logger.info(f"Photo downloaded to temporary file: {file_path}")
-
-            sticker_data = current_sess.get("sticker_data", {})
-            sticker_data["bg_photo_path"] = file_path
-            current_sess["mode"] = "main"
-            save_sessions()
-
-        except Exception as e:
-            logger.error(f"Failed to download photo to drive: {e}", exc_info=True)
-            await update.message.reply_text("خطا در ذخیره عکس موقت.")
-            return
-
-        if current_sess.get("sticker_mode") == "simple":
-            await update.message.reply_text("⏳ در حال پردازش و آپلود اولیه استیکر...", reply_markup=None)
-            await sticker_confirm_logic(update.message, context)
-        else:
-            keyboard = [[InlineKeyboardButton("بالا", callback_data="sticker_adv:vpos:top"), InlineKeyboardButton("وسط", callback_data="sticker_adv:vpos:center"), InlineKeyboardButton("پایین", callback_data="sticker_adv:vpos:bottom")]]
-            await update.message.reply_text("عکس پس‌زمینه دریافت شد. حالا موقعیت عمودی متن را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
-
-async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.message.photo:
-        await handle_photo(update, context)
-        return
-
-    user_id = update.effective_user.id
-    text = update.message.text.strip()
-    current_sess = sess(user_id)
-    current_mode = current_sess.get("mode")
-    current_pack = get_current_pack_short_name(user_id)  # Define current_pack for all use cases
-    
-    # Quick sticker creation shortcuts (number 2 for simple, any text for advanced if quota available)
-    if text == "2" or text == "۲":
-        # Check if user has a current pack
-        if current_pack and await check_pack_exists(context.bot, current_pack):
-            current_sess['sticker_mode'] = 'simple'
-            current_sess['sticker_data'] = {
-                "v_pos": "center", "h_pos": "center", "font_key": "Default",
-                "color_hex": "#FFFFFF", "size_key": "medium"
-            }
-            save_sessions()
-            await update.message.reply_text("🎨 لطفاً متن استیکر ساده را ارسال کنید:")
-            return
-        else:
-            await update.message.reply_text(
-                "❌ ابتدا باید یک پک استیکر انتخاب کنید.\n\n"
-                "از دستہ /start برای انتخاب یا ساختن پک استفاده کنید."
-            )
-            return
-    
-    # If user has a current pack and is sending text (not a command), start simple sticker creation
-    elif current_pack and not text.startswith('/') and current_mode == "main":
-        # Auto-detect user wants to create a simple sticker
-        if await check_pack_exists(context.bot, current_pack):
-            current_sess['sticker_mode'] = 'simple'
-            current_sess['sticker_data'] = {
-                "v_pos": "center", "h_pos": "center", "font_key": "Default",
-                "color_hex": "#FFFFFF", "size_key": "medium"
-            }
-            save_sessions()
-            await update.message.reply_text("⚡ در حال ساخت استیکر ساده...")
-            await sticker_confirm_logic(update.message, context)
-            return
-
-    if user_id == ADMIN_ID:
-        if current_mode == "admin_broadcast":
-            for uid_str in USERS.keys():
-                try: await context.bot.send_message(int(uid_str), text)
-                except Exception: pass
-            await update.message.reply_text(f"پیام به {len(USERS)} کاربر ارسال شد.")
-            reset_mode(user_id)
-            return
-        elif current_mode == "admin_dm_id":
-            current_sess["admin_target_id"] = int(text)
-            current_sess["mode"] = "admin_dm_text"
-            save_sessions()
-            await update.message.reply_text("پیام را برای ارسال بنویسید:")
-            return
-        elif current_mode == "admin_dm_text":
-            target_id = current_sess.get("admin_target_id")
-            try:
-                await context.bot.send_message(target_id, text)
-                await update.message.reply_text("پیام با موفقیت ارسال شد.")
-            except Exception as e:
-                await update.message.reply_text(f"خطا در ارسال پیام: {e}")
-            reset_mode(user_id)
-            return
-        elif current_mode == "admin_quota_id":
-            current_sess["admin_target_id"] = int(text)
-            current_sess["mode"] = "admin_quota_value"
-            save_sessions()
-            await update.message.reply_text("مقدار سهمیه جدید را وارد کنید:")
-            return
-        elif current_mode == "admin_quota_value":
-            target_id = current_sess.get("admin_target_id")
-            target_user = user(target_id)
-            target_user["daily_limit"] = int(text)
-            save_users()
-            await update.message.reply_text(f"سهمیه کاربر {target_id} به {text} تغییر یافت.")
-            reset_mode(user_id)
-            return
-
-    if current_mode == "pack_create_start":
-        if not is_valid_pack_name(text):
-            await update.message.reply_text("نام پک نامعتبر است. لطفاً دوباره تلاش کنید.")
-            return
-
-        bot_username = (await context.bot.get_me()).username
-        pack_short_name = f"{text}_by_{bot_username}"
-
-        if await check_pack_exists(context.bot, pack_short_name):
-            await update.message.reply_text("این پک قبلاً وجود دارد. لطفاً یک نام دیگر انتخاب کنید.")
-            return
-            
-        await update.message.reply_text("...لطفا کمی صبر کنید، پک استیکر شما در حال ساخته شدن است")
-        dummy_sticker_bytes = await render_image("اولین", "center", "center", "Default", "#FFFFFF", "medium", for_telegram_pack=True)
-
-        try:
-            uploaded_sticker = await context.bot.upload_sticker_file(user_id=user_id, sticker=InputFile(dummy_sticker_bytes, "sticker.webp"), sticker_format="static")
-            await context.bot.create_new_sticker_set(user_id=user_id, name=pack_short_name, title=text, stickers=[InputSticker(sticker=uploaded_sticker.file_id, emoji_list=["🎉"])], sticker_format='static')
-            add_user_pack(user_id, text, pack_short_name)
-            set_current_pack(user_id, pack_short_name)
-            
-            # Ensure pack is properly saved
-            save_users()
-            logger.info(f"✅ Pack {pack_short_name} created and set as current for user {user_id}")
-            
-            await context.bot.send_message(chat_id=user_id, text=(
-                f"✅ پک «{text}» با موفقیت ساخته شد!\n\n"
-                "⚠️ **مهم:** این ربات از حافظه موقت استفاده می‌کند. "
-                "**لطفاً لینک پک خود را ذخیره کنید،** زیرا ممکن است در آینده پاک شود."
-            ))
-            
-            keyboard = [[InlineKeyboardButton("🖼 استیکر ساده", callback_data="sticker:simple"), InlineKeyboardButton("✨ استیکر پیشرفته", callback_data="sticker:advanced")]]
-            await context.bot.send_message(chat_id=user_id, text="حالا نوع استیکر را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
-            reset_mode(user_id, keep_pack=True)  # Preserve the newly created pack
-        except BadRequest as e:
-            error_message = str(e)
-            if "Sticker set name is already occupied" in error_message:
-                await update.message.reply_text("این نام قبلاً گرفته شده است. لطفاً یک نام دیگر انتخاب کنید.")
-            elif "Invalid sticker set name is specified" in error_message:
-                await update.message.reply_text("""نامی که وارد کردید نامعتبر است. لطفاً دوباره وارد کنید.""")
             else:
-                await update.message.reply_text(f"خطا در ساخت پک: {e}")
+                # No pack available, reset completely
                 reset_mode(user_id)
-        except Exception as e:
-            await update.message.reply_text(f"یک خطای غیرمنتظره رخ داد: {e}")
-            reset_mode(user_id)
-        return
-    
-    elif current_sess.get("sticker_mode") in ["simple", "advanced"]:
-        sticker_data = current_sess.get("sticker_data", {})
-        sticker_data["text"] = text
-        current_sess["sticker_data"] = sticker_data
-        save_sessions()
-
-        # For simple mode, directly create the sticker. For advanced, ask about background.
-        if current_sess.get("sticker_mode") == "simple":
-            await update.message.reply_text("⏳ در حال پردازش و آپلود اولیه استیکر...", reply_markup=None)
-            await sticker_confirm_logic(update.message, context)
-        else: # Advanced mode
-            keyboard = [[InlineKeyboardButton("🏞 بله، عکس ارسال می‌کنم", callback_data="sticker_adv:custom_bg:yes")], [InlineKeyboardButton(" خیر، ادامه می‌دهم", callback_data="sticker_adv:custom_bg:no")]]
-            await update.message.reply_text("آیا می‌خواهید از عکس دلخواه به عنوان پس‌زمینه استفاده کنید؟", reply_markup=InlineKeyboardMarkup(keyboard))
-
-def setup_application(application):
-    application.add_handler(CommandHandler("start", start_command))
-    application.add_handler(CommandHandler("help", help_command))
-    application.add_handler(CallbackQueryHandler(button_callback))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-
-# Vercel Serverless entry point
-from flask import Flask, request, jsonify
-app = Flask(__name__)
-
-async def main_async(update_json):
-    """The main asynchronous logic of the bot."""
-    load_users()
-    load_sessions() # Load sessions from file at the start of each request
-    TELEGRAM_TOKEN = os.getenv('BOT_TOKEN') or os.getenv('TELEGRAM_BOT_TOKEN')
-    if not TELEGRAM_TOKEN:
-        logger.error("No Telegram token found!")
-        return
-
-    application = Application.builder().token(TELEGRAM_TOKEN).build()
-    setup_application(application)
-
-    try:
-        await application.initialize()
-        update = Update.de_json(update_json, application.bot)
-        await application.process_update(update)
-    except Exception as e:
-        logger.error(f"!!! CRITICAL ERROR processing update: {e}", exc_info=True)
-    finally:
-        if 'application' in locals() and hasattr(application, 'shutdown'):
-            await application.shutdown()
-
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    """
-    This synchronous entry point is compatible with Vercel's runtime.
-    It runs the main async logic using asyncio.run().
-    """
-    try:
-        # Log the request for debugging
-        logger.info("📥 Webhook request received")
-        data = request.get_json()
-        
-        if not data:
-            logger.warning("⚠️ No JSON data received in webhook")
-            return jsonify(status="error", message="No data received"), 400
-            
-        logger.info(f"📋 Processing webhook with data: {data.get('update_id', 'unknown')}")
-        asyncio.run(main_async(data))
-        logger.info("✅ Webhook processed successfully")
-        return jsonify(status="ok"), 200
-        
-    except Exception as e:
-        logger.error(f"!!! CRITICAL ERROR in webhook handler: {e}", exc_info=True)
-        return jsonify(status="error", message=str(e)), 500
-
-@app.route('/')
-def index():
-    try:
-        import sys
-        version_info = f"Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
-        return f"Bot is running! {version_info}"
-    except Exception as e:
-        return f"Bot is running! Error getting version: {e}"
