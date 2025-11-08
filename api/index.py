@@ -913,6 +913,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 
                                 logger.info(f"✅ SUCCESS: Sticker added to pack {pack_short_name} on attempt {attempt + 1}")
                                 success = True
+                                # Send success confirmation to user
+                                await query.message.reply_text(
+                                    f"✅ استیکر با موفقیت به پک اضافه شد!\\n\\n"
+                                    f"برای ساخت استیکر بعدی، مجدداً از منو استفاده کنید."
+                                )
                                 break
                                 
                             except Exception as attempt_error:
@@ -1033,10 +1038,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                         )
                     else:
                         # Enhanced multi-attempt addition
-                        max_attempts = 3
+                        max_attempts = 5  # Increased attempts for better reliability
                         success = False
                         
-                        for attempt in range(max_attempts):
+                        last_error = None
                             try:
                                 logger.info(f"Attempt {attempt + 1}/{max_attempts} to add sticker to pack...")
                                 
@@ -1060,7 +1065,23 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                 break
                                 
                             except Exception as attempt_error:
+                                last_error = str(attempt_error)
                                 logger.warning(f"Attempt {attempt + 1} failed: {attempt_error}")
+                                
+                                # Check specific error types
+                                error_str = str(attempt_error).lower()
+                                if "rate limit" in error_str or "too many requests" in error_str:
+                                    logger.info("Rate limit detected, using longer delay...")
+                                    if attempt < max_attempts - 1:
+                                        await asyncio.sleep(5)  # Additional delay for rate limits
+                                elif "stickerset_invalid" in error_str or "not found" in error_str:
+                                    logger.error(f"Pack {pack_short_name} is invalid or deleted")
+                                    break  # Don't retry if pack is invalid
+                                elif "sticker set name is already occupied" in error_str:
+                                    # This shouldn't happen for existing packs, but handle it
+                                    logger.error(f"Pack name conflict detected")
+                                    break
+                                
                                 if attempt < max_attempts - 1:
                                     continue
                                 else:
@@ -1089,6 +1110,29 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             # Clean up but preserve pack state for continuous sticker creation
             current_pack = get_current_pack_short_name(user_id)
             cleanup_pending_sticker(user_id, lookup_key)
+            
+            # Enhanced pack preservation logic
+            user_data = user(user_id)
+            preserved_pack = user_data.get(\'current_pack\') or current_pack
+            
+            if preserved_pack:
+                # Ensure pack is preserved in both user data and session
+                user_data[\'current_pack\'] = preserved_pack
+                sess_data = sess(user_id)
+                sess_data[\'last_pack\'] = preserved_pack
+                
+                logger.info(f"📦 Preserved pack {preserved_pack} for continuous creation")
+                
+                # Send a quick continuation prompt
+                try:
+                    await query.message.reply_text(
+                        f"🎨 آماده ساختن استیکر بعدی هستید؟\\n\\n"
+                        f"پک فعلی: {preserved_pack}\\n\\n"
+                        f"از دسته 2️⃣ برای ساختن استیکر ساده استفاده کنید یا از منوی ربات!"
+                    )
+                except Exception as prompt_error:
+                    logger.warning(f"Could not send continuation prompt: {prompt_error}")
+            
             save_sessions()
             reset_mode(user_id, keep_pack=True)  # This now automatically preserves the pack
             
@@ -1186,9 +1230,43 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     user_id = update.effective_user.id
-    text = update.message.text
+    text = update.message.text.strip()
     current_sess = sess(user_id)
     current_mode = current_sess.get("mode")
+    
+    # Quick sticker creation shortcuts (number 2 for simple, any text for advanced if quota available)
+    if text == "2" or text == "۲":
+        # Check if user has a current pack
+        current_pack = get_current_pack_short_name(user_id)
+        if current_pack and await check_pack_exists(context.bot, current_pack):
+            current_sess['sticker_mode'] = 'simple'
+            current_sess['sticker_data'] = {
+                "v_pos": "center", "h_pos": "center", "font_key": "Default",
+                "color_hex": "#FFFFFF", "size_key": "medium"
+            }
+            save_sessions()
+            await update.message.reply_text("🎨 لطفاً متن استیکر ساده را ارسال کنید:")
+            return
+        else:
+            await update.message.reply_text(
+                "❌ ابتدا باید یک پک استیکر انتخاب کنید.\n\n"
+                "از دستہ /start برای انتخاب یا ساختن پک استفاده کنید."
+            )
+            return
+    
+    # If user has a current pack and is sending text (not a command), start simple sticker creation
+    elif current_pack and not text.startswith('/') and current_mode == "main":
+        # Auto-detect user wants to create a simple sticker
+        if await check_pack_exists(context.bot, current_pack):
+            current_sess['sticker_mode'] = 'simple'
+            current_sess['sticker_data'] = {
+                "v_pos": "center", "h_pos": "center", "font_key": "Default",
+                "color_hex": "#FFFFFF", "size_key": "medium"
+            }
+            save_sessions()
+            await update.message.reply_text("⚡ در حال ساخت استیکر ساده...")
+            await sticker_confirm_logic(update.message, context)
+            return
 
     if user_id == ADMIN_ID:
         if current_mode == "admin_broadcast":
