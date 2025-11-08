@@ -1235,11 +1235,11 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text.strip()
     current_sess = sess(user_id)
     current_mode = current_sess.get("mode")
+    current_pack = get_current_pack_short_name(user_id)  # Define current_pack for all use cases
     
     # Quick sticker creation shortcuts (number 2 for simple, any text for advanced if quota available)
     if text == "2" or text == "۲":
         # Check if user has a current pack
-        current_pack = get_current_pack_short_name(user_id)
         if current_pack and await check_pack_exists(context.bot, current_pack):
             current_sess['sticker_mode'] = 'simple'
             current_sess['sticker_data'] = {
