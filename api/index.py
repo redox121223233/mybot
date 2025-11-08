@@ -26,14 +26,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Global variables for user states
-user_states = {}
-
 class TelegramBotFeatures:
     """Complete bot features class"""
     
     def __init__(self):
-        self.user_data = {}
+        pass
         
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
         welcome_message = """
@@ -165,10 +162,10 @@ class TelegramBotFeatures:
             print(f"Error creating sticker: {e}")
             return None
     
-    async def guess_number_game(self):
+    async def guess_number_game(self, context: ContextTypes.DEFAULT_TYPE):
         number = random.randint(1, 100)
-        self.user_data['guess_number'] = number
-        self.user_data['guess_attempts'] = 0
+        context.user_data['guess_number'] = number
+        context.user_data['guess_attempts'] = 0
         
         keyboard = [
             [InlineKeyboardButton("🎯 حدس بزن", callback_data="guess_prompt")],
@@ -178,17 +175,17 @@ class TelegramBotFeatures:
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         return {
-            "message": f"🎯 **بازی حدس عدد شروع شد!**\n\nمن یک عدد بین 1 تا 100 انتخاب کردم.\nتلاش کن حدس بزنی!\n\nتعداد تلاش‌ها: {self.user_data['guess_attempts']}",
+            "message": f"🎯 **بازی حدس عدد شروع شد!**\n\nمن یک عدد بین 1 تا 100 انتخاب کردم.\nتلاش کن حدس بزنی!\n\nتعداد تلاش‌ها: {context.user_data['guess_attempts']}",
             "reply_markup": reply_markup
         }
     
-    async def check_guess(self, guess: int):
-        if 'guess_number' not in self.user_data:
+    async def check_guess(self, guess: int, context: ContextTypes.DEFAULT_TYPE):
+        if 'guess_number' not in context.user_data:
             return {"message": "❌ بازی شروع نشده! لطفاً دوباره بازی را شروع کنید."}
         
-        self.user_data['guess_attempts'] += 1
-        number = self.user_data['guess_number']
-        attempts = self.user_data['guess_attempts']
+        context.user_data['guess_attempts'] += 1
+        number = context.user_data['guess_number']
+        attempts = context.user_data['guess_attempts']
         
         keyboard = [
             [InlineKeyboardButton("🎯 حدس بعدی", callback_data="guess_prompt")],
@@ -199,8 +196,8 @@ class TelegramBotFeatures:
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         if guess == number:
-            del self.user_data['guess_number']
-            del self.user_data['guess_attempts']
+            del context.user_data['guess_number']
+            del context.user_data['guess_attempts']
             return {
                 "message": f"🎉 **تبریک! برنده شدی!**\n\nعدد صحیح {number} بود!\nتعداد تلاش‌ها: {attempts}",
                 "reply_markup": reply_markup
@@ -216,10 +213,10 @@ class TelegramBotFeatures:
                 "reply_markup": reply_markup
             }
     
-    async def rock_paper_scissors_game(self):
+    async def rock_paper_scissors_game(self, context: ContextTypes.DEFAULT_TYPE):
         choices = ["سنگ", "کاغذ", "قیچی"]
         bot_choice = random.choice(choices)
-        self.user_data['rps_bot_choice'] = bot_choice
+        context.user_data['rps_bot_choice'] = bot_choice
         
         keyboard = []
         for choice in choices:
@@ -232,12 +229,12 @@ class TelegramBotFeatures:
             "reply_markup": reply_markup
         }
     
-    async def check_rps_choice(self, user_choice: str):
-        if 'rps_bot_choice' not in self.user_data:
+    async def check_rps_choice(self, user_choice: str, context: ContextTypes.DEFAULT_TYPE):
+        if 'rps_bot_choice' not in context.user_data:
             return {"message": "❌ بازی شروع نشده! لطفاً دوباره بازی را شروع کنید."}
         
-        bot_choice = self.user_data['rps_bot_choice']
-        del self.user_data['rps_bot_choice']
+        bot_choice = context.user_data['rps_bot_choice']
+        del context.user_data['rps_bot_choice']
         
         keyboard = [
             [InlineKeyboardButton("🔄 بازی دوباره", callback_data="rock_paper_scissors")],
@@ -266,7 +263,7 @@ class TelegramBotFeatures:
                 "reply_markup": reply_markup
             }
     
-    async def word_game(self):
+    async def word_game(self, context: ContextTypes.DEFAULT_TYPE):
         words = [
             {"word": "پردیس", "hint": "نام یک دانشگاه در تهران"},
             {"word": "رود", "hint": "آب در حال حرکت"},
@@ -276,7 +273,7 @@ class TelegramBotFeatures:
         ]
 
         word_data = random.choice(words)
-        self.user_data['word_game'] = word_data
+        context.user_data['word_game'] = word_data
 
         # نمایش کلمه با حروف مخفی
         hidden_word = " ".join(["_" if char != " " else " " for char in word_data["word"]])
@@ -293,13 +290,13 @@ class TelegramBotFeatures:
             "reply_markup": reply_markup
         }
     
-    async def memory_game(self):
+    async def memory_game(self, context: ContextTypes.DEFAULT_TYPE):
         # ایجاد کارت‌های حافظه
         symbols = ["🎮", "🎨", "🎯", "🎲", "🎪", "🎭", "🎸", "🎺"]
         cards = symbols * 2
         random.shuffle(cards)
         
-        self.user_data['memory_game'] = {
+        context.user_data['memory_game'] = {
             "cards": cards,
             "revealed": [False] * len(cards),
             "matched": [False] * len(cards),
@@ -322,7 +319,7 @@ class TelegramBotFeatures:
         
         reply_markup = InlineKeyboardMarkup(keyboard)
         return {
-            "message": f"🧠 **بازی حافظه**\n\n{board}\n\nتعداد تلاش‌ها: {self.user_data['memory_game']['attempts']}\n\nکارت مورد نظر خود را انتخاب کنید (1-16):",
+            "message": f"🧠 **بازی حافظه**\n\n{board}\n\nتعداد تلاش‌ها: {context.user_data['memory_game']['attempts']}\n\nکارت مورد نظر خود را انتخاب کنید (1-16):",
             "reply_markup": reply_markup
         }
 
@@ -339,10 +336,16 @@ class TelegramBotFeatures:
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.callback_query.edit_message_text(
-            "🎨 **استیکر ساز سفارشی**\n\nلطفاً رنگ پس‌زمینه را انتخاب کنید:",
-            reply_markup=reply_markup
-        )
+        if update.callback_query:
+            await update.callback_query.edit_message_text(
+                "🎨 **استیکر ساز سفارشی**\n\nلطفاً رنگ پس‌زمینه را انتخاب کنید:",
+                reply_markup=reply_markup
+            )
+        else:
+            await update.message.reply_text(
+                "🎨 **استیکر ساز سفارشی**\n\nلطفاً رنگ پس‌زمینه را انتخاب کنید:",
+                reply_markup=reply_markup
+            )
     
     async def random_game(self):
         games = [
@@ -372,8 +375,7 @@ bot_features = TelegramBotFeatures()
 # Handler functions
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start command"""
-    user_id = update.effective_user.id
-    user_states[user_id] = {"mode": "main"}
+    context.user_data.clear()
     await bot_features.start_command(update, context)
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -398,7 +400,7 @@ async def sticker_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /guess command"""
-    game_data = await bot_features.guess_number_game()
+    game_data = await bot_features.guess_number_game(context)
     await update.message.reply_text(
         game_data["message"],
         reply_markup=game_data["reply_markup"]
@@ -406,7 +408,7 @@ async def guess_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def rps_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /rps command"""
-    game_data = await bot_features.rock_paper_scissors_game()
+    game_data = await bot_features.rock_paper_scissors_game(context)
     await update.message.reply_text(
         game_data["message"],
         reply_markup=game_data["reply_markup"]
@@ -414,7 +416,7 @@ async def rps_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def word_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /word command"""
-    game_data = await bot_features.word_game()
+    game_data = await bot_features.word_game(context)
     await update.message.reply_text(
         game_data["message"],
         reply_markup=game_data["reply_markup"]
@@ -422,7 +424,7 @@ async def word_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def memory_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /memory command"""
-    game_data = await bot_features.memory_game()
+    game_data = await bot_features.memory_game(context)
     await update.message.reply_text(
         game_data["message"],
         reply_markup=game_data["reply_markup"]
@@ -438,7 +440,7 @@ async def random_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def customsticker_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /customsticker command"""
-    menu_data = await bot_features.custom_sticker_menu()
+    menu_data = await bot_features.custom_sticker_menu(update, context)
     await update.message.reply_text(
         menu_data["message"],
         reply_markup=menu_data["reply_markup"]
@@ -457,28 +459,21 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     elif callback_data == "guess_number":
-        game_data = await bot_features.guess_number_game()
+        game_data = await bot_features.guess_number_game(context)
         await query.edit_message_text(
             game_data["message"],
             reply_markup=game_data["reply_markup"]
         )
     
     elif callback_data == "guess_prompt":
-        keyboard = [[
-            InlineKeyboardButton("ارسال عدد", callback_data="guess_send_number")
-        ]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        context.user_data["waiting_for_guess"] = True
         await query.edit_message_text(
-            "🔢 لطفاً عدد مورد نظر خود را به صورت پیام متنی ارسال کنید (بین 1 تا 100):",
-            reply_markup=reply_markup
+            "🔢 لطفاً عدد مورد نظر خود را به صورت پیام متنی ارسال کنید (بین 1 تا 100):"
         )
-        if user_id not in user_states:
-            user_states[user_id] = {}
-        user_states[user_id]["waiting_for_guess"] = True
     
     elif callback_data == "guess_hint":
-        if 'guess_number' in bot_features.user_data:
-            number = bot_features.user_data['guess_number']
+        if 'guess_number' in context.user_data:
+            number = context.user_data['guess_number']
             hint = "بزرگتر از 50" if number > 50 else "کوچکتر از 50"
             await query.edit_message_text(
                 f"💡 **راهنمایی:** عدد {hint} است!\n\nدوباره تلاش کنید:",
@@ -486,7 +481,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
     
     elif callback_data == "rock_paper_scissors":
-        game_data = await bot_features.rock_paper_scissors_game()
+        game_data = await bot_features.rock_paper_scissors_game(context)
         await query.edit_message_text(
             game_data["message"],
             reply_markup=game_data["reply_markup"]
@@ -494,22 +489,22 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     elif callback_data.startswith("rps_choice_"):
         user_choice = callback_data.replace("rps_choice_", "")
-        result = await bot_features.check_rps_choice(user_choice)
+        result = await bot_features.check_rps_choice(user_choice, context)
         await query.edit_message_text(
             result["message"],
             reply_markup=result["reply_markup"]
         )
     
     elif callback_data == "word_game":
-        game_data = await bot_features.word_game()
+        game_data = await bot_features.word_game(context)
         await query.edit_message_text(
             game_data["message"],
             reply_markup=game_data["reply_markup"]
         )
     
     elif callback_data == "word_hint":
-        if 'word_game' in bot_features.user_data:
-            word = bot_features.user_data['word_game']['word']
+        if 'word_game' in context.user_data:
+            word = context.user_data['word_game']['word']
             first_letter = word[0]
             last_letter = word[-1]
             await query.edit_message_text(
@@ -518,7 +513,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
     
     elif callback_data == "memory_game":
-        game_data = await bot_features.memory_game()
+        game_data = await bot_features.memory_game(context)
         await query.edit_message_text(
             game_data["message"],
             reply_markup=game_data["reply_markup"]
@@ -532,9 +527,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     
     elif callback_data == "sticker_creator":
-        if user_id not in user_states:
-            user_states[user_id] = {}
-        user_states[user_id]["waiting_for_pack_name"] = True
+        context.user_data["waiting_for_pack_name"] = True
         await query.edit_message_text("لطفا نام پک استیکر خود را وارد کنید:")
     
     elif callback_data.startswith("sticker_bg_"):
@@ -549,9 +542,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
         
         bg_color = color_map.get(color, "white")
-        if user_id not in user_states:
-            user_states[user_id] = {}
-        user_states[user_id]["sticker_bg"] = bg_color
+        context.user_data["sticker_bg"] = bg_color
         
         keyboard = [[
             InlineKeyboardButton("✏️ نوشتن متن", callback_data="sticker_text")
@@ -564,9 +555,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     
     elif callback_data == "sticker_text":
-        if user_id not in user_states:
-            user_states[user_id] = {}
-        user_states[user_id]["waiting_for_sticker_text"] = True
+        context.user_data["waiting_for_sticker_text"] = True
         
         await query.edit_message_text(
             "✏️ لطفاً متن مورد نظر خود را برای استیکر بنویسید:"
@@ -580,35 +569,33 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text
     
-    if user_id in user_states and user_states[user_id].get("waiting_for_pack_name"):
-        user_states[user_id]["pack_name"] = text
-        user_states[user_id]["waiting_for_pack_name"] = False
+    if context.user_data.get("waiting_for_pack_name"):
+        context.user_data["pack_name"] = text
+        context.user_data["waiting_for_pack_name"] = False
         await bot_features.custom_sticker_menu(update, context)
 
-    # Handle waiting for guess
-    elif user_id in user_states and user_states[user_id].get("waiting_for_guess"):
+    elif context.user_data.get("waiting_for_guess"):
         try:
             guess = int(text)
             if 1 <= guess <= 100:
-                result = await bot_features.check_guess(guess)
+                result = await bot_features.check_guess(guess, context)
                 await update.message.reply_text(
                     result["message"],
                     reply_markup=result["reply_markup"]
                 )
-                user_states[user_id]["waiting_for_guess"] = False
+                context.user_data["waiting_for_guess"] = False
             else:
                 await update.message.reply_text("❌ لطفاً عددی بین 1 تا 100 وارد کنید!")
         except ValueError:
             await update.message.reply_text("❌ لطفاً یک عدد صحیح وارد کنید!")
     
-    # Handle waiting for sticker text
-    elif user_id in user_states and user_states[user_id].get("waiting_for_sticker_text"):
-        bg_color = user_states[user_id].get("sticker_bg", "white")
+    elif context.user_data.get("waiting_for_sticker_text"):
+        bg_color = context.user_data.get("sticker_bg", "white")
         sticker_bytes = await bot_features.create_sticker(text, bg_color)
         
         if sticker_bytes:
             sticker_bytes.seek(0)
-            pack_name = user_states[user_id].get("pack_name")
+            pack_name = context.user_data.get("pack_name")
             bot_username = (await context.bot.get_me()).username
             full_pack_name = f"{pack_name}_by_{bot_username}"
 
@@ -637,9 +624,8 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("❌ خطا در ساخت استیکر!")
         
-        user_states[user_id]["waiting_for_sticker_text"] = False
+        context.user_data["waiting_for_sticker_text"] = False
     
-    # Handle quick sticker command
     elif text.startswith("/sticker "):
         sticker_text = text.replace("/sticker ", "")
         sticker_bytes = await bot_features.create_sticker(sticker_text)
@@ -652,7 +638,6 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         else:
             await update.message.reply_text("❌ خطا در ساخت استیکر!")
     
-    # Default message
     else:
         await update.message.reply_text(
             "🤖 ربات شما پیام را دریافت کرد! برای دیدن دستورات، /help را وارد کنید.\n\n"
