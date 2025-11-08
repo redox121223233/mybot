@@ -726,8 +726,10 @@ class VercelHandler(http.server.BaseHTTPRequestHandler):
             self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode('utf-8'))
 
     async def process_update(self, update_data):
+        await application.initialize()
         update = Update.de_json(update_data, application.bot)
         await application.process_update(update)
+        await application.shutdown()
 
     def do_GET(self):
         self.send_response(200)
