@@ -1321,13 +1321,17 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
             
         await update.message.reply_text("...لطفا کمی صبر کنید، پک استیکر شما در حال ساخته شدن است")
-        dummy_sticker_bytes = await render_image("اولین", "center", "center", "Default", "#FFFFFF", "medium")
+        dummy_sticker_bytes = await render_image("اولین", "center", "center", "Default", "#FFFFFF", "medium", for_telegram_pack=True)
 
         try:
             uploaded_sticker = await context.bot.upload_sticker_file(user_id=user_id, sticker=InputFile(dummy_sticker_bytes, "sticker.webp"), sticker_format="static")
             await context.bot.create_new_sticker_set(user_id=user_id, name=pack_short_name, title=text, stickers=[InputSticker(sticker=uploaded_sticker.file_id, emoji_list=["🎉"])], sticker_format='static')
             add_user_pack(user_id, text, pack_short_name)
             set_current_pack(user_id, pack_short_name)
+            
+            # Ensure pack is properly saved
+            save_users()
+            logger.info(f"✅ Pack {pack_short_name} created and set as current for user {user_id}")
             
             await context.bot.send_message(chat_id=user_id, text=(
                 f"✅ پک «{text}» با موفقیت ساخته شد!\n\n"
@@ -1337,7 +1341,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             keyboard = [[InlineKeyboardButton("🖼 استیکر ساده", callback_data="sticker:simple"), InlineKeyboardButton("✨ استیکر پیشرفته", callback_data="sticker:advanced")]]
             await context.bot.send_message(chat_id=user_id, text="حالا نوع استیکر را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
-            reset_mode(user_id)
+            reset_mode(user_id, keep_pack=True)  # Preserve the newly created pack
         except BadRequest as e:
             error_message = str(e)
             if "Sticker set name is already occupied" in error_message:
