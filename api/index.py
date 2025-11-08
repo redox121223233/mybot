@@ -849,10 +849,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.message.reply_text("خطا: اطلاعات استیکر یافت نشد. لطفاً دوباره تلاش کنید.")
             return
 
-        # 1. Send the sticker as proper preview with enhanced success rate
+        # 1. Send the sticker as proper preview with fallback
         try:
             await context.bot.send_sticker(chat_id=user_id, sticker=file_id)
-            logger.info(f"✅ Sticker preview sent successfully for user {user_id}")
             logger.info(f"Sticker preview sent successfully for user {user_id}")
             
             # Enhanced sticker addition to pack
@@ -902,70 +901,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                     await asyncio.sleep(2 ** attempt)
                                 
                                 from telegram import InputSticker
-
-async def add_sticker_to_pack_improved(context, user_id, pack_short_name, sticker_file_id):
-    """Improved sticker addition with better error handling"""
-    try:
-        # Check pack exists and get current stickers
-        bot_token = context.bot.token
-        import aiohttp
-        
-        async with aiohttp.ClientSession() as session:
-            # Get pack info
-            pack_url = f"https://api.telegram.org/bot{bot_token}/getStickerSet"
-            params = {"name": pack_short_name}
-            
-            async with session.get(pack_url, params=params) as response:
-                data = await response.json()
-                
-            if not data.get("ok"):
-                logger.error(f"Pack {pack_short_name} not found")
-                return False
-                
-            sticker_set = data["result"]
-            current_count = len(sticker_set.get("stickers", []))
-            max_limit = 50  # Telegram limit
-            
-            if current_count >= max_limit:
-                await context.bot.send_message(
-                    chat_id=user_id,
-                    text=f"⚠️ پک شما پر است! ({current_count}/{max_limit} استیکر)\n"
-                         f"لطفاً یک پک جدید بسازید."
-                )
-                return False
-            
-            # Add sticker with retry logic
-            from telegram import InputSticker
-            
-            max_retries = 3
-            for attempt in range(max_retries):
-                try:
-                    if attempt > 0:
-                        await asyncio.sleep(2 ** attempt)  # 2s, 4s delay
-                    
-                    await context.bot.add_sticker_to_set(
-                        user_id=user_id,
-                        name=pack_short_name,
-                        sticker=InputSticker(
-                            sticker=sticker_file_id,
-                            emoji_list=["😊"]
-                        )
-                    )
-                    
-                    logger.info(f"✅ Sticker added to pack {pack_short_name} on attempt {attempt + 1}")
-                    return True
-                    
-                except Exception as attempt_error:
-                    logger.warning(f"Attempt {attempt + 1} failed: {attempt_error}")
-                    if attempt < max_retries - 1:
-                        continue
-                    else:
-                        return False
-                        
-    except Exception as e:
-        logger.error(f"Error in add_sticker_to_pack_improved: {e}")
-        return False
-
                                 
                                 await context.bot.add_sticker_to_set(
                                     user_id=user_id,
@@ -1034,65 +969,191 @@ async def add_sticker_to_pack_improved(context, user_id, pack_short_name, sticke
                     for_telegram_pack=True
                 )
                 logger.info(f"Generated WebP preview, size: {len(img_bytes_preview)} bytes")
-                # FIXED: Send as sticker instead of document
+                await context.bot.send_sticker(
+                    chat_id=user_id,
+                    sticker=InputFile(img_bytes_preview, "sticker.webp"),
+                    caption=f"🎨 **استیکر WebP شما!**\n\n⚠️ 💡 **نحوه افزودن به پک:**\n1. روی فایل بالا کلیک کنید\n2. استیکر را ذخیره کنید\n3. به پک خود اضافه کنید\n\n⚠️ این فایل WebP است و برای تلگرام بهینه شده است."
+                )
+                logger.info(f"Fallback document sent for user {user_id}")
+            except Exception as fallback_error:
+                logger.error(f"Fallback also failed: {fallback_error}")
+                await context.bot.send_message(
+                    chat_id=user_id,
+                    text="❌ مشکلی در ارسال استیکر پیش آماد. لطفا دوباره تلاش کنید."
+                )
+
+        pack_short_name = get_current_pack_short_name(user_id)
+        logger.info(f"📍 Current pack detected: {pack_short_name} for user {user_id}")
+
+        # 2. Send the instructional message.
+        if pack_short_name:
+            pack_link = f"https://t.me/addstickers/{pack_short_name}"
+            await query.message.reply_text(
+                f"✅ استیکر شما به پک <a href='{pack_link}'>شما</a> اضافه شد.\n\n"
+                "<b>نکته:</b> برای اطمینان بررسی کنید. اگر اضافه نشده بود، روی استیکر بالا کلیک کرده و آن را به صورت دستی به پک خود اضافه کنید.",
+                parse_mode='HTML',
+                disable_web_page_preview=True
+            )
+        else:
+            await query.message.reply_text(
+                "✅ استیکر شما ارسال شد.\n\n"
+                "**نکته:** اگر استیکر به طور خودکار به پک اضافه نشد، لطفاً روی استیکر بالا کلیک کرده و آن را به صورت دستی به پک خود اضافه کنید."
+            )
+
+        if not pack_short_name:
+            logger.error(f"Current pack not found for user {user_id}.")
+            # Don't notify the user, as they can still add it manually
+            return
+
+        try:
+            # 3. Enhanced automatic sticker addition with detailed error handling
+            logger.info(f"Starting enhanced sticker addition to set {pack_short_name} for user {user_id}...")
+            
+            # Verify pack exists and get current count
+            if await check_pack_exists(context.bot, pack_short_name):
                 try:
-                    # Upload the sticker first
-                    uploaded_sticker = await context.bot.upload_sticker_file(
-                        user_id=user_id, 
-                        sticker=InputFile(img_bytes_preview, "sticker.webp"),
-                        sticker_format="static"
-                    )
-                    sticker_file_id = uploaded_sticker.file_id
+                    # Use direct API to get sticker count
+                    import aiohttp
+                    bot_token = context.bot.token
+                    url = f"https://api.telegram.org/bot{bot_token}/getStickerSet"
+                    params = {"name": pack_short_name}
                     
-                    # Send as proper sticker
-                    await context.bot.send_sticker(chat_id=user_id, sticker=sticker_file_id)
-                    logger.info(f"✅ Sticker sent successfully as proper sticker for user {user_id}")
+                    async with aiohttp.ClientSession() as session:
+                        async with session.get(url, params=params) as response:
+                            data = await response.json()
+                            if data.get("ok"):
+                                stickers = data.get("result", {}).get("stickers", [])
+                                current_count = len(stickers)
+                            else:
+                                current_count = 0
+                                logger.warning(f"Could not get sticker count: {data.get('description')}")
                     
-                    # Try to auto-add to pack with improved logic
-                    pack_short_name = get_current_pack_short_name(user_id)
-                    if pack_short_name:
-                        success = await add_sticker_to_pack_improved(context, user_id, pack_short_name, sticker_file_id)
-                        if success:
-                            await query.message.reply_text(
-                                "✅ استیکر با موفقیت به پک شما اضافه شد! 🎉
-
-"
-                                "برای ساخت استیکر بعدی، مجدداً از منو استفاده کنید."
-                            )
-                        else:
-                            # Provide better manual instructions
-                            pack_link = f"https://t.me/addstickers/{pack_short_name}"
-                            await query.message.reply_text(
-                                f"⚠️ اضافه خودکار انجام نشد. لطفاً دستی اضافه کنید:
-
-"
-                                f"1. روی استیکر بالا کلیک کنید
-"
-                                f"2. «Add to Pack» را انتخاب کنید
-
-"
-                                f"لینک پک: {pack_link}"
-                            )
-                    else:
+                    logger.info(f"Pack {pack_short_name} currently has {current_count} stickers")
+                    
+                    if current_count >= 120:
+                        logger.warning(f"Pack {pack_short_name} is full!")
                         await query.message.reply_text(
-                            "✅ استیکر شما ساخته شد!
-
-"
-                            "برای ساخت استیکر بعدی، مجدداً از منو استفاده کنید."
+                            "⚠️ این پک استیکر پر است (۱۲۰ استیکر).\n"
+                            "لطفاً یک پک جدید بسازید."
                         )
+                    else:
+                        # Enhanced multi-attempt addition
+                        max_attempts = 5  # Increased attempts for better reliability
+                        success = False
                         
-                except Exception as sticker_error:
-                    logger.error(f"Sticker sending failed: {sticker_error}")
-                    # Final fallback - send document but with better instructions
-                    await context.bot.send_document(
-                        chat_id=user_id,
-                        document=InputFile(img_bytes_preview, "sticker.webp"),
-                        caption=f"🎨 **استیکر WebP شما!**
-
-⚠️ **نحوه اضافه کردن به پک:**
-"
-                                f"این فایل WebP است و می‌توانید آن را ذخیره کرده و به پک خود اضافه کنید."
-                    ))
+                        last_error = None
+                        
+                        for attempt in range(max_attempts):
+                            try:
+                                logger.info(f"Attempt {attempt + 1}/{max_attempts} to add sticker to pack...")
+                                
+                                # Add delay between attempts to avoid rate limiting
+                                if attempt > 0:
+                                    await asyncio.sleep(2 ** attempt)  # 2s, 4s delay
+                                
+                                from telegram import InputSticker
+                                
+                                await context.bot.add_sticker_to_set(
+                                    user_id=user_id, 
+                                    name=pack_short_name, 
+                                    sticker=InputSticker(
+                                        sticker=file_id,
+                                        emoji_list=["😊"]
+                                    )
+                                )
+                                
+                                logger.info(f"✅ SUCCESS: Sticker added to pack {pack_short_name} on attempt {attempt + 1}")
+                                success = True
+                                break
+                                
+                            except Exception as attempt_error:
+                                last_error = str(attempt_error)
+                                logger.warning(f"Attempt {attempt + 1} failed: {attempt_error}")
+                                
+                                # Check specific error types
+                                error_str = str(attempt_error).lower()
+                                if "rate limit" in error_str or "too many requests" in error_str:
+                                    logger.info("Rate limit detected, using longer delay...")
+                                    if attempt < max_attempts - 1:
+                                        await asyncio.sleep(5)  # Additional delay for rate limits
+                                elif "stickerset_invalid" in error_str or "not found" in error_str:
+                                    logger.error(f"Pack {pack_short_name} is invalid or deleted")
+                                    break  # Don't retry if pack is invalid
+                                elif "sticker set name is already occupied" in error_str:
+                                    # This shouldn't happen for existing packs, but handle it
+                                    logger.error(f"Pack name conflict detected")
+                                    break
+                                
+                                if attempt < max_attempts - 1:
+                                    continue
+                                else:
+                                    # All attempts failed, provide manual instructions
+                                    pack_link = f"https://t.me/addstickers/{pack_short_name}"
+                                    await query.message.reply_text(
+                                        f"⚠️ افزودن خودکار انجام نشد. لطفاً دستی اضافه کنید:\n\n"
+                                        f"1. روی استیکر کلیک کنید\n"
+                                        f"2. «Add to Pack» را انتخاب کنید\n\n"
+                                        f"لینک: {pack_link}"
+                                    )
+                        
+                        if success:
+                            logger.info("✅ Sticker creation cycle completed - ready for next sticker!")
+                            
+                except Exception as pack_error:
+                    logger.error(f"Error checking pack details: {pack_error}")
+            else:
+                logger.error(f"Pack {pack_short_name} does not exist!")
+                await query.message.reply_text("❌ پک استیکر یافت نشد. لطفاً یک پک جدید بسازید.")
+                
+        except Exception as e:
+            # Log detailed error information
+            logger.error(f"STAGE 2 BACKGROUND ATTEMPT FAILED for user {user_id}: {e}", exc_info=True)
+        finally:
+            # Clean up but preserve pack state for continuous sticker creation
+            current_pack = get_current_pack_short_name(user_id)
+            cleanup_pending_sticker(user_id, lookup_key)
+            
+            # Enhanced pack preservation for continuous creation
+            user_data = user(user_id)
+            preserved_pack = user_data.get('current_pack') or current_pack
+            
+            if preserved_pack:
+                # Reset mode but preserve only pack info (clear sticker data for next creation)
+                reset_mode(user_id, keep_pack=True)
+                
+                # Send success and continuation prompt
+                try:
+                    await query.message.reply_text(
+                        f"✅ استیکر با موفقیت به پک اضافه شد!\\n\\n"
+                        f"🎯 برای استیکر بعدی: دوباره متن مورد نظرتون رو بفرستید"
+                        f" یا از دسته ۲⃣ استفاده کنید."
+                    )
+                except Exception as prompt_error:
+                    logger.warning(f"Could not send continuation prompt: {prompt_error}")
             else:
                 # No pack available, reset completely
                 reset_mode(user_id)
+
+
+async def add_sticker_to_pack_improved(context, user_id, pack_short_name, sticker_file_id):
+    """Improved sticker addition with retry logic"""
+    try:
+        for attempt in range(3):
+            try:
+                if attempt > 0:
+                    await asyncio.sleep(2 ** attempt)
+                
+                from telegram import InputSticker
+                await context.bot.add_sticker_to_set(
+                    user_id=user_id,
+                    name=pack_short_name,
+                    sticker=InputSticker(sticker=sticker_file_id, emoji_list=["😊"])
+                )
+                return True
+            except Exception as e:
+                if attempt < 2:
+                    continue
+                return False
+        return False
+    except:
+        return False
