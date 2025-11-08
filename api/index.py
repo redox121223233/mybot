@@ -144,7 +144,7 @@ class TelegramBotFeatures:
             # رسم متن
             total_height = len(lines) * (font_size + 10)
             start_y = (512 - total_height) // 2
-            
+
             for i, line in enumerate(lines):
                 bbox = draw.textbbox((0, 0), line, font=font)
                 text_width = bbox[2] - bbox[0]
@@ -154,7 +154,7 @@ class TelegramBotFeatures:
                 # افزودن سایه برای خوانایی بهتر
                 draw.text((x + 2, y + 2), line, fill="gray", font=font)
                 draw.text((x, y), line, fill=text_color, font=font)
-            
+
             # ذخیره تصویر
             img_bytes = io.BytesIO()
             img.save(img_bytes, format='WEBP')
@@ -274,7 +274,7 @@ class TelegramBotFeatures:
             {"word": "شمشیر", "hint": "سلاح سرد"},
             {"word": "آفتاب", "hint": "منبع نور و گرما"},
         ]
-        
+
         word_data = random.choice(words)
         self.user_data['word_game'] = word_data
 
@@ -551,7 +551,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bg_color = color_map.get(color, "white")
         if user_id not in user_states:
             user_states[user_id] = {}
-        user_states[user_id]["sticker_bg"] = bg_.color
+        user_states[user_id]["sticker_bg"] = bg_color
         
         keyboard = [[
             InlineKeyboardButton("✏️ نوشتن متن", callback_data="sticker_text")
@@ -734,3 +734,5 @@ class VercelHandler(http.server.BaseHTTPRequestHandler):
         self.send_header('Content-type', 'text/plain')
         self.end_headers()
         self.wfile.write(b"Hello, world!")
+
+handler = VercelHandler
