@@ -1406,13 +1406,28 @@ def webhook():
     It runs the main async logic using asyncio.run().
     """
     try:
+        # Log the request for debugging
+        logger.info("📥 Webhook request received")
         data = request.get_json()
+        
+        if not data:
+            logger.warning("⚠️ No JSON data received in webhook")
+            return jsonify(status="error", message="No data received"), 400
+            
+        logger.info(f"📋 Processing webhook with data: {data.get('update_id', 'unknown')}")
         asyncio.run(main_async(data))
+        logger.info("✅ Webhook processed successfully")
         return jsonify(status="ok"), 200
+        
     except Exception as e:
         logger.error(f"!!! CRITICAL ERROR in webhook handler: {e}", exc_info=True)
         return jsonify(status="error", message=str(e)), 500
 
 @app.route('/')
 def index():
-    return "Bot is running!"
+    try:
+        import sys
+        version_info = f"Python {sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}"
+        return f"Bot is running! {version_info}"
+    except Exception as e:
+        return f"Bot is running! Error getting version: {e}"
