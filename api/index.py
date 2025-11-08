@@ -14,7 +14,10 @@ import io
 from datetime import datetime
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputFile
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageColor
+import http.server
+import socketserver
+import threading
 
 # Configure logging
 logging.basicConfig(
@@ -31,292 +34,337 @@ class TelegramBotFeatures:
     
     def __init__(self):
         self.user_data = {}
-        self.coupons = self.load_coupons()
-        self.music_data = self.load_music_data()
         
-    def load_coupons(self):
-        return [
-            {"code": "SAVE10", "discount": "10%", "category": "electronics"},
-            {"code": "FOOD20", "discount": "20%", "category": "food"},
-            {"code": "STYLE15", "discount": "15%", "category": "fashion"},
-            {"code": "TECH25", "discount": "25%", "category": "technology"},
-            {"code": "HOME30", "discount": "30%", "category": "home"},
-        ]
-    
-    def load_music_data(self):
-        return {
-            "pop": ["Artist1 - Song1", "Artist2 - Song2", "Artist3 - Song3"],
-            "rock": ["Band1 - Track1", "Band2 - Track2", "Band3 - Track3"],
-            "classical": ["Composer1 - Piece1", "Composer2 - Piece2", "Composer3 - Piece3"],
-            "jazz": ["JazzArtist1 - JazzSong1", "JazzArtist2 - JazzSong2", "JazzArtist3 - JazzSong3"],
-        }
-    
     async def start_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        welcome_text = """🎉 به ربات من خوش آمدید! 🎉
+        welcome_message = """
+🎮 **به ربات بازی و استیکر ساز خوش آمدید!** 🎨
 
-🎮 **بازی‌ها و سرگرمی‌ها:**
-• 🔢 حدس عدد - یک عدد بین ۱ تا ۱۰۰ را حدس بزنید
-• ✂️ سنگ کاغذ قیچی - بازی کلاسیک
-• 📝 بازی کلمات - حدس کلمات
-• 🧠 بازی حافظه - تست حافظه شما
-• 🎲 بازی تصادفی - شانس خود را امتحان کنید
+من یک ربات ساده با قابلیت‌های زیر هستم:
 
-🎨 **سازنده استیکر:**
-• 🖼️ استیکر سریع با دستور /sticker <متن>
-• 🎨 استیکر سفارشی با دستور /customsticker
+🎮 **بازی‌ها:**
+• 🎯 حدس عدد
+• ✂️ سنگ کاغذ قیچی
+• 📝 بازی کلمات
+• 🧠 بازی حافظه
 
-📚 **راهنما:**
-/help - دیدن تمام دستورات
+🎨 **استیکر ساز:**
+• 📸 ساخت استیکر متنی
+• 🎨 انتخاب رنگ و فونت
+• ⚡ ساخت سریع استیکر
 
-انتخاب کنید:
-"""
+برای شروع، یکی از گزینه‌های زیر را انتخاب کنید:
+        """
         
         keyboard = [
-            [InlineKeyboardButton("🔢 حدس عدد", callback_data="guess_number")],
-            [InlineKeyboardButton("✂️ سنگ کاغذ قیچی", callback_data="rock_paper_scissors")],
-            [InlineKeyboardButton("📝 بازی کلمات", callback_data="word_game")],
-            [InlineKeyboardButton("🧠 بازی حافظه", callback_data="memory_game")],
-            [InlineKeyboardButton("🎲 بازی تصادفی", callback_data="random_game")],
-            [InlineKeyboardButton("🎨 استیکر ساز", callback_data="sticker_creator")],
-            [InlineKeyboardButton("📚 راهنما", callback_data="help")]
+            [InlineKeyboardButton("🎯 حدس عدد", callback_data="guess_number"),
+             InlineKeyboardButton("✂️ سنگ کاغذ قیچی", callback_data="rock_paper_scissors")],
+            [InlineKeyboardButton("📝 بازی کلمات", callback_data="word_game"),
+             InlineKeyboardButton("🧠 بازی حافظه", callback_data="memory_game")],
+            [InlineKeyboardButton("🎨 استیکر ساز", callback_data="sticker_creator"),
+             InlineKeyboardButton("🎲 بازی تصادفی", callback_data="random_game")],
         ]
         
         reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(welcome_text, reply_markup=reply_markup)
+        await update.message.reply_text(welcome_message, reply_markup=reply_markup)
     
     async def help_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
-        help_text = """📚 **راهنمای کامل ربات:**
+        help_text = """
+📖 **راهنمای کامل ربات:**
 
-🎮 **بازی‌ها:**
-/guess - شروع بازی حدس عدد
-/rps - سنگ کاغذ قیچی
-/word - بازی کلمات
-/memory - بازی حافظه
-/random - بازی تصادفی
+🎯 **حدس عدد:**
+• /guess - شروع بازی حدس عدد
+
+✂️ **سنگ کاغذ قیچی:**
+• /rps - شروع بازی سنگ کاغذ قیچی
+
+📝 **بازی کلمات:**
+• /word - شروع بازی با کلمات
+
+🧠 **بازی حافظه:**
+• /memory - شروع بازی حافظه
 
 🎨 **استیکر ساز:**
-/sticker <متن> - ساخت استیکر سریع
-/customsticker - منوی استیکر ساز سفارشی
+• /sticker <متن> - ساخت استیکر متنی
+• /customsticker - ساخت استیکر سفارشی
 
-💬 **سایر:**
-/start - منوی اصلی
-/help - این راهنما
+🎲 **بازی تصادفی:**
+• /random - بازی تصادفی
 
-مثال استیکر:
-/sticker سلام دنیا! 🌍
-
-❓ برای هر سوالی از منوی اصلی استفاده کنید!"""
-        
+برای هر دستور می‌توانید از منوی هم استفاده کنید!
+        """
         await update.message.reply_text(help_text)
     
-    async def create_sticker(self, text, bg_color="white"):
-        """Create a simple text sticker"""
+    async def create_sticker(self, text: str, bg_color: str = "white", font_size: int = 40, text_color: str = "black"):
         try:
-            # Create image
-            img_size = (512, 512)
-            img = Image.new('RGB', img_size, bg_color)
+            # ایجاد تصویر استیکر
+            img = Image.new('RGBA', (512, 512), bg_color)
             draw = ImageDraw.Draw(img)
             
-            # Try to use default font
+            # تلاش برای استفاده از فونت فارسی
             try:
-                font = ImageFont.load_default()
-            except:
+                # تلاش برای فونت‌های مختلف
+                font_paths = [
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                    "/System/Library/Fonts/Arial.ttf",
+                    "arial.ttf"
+                ]
                 font = None
+                for font_path in font_paths:
+                    try:
+                        font = ImageFont.truetype(font_path, font_size)
+                        break
+                    except:
+                        continue
+
+                if font is None:
+                    font = ImageFont.load_default()
+            except:
+                font = ImageFont.load_default()
             
-            # Calculate text position
-            if font:
-                bbox = draw.textbbox((0, 0), text, font=font)
+            # محاسبه موقعیت متن
+            lines = []
+            words = text.split()
+            current_line = []
+
+            for word in words:
+                test_line = ' '.join(current_line + [word])
+                bbox = draw.textbbox((0, 0), test_line, font=font)
+                if bbox[2] - bbox[0] < 400:  # عرض مجاز
+                    current_line.append(word)
+                else:
+                    if current_line:
+                        lines.append(' '.join(current_line))
+                        current_line = [word]
+                    else:
+                        lines.append(word)
+
+            if current_line:
+                lines.append(' '.join(current_line))
+            
+            # رسم متن
+            total_height = len(lines) * (font_size + 10)
+            start_y = (512 - total_height) // 2
+            
+            for i, line in enumerate(lines):
+                bbox = draw.textbbox((0, 0), line, font=font)
                 text_width = bbox[2] - bbox[0]
-                text_height = bbox[3] - bbox[1]
-            else:
-                text_width = len(text) * 10
-                text_height = 20
+                x = (512 - text_width) // 2
+                y = start_y + i * (font_size + 10)
+
+                # افزودن سایه برای خوانایی بهتر
+                draw.text((x + 2, y + 2), line, fill="gray", font=font)
+                draw.text((x, y), line, fill=text_color, font=font)
             
-            x = (img_size[0] - text_width) // 2
-            y = (img_size[1] - text_height) // 2
-            
-            # Draw text
-            text_color = "black" if bg_color == "white" else "white"
-            draw.text((x, y), text, fill=text_color, font=font)
-            
-            # Save to bytes
+            # ذخیره تصویر
             img_bytes = io.BytesIO()
-            img.save(img_bytes, format='PNG')
+            img.save(img_bytes, format='WEBP')
             img_bytes.seek(0)
             
             return img_bytes
-            
         except Exception as e:
-            logger.error(f"Error creating sticker: {e}")
+            print(f"Error creating sticker: {e}")
             return None
     
     async def guess_number_game(self):
-        """Setup guess number game"""
         number = random.randint(1, 100)
         self.user_data['guess_number'] = number
         self.user_data['guess_attempts'] = 0
         
         keyboard = [
-            [InlineKeyboardButton("💭 حدس بزن", callback_data="guess_prompt")],
-            [InlineKeyboardButton("💡 راهنمایی", callback_data="guess_hint")],
-            [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]
+            [InlineKeyboardButton("🎯 حدس بزن", callback_data="guess_prompt")],
+            [InlineKeyboardButton("🔢 راهنمایی", callback_data="guess_hint")],
+            [InlineKeyboardButton("🏠 منوی اصلی", callback_data="back_to_main")]
         ]
         
-        message = "🔢 **بازی حدس عدد!**\n\nمن یک عدد بین ۱ تا ۱۰۰ انتخاب کردم. حدس شما چیه؟"
         reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        return {"message": message, "reply_markup": reply_markup}
+        return {
+            "message": f"🎯 **بازی حدس عدد شروع شد!**\n\nمن یک عدد بین 1 تا 100 انتخاب کردم.\nتلاش کن حدس بزنی!\n\nتعداد تلاش‌ها: {self.user_data['guess_attempts']}",
+            "reply_markup": reply_markup
+        }
     
-    async def check_guess(self, guess):
-        """Check user's guess"""
+    async def check_guess(self, guess: int):
         if 'guess_number' not in self.user_data:
-            return {"message": "بازی شروع نشده! /guess رو بزنید", "reply_markup": None}
+            return {"message": "❌ بازی شروع نشده! لطفاً دوباره بازی را شروع کنید."}
         
-        number = self.user_data['guess_number']
         self.user_data['guess_attempts'] += 1
+        number = self.user_data['guess_number']
         attempts = self.user_data['guess_attempts']
         
         keyboard = [
-            [InlineKeyboardButton("💭 حدس دوباره", callback_data="guess_prompt")],
-            [InlineKeyboardButton("💡 راهنمایی", callback_data="guess_hint")],
-            [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]
+            [InlineKeyboardButton("🎯 حدس بعدی", callback_data="guess_prompt")],
+            [InlineKeyboardButton("🔢 راهنمایی", callback_data="guess_hint")],
+            [InlineKeyboardButton("🏠 منوی اصلی", callback_data="back_to_main")]
         ]
+
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         if guess == number:
-            message = f"🎉 **آفرین!**\n\nعدد {number} بود!\nتعداد تلاش‌ها: {attempts}"
             del self.user_data['guess_number']
             del self.user_data['guess_attempts']
-            keyboard = [[InlineKeyboardButton("🎮 بازی دوباره", callback_data="guess_number")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
+            return {
+                "message": f"🎉 **تبریک! برنده شدی!**\n\nعدد صحیح {number} بود!\nتعداد تلاش‌ها: {attempts}",
+                "reply_markup": reply_markup
+            }
         elif guess < number:
-            message = f"📈 **برو بالاتر!**\n\nحدس شما ({guess}) کوچکتره\nتعداد تلاش‌ها: {attempts}"
+            return {
+                "message": f"📈 **بالاتر برو!**\n\nعدد بزرگتری انتخاب کن!\nتعداد تلاش‌ها: {attempts}",
+                "reply_markup": reply_markup
+            }
         else:
-            message = f"📉 **برو پایین‌تر!**\n\nحدس شما ({guess}) بزرگتره\nتعداد تلاش‌ها: {attempts}"
-        
-        return {"message": message, "reply_markup": reply_markup}
+            return {
+                "message": f"📉 **پایینتر بیا!**\n\nعدد کوچکتری انتخاب کن!\nتعداد تلاش‌ها: {attempts}",
+                "reply_markup": reply_markup
+            }
     
     async def rock_paper_scissors_game(self):
-        """Setup rock paper scissors game"""
-        keyboard = [
-            [
-                InlineKeyboardButton("✊ سنگ", callback_data="rps_choice_rock"),
-                InlineKeyboardButton("📄 کاغذ", callback_data="rps_choice_paper"),
-                InlineKeyboardButton("✂️ قیچی", callback_data="rps_choice_scissors")
-            ],
-            [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]
-        ]
-        
-        message = "✂️ **سنگ کاغذ قیچی!**\n\nانتخاب کنید:"
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        return {"message": message, "reply_markup": reply_markup}
-    
-    async def check_rps_choice(self, user_choice):
-        """Check RPS choice"""
-        choices = ["rock", "paper", "scissors"]
+        choices = ["سنگ", "کاغذ", "قیچی"]
         bot_choice = random.choice(choices)
+        self.user_data['rps_bot_choice'] = bot_choice
         
-        choice_emoji = {"rock": "✊", "paper": "📄", "scissors": "✂️"}
-        choice_text = {"rock": "سنگ", "paper": "کاغذ", "scissors": "قیچی"}
+        keyboard = []
+        for choice in choices:
+            keyboard.append([InlineKeyboardButton(choice, callback_data=f"rps_choice_{choice}")])
+        keyboard.append([InlineKeyboardButton("🏠 منوی اصلی", callback_data="back_to_main")])
         
-        user_emoji = choice_emoji[user_choice]
-        bot_emoji = choice_emoji[bot_choice]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        return {
+            "message": "✂️ **سنگ کاغذ قیچی**\n\nانتخاب خود را انجام دهید:",
+            "reply_markup": reply_markup
+        }
+    
+    async def check_rps_choice(self, user_choice: str):
+        if 'rps_bot_choice' not in self.user_data:
+            return {"message": "❌ بازی شروع نشده! لطفاً دوباره بازی را شروع کنید."}
+        
+        bot_choice = self.user_data['rps_bot_choice']
+        del self.user_data['rps_bot_choice']
         
         keyboard = [
-            [InlineKeyboardButton("🎮 بازی دوباره", callback_data="rock_paper_scissors")],
-            [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]
+            [InlineKeyboardButton("🔄 بازی دوباره", callback_data="rock_paper_scissors")],
+            [InlineKeyboardButton("🏠 منوی اصلی", callback_data="back_to_main")]
         ]
+
         reply_markup = InlineKeyboardMarkup(keyboard)
         
         if user_choice == bot_choice:
-            result = "🤝 **مساوی!**"
+            return {
+                "message": f"🤝 **مساوی!**\n\nشما: {user_choice}\nربات: {bot_choice}",
+                "reply_markup": reply_markup
+            }
         elif (
-            (user_choice == "rock" and bot_choice == "scissors") or
-            (user_choice == "paper" and bot_choice == "rock") or
-            (user_choice == "scissors" and bot_choice == "paper")
+            (user_choice == "سنگ" and bot_choice == "قیچی") or
+            (user_choice == "کاغذ" and bot_choice == "سنگ") or
+            (user_choice == "قیچی" and bot_choice == "کاغذ")
         ):
-            result = "🎉 **شما بردید!**"
+            return {
+                "message": f"🎉 **شما برنده شدید!**\n\nشما: {user_choice}\nربات: {bot_choice}",
+                "reply_markup": reply_markup
+            }
         else:
-            result = "😔 **من بردم!**"
-        
-        message = f"{result}\n\nشما: {user_emoji} {choice_text[user_choice]}\nمن: {bot_emoji} {choice_text[bot_choice]}"
-        
-        return {"message": message, "reply_markup": reply_markup}
+            return {
+                "message": f"😔 **ربات برنده شد!**\n\nشما: {user_choice}\nربات: {bot_choice}",
+                "reply_markup": reply_markup
+            }
     
     async def word_game(self):
-        """Setup word game"""
-        words = ["پرتقال", "موز", "سیب", "هلو", "انگور", "توت", "گیلاس", "آلبالو"]
-        word = random.choice(words)
-        self.user_data['word_game'] = {'word': word, 'attempts': 0, 'max_attempts': 6}
-        
-        display = "_ " * len(word)
-        
-        keyboard = [
-            [InlineKeyboardButton("💡 راهنمایی", callback_data="word_hint")],
-            [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]
+        words = [
+            {"word": "پردیس", "hint": "نام یک دانشگاه در تهران"},
+            {"word": "رود", "hint": "آب در حال حرکت"},
+            {"word": "کتاب", "hint": "وسیله مطالعه"},
+            {"word": "شمشیر", "hint": "سلاح سرد"},
+            {"word": "آفتاب", "hint": "منبع نور و گرما"},
         ]
         
-        message = f"📝 **بازی کلمات!**\n\nکلمه: {display}\nتعداد حدس‌ها: 6"
-        reply_markup = InlineKeyboardMarkup(keyboard)
+        word_data = random.choice(words)
+        self.user_data['word_game'] = word_data
+
+        # نمایش کلمه با حروف مخفی
+        hidden_word = " ".join(["_" if char != " " else " " for char in word_data["word"]])
         
-        return {"message": message, "reply_markup": reply_markup}
+        keyboard = [
+            [InlineKeyboardButton("🔤 حدس حرف", callback_data="word_guess_letter")],
+            [InlineKeyboardButton("💡 راهنمایی", callback_data="word_hint")],
+            [InlineKeyboardButton("🏠 منوی اصلی", callback_data="back_to_main")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        return {
+            "message": f"📝 **بازی کلمات**\n\nکلمه: {hidden_word}\n\nراهنمایی: {word_data['hint']}\n\nحدس حرف مورد نظر خود را بزنید:",
+            "reply_markup": reply_markup
+        }
     
     async def memory_game(self):
-        """Setup memory game"""
-        # Simple memory game implementation
-        numbers = [str(random.randint(1, 9)) for _ in range(5)]
-        self.user_data['memory_game'] = {'sequence': numbers, 'showing': True}
+        # ایجاد کارت‌های حافظه
+        symbols = ["🎮", "🎨", "🎯", "🎲", "🎪", "🎭", "🎸", "🎺"]
+        cards = symbols * 2
+        random.shuffle(cards)
         
-        sequence_str = " - ".join(numbers)
+        self.user_data['memory_game'] = {
+            "cards": cards,
+            "revealed": [False] * len(cards),
+            "matched": [False] * len(cards),
+            "attempts": 0
+        }
         
-        message = f"🧠 **بازی حافظه!**\n\nاین اعداد رو حفظ کن:\n{sequence_str}\n\n5 ثانیه فرصت داری!"
-        reply_markup = None
+        # نمایش کارت‌ها
+        board = ""
+        for i in range(0, len(cards), 4):
+            row = ""
+            for j in range(4):
+                if i + j < len(cards):
+                    row += f"❓{i+j+1} " if i + j < 9 else f"❓{i+j+1} "
+            board += row + "\n"
         
-        return {"message": message, "reply_markup": reply_markup}
+        keyboard = [
+            [InlineKeyboardButton("🔍 انتخاب کارت", callback_data="memory_pick_card")],
+            [InlineKeyboardButton("🏠 منوی اصلی", callback_data="back_to_main")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        return {
+            "message": f"🧠 **بازی حافظه**\n\n{board}\n\nتعداد تلاش‌ها: {self.user_data['memory_game']['attempts']}\n\nکارت مورد نظر خود را انتخاب کنید (1-16):",
+            "reply_markup": reply_markup
+        }
+
+    async def custom_sticker_menu(self, update: Update, context: ContextTypes.DEFAULT_TYPE):
+        keyboard = [
+            [InlineKeyboardButton("⚪ سفید", callback_data="sticker_bg_white"),
+             InlineKeyboardButton("⚫ مشکی", callback_data="sticker_bg_black")],
+            [InlineKeyboardButton("🔵 آبی", callback_data="sticker_bg_blue"),
+             InlineKeyboardButton("🔴 قرمز", callback_data="sticker_bg_red")],
+            [InlineKeyboardButton("🟢 سبز", callback_data="sticker_bg_green"),
+             InlineKeyboardButton("🟡 زرد", callback_data="sticker_bg_yellow")],
+            [InlineKeyboardButton("✏️ نوشتن متن", callback_data="sticker_text")],
+            [InlineKeyboardButton("🏠 منوی اصلی", callback_data="back_to_main")]
+        ]
+        
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        await update.callback_query.edit_message_text(
+            "🎨 **استیکر ساز سفارشی**\n\nلطفاً رنگ پس‌زمینه را انتخاب کنید:",
+            reply_markup=reply_markup
+        )
     
     async def random_game(self):
-        """Setup random game"""
         games = [
-            {"name": "تاس", "emoji": "🎲", "result": str(random.randint(1, 6))},
-            {"name": "شیر یا خط", "emoji": "🪙", "result": random.choice(["شیر", "خط"])},
-            {"name": "کارت", "emoji": "🃏", "result": random.choice(["آس", "شاه", "بیبی", "دو", "سه", "چهار"])},
+            ("🎯 حدس عدد", "guess_number"),
+            ("✂️ سنگ کاغذ قیچی", "rock_paper_scissors"),
+            ("📝 بازی کلمات", "word_game"),
+            ("🧠 بازی حافظه", "memory_game")
         ]
-        
-        selected = random.choice(games)
-        
+
+        game_name, game_callback = random.choice(games)
+
         keyboard = [
-            [InlineKeyboardButton("🎲 دوباره", callback_data="random_game")],
-            [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]
+            [InlineKeyboardButton(f"🎲 {game_name}", callback_data=game_callback)],
+            [InlineKeyboardButton("🔄 بازی دیگر", callback_data="random_game")],
+            [InlineKeyboardButton("🏠 منوی اصلی", callback_data="back_to_main")]
         ]
         
-        message = f"🎲 **بازی تصادفی!**\n\n{selected['emoji']} {selected['name']}\nنتیجه: {selected['result']}"
         reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        return {"message": message, "reply_markup": reply_markup}
-    
-    async def custom_sticker_menu(self):
-        """Show custom sticker menu"""
-        keyboard = [
-            [
-                InlineKeyboardButton("⚪ سفید", callback_data="sticker_bg_white"),
-                InlineKeyboardButton("⚫ سیاه", callback_data="sticker_bg_black")
-            ],
-            [
-                InlineKeyboardButton("🔵 آبی", callback_data="sticker_bg_blue"),
-                InlineKeyboardButton("🔴 قرمز", callback_data="sticker_bg_red")
-            ],
-            [
-                InlineKeyboardButton("🟢 سبز", callback_data="sticker_bg_green"),
-                InlineKeyboardButton("🟡 زرد", callback_data="sticker_bg_yellow")
-            ],
-            [InlineKeyboardButton("🔙 بازگشت", callback_data="back_to_main")]
-        ]
-        
-        message = "🎨 **سازنده استیکر سفارشی!**\n\nرنگ پس‌زمینه را انتخاب کنید:"
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        
-        return {"message": message, "reply_markup": reply_markup}
+        return {
+            "message": f"🎲 **بازی تصادفی انتخاب شد:**\n\n{game_name}\n\nبرای شروع بازی کلیک کنید:",
+            "reply_markup": reply_markup
+        }
 
 # Initialize bot features
 bot_features = TelegramBotFeatures()
@@ -341,7 +389,7 @@ async def sticker_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if sticker_bytes:
             sticker_bytes.seek(0)
             await update.message.reply_sticker(
-                sticker=InputFile(sticker_bytes, filename="sticker.png")
+                sticker=InputFile(sticker_bytes, filename="sticker.webp")
             )
         else:
             await update.message.reply_text("❌ خطا در ساخت استیکر!")
@@ -484,11 +532,10 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     
     elif callback_data == "sticker_creator":
-        menu_data = await bot_features.custom_sticker_menu()
-        await query.edit_message_text(
-            menu_data["message"],
-            reply_markup=menu_data["reply_markup"]
-        )
+        if user_id not in user_states:
+            user_states[user_id] = {}
+        user_states[user_id]["waiting_for_pack_name"] = True
+        await query.edit_message_text("لطفا نام پک استیکر خود را وارد کنید:")
     
     elif callback_data.startswith("sticker_bg_"):
         color = callback_data.replace("sticker_bg_", "")
@@ -504,7 +551,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         bg_color = color_map.get(color, "white")
         if user_id not in user_states:
             user_states[user_id] = {}
-        user_states[user_id]["sticker_bg"] = bg_color
+        user_states[user_id]["sticker_bg"] = bg_.color
         
         keyboard = [[
             InlineKeyboardButton("✏️ نوشتن متن", callback_data="sticker_text")
@@ -533,8 +580,13 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     text = update.message.text
     
+    if user_id in user_states and user_states[user_id].get("waiting_for_pack_name"):
+        user_states[user_id]["pack_name"] = text
+        user_states[user_id]["waiting_for_pack_name"] = False
+        await bot_features.custom_sticker_menu(update, context)
+
     # Handle waiting for guess
-    if user_id in user_states and user_states[user_id].get("waiting_for_guess"):
+    elif user_id in user_states and user_states[user_id].get("waiting_for_guess"):
         try:
             guess = int(text)
             if 1 <= guess <= 100:
@@ -556,10 +608,32 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         if sticker_bytes:
             sticker_bytes.seek(0)
-            await update.message.reply_sticker(
-                sticker=InputFile(sticker_bytes, filename="sticker.png")
-            )
-            await update.message.reply_text("✅ استیکر شما با موفقیت ساخته شد!")
+            pack_name = user_states[user_id].get("pack_name")
+            bot_username = (await context.bot.get_me()).username
+            full_pack_name = f"{pack_name}_by_{bot_username}"
+
+            try:
+                await context.bot.add_sticker_to_set(
+                    user_id=user_id,
+                    name=full_pack_name,
+                    sticker={'sticker': sticker_bytes, 'emoji_list': ["❤️‍🔥"]}
+                )
+                await update.message.reply_text("✅ استیکر شما با موفقیت به پک اضافه شد!")
+            except Exception as e:
+                logger.error(f"Error adding sticker to set: {e}")
+                sticker_bytes.seek(0)
+                try:
+                    await context.bot.create_new_sticker_set(
+                        user_id=user_id,
+                        name=full_pack_name,
+                        title=pack_name,
+                        stickers=[{'sticker': sticker_bytes, 'emoji_list': ["❤️‍🔥"]}],
+                        sticker_format="static"
+                    )
+                    await update.message.reply_text("✅ پک استیکر شما با موفقیت ساخته شد و استیکر شما به آن اضافه شد!")
+                except Exception as e2:
+                    logger.error(f"Error creating new sticker set: {e2}")
+                    await update.message.reply_text("❌ خطا در ساخت پک استیکر یا اضافه کردن استیکر به آن!")
         else:
             await update.message.reply_text("❌ خطا در ساخت استیکر!")
         
@@ -573,7 +647,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if sticker_bytes:
             sticker_bytes.seek(0)
             await update.message.reply_sticker(
-                sticker=InputFile(sticker_bytes, filename="sticker.png")
+                sticker=InputFile(sticker_bytes, filename="sticker.webp")
             )
         else:
             await update.message.reply_text("❌ خطا در ساخت استیکر!")
@@ -626,40 +700,37 @@ if TELEGRAM_TOKEN:
         application = None
 else:
     logger.error("No Telegram token found in environment variables")
+class VercelHandler(http.server.BaseHTTPRequestHandler):
+    def do_POST(self):
+        content_length = int(self.headers['Content-Length'])
+        body = self.rfile.read(content_length)
 
-# Import Flask
-from flask import Flask, request, jsonify
-
-# Create Flask app
-app = Flask(__name__)
-
-@app.route('/')
-def home():
-    return "Telegram Bot is running! All handlers are active."
-
-@app.route('/webhook', methods=['POST'])
-async def webhook():
-    if request.method == 'POST':
         try:
-            update_data = request.get_json()
+            update_data = json.loads(body.decode('utf-8'))
             logger.info(f"Received webhook data: {update_data}")
             
             if application:
-                update = Update.de_json(update_data, application.bot)
-                await application.process_update(update)
+                asyncio.run(self.process_update(update_data))
+                self.send_response(200)
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "ok"}).encode('utf-8'))
             else:
                 logger.warning("Telegram application not initialized")
-
-            return jsonify({"status": "ok"}), 200
+                self.send_response(500)
+                self.end_headers()
+                self.wfile.write(json.dumps({"status": "error", "message": "Application not initialized"}).encode('utf-8'))
         except Exception as e:
             logger.error(f"Error processing webhook: {e}")
-            return jsonify({"status": "error", "message": str(e)}), 500
-    return jsonify({"status": "error"}), 400
+            self.send_response(500)
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "error", "message": str(e)}).encode('utf-8'))
 
-@app.route('/health')
-def health():
-    return jsonify({"status": "healthy", "handlers": "active", "telegram_app": application is not None})
+    async def process_update(self, update_data):
+        update = Update.de_json(update_data, application.bot)
+        await application.process_update(update)
 
-# For local testing
-if __name__ == '__main__':
-    app.run(debug=True, host='0.0.0.0', port=int(os.environ.get('PORT', 5000)))
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/plain')
+        self.end_headers()
+        self.wfile.write(b"Hello, world!")

@@ -5,13 +5,11 @@ Test script for Vercel deployment
 
 import sys
 import os
+import json
 
 def test_imports():
-    """Test if all required modules can be imported"""
+    """Test if vercel.json is valid"""
     try:
-        import json
-        print("✅ json import successful")
-        
         # Test if vercel.json is valid
         with open('vercel.json', 'r') as f:
             config = json.load(f)
@@ -29,8 +27,6 @@ def test_file_structure():
         'api/index.py',
         'vercel.json', 
         'requirements.txt',
-        'handlers.py',
-        'bot_features.py'
     ]
     
     all_exist = True
@@ -49,16 +45,16 @@ def test_handler_structure():
         with open('api/index.py', 'r') as f:
             content = f.read()
             
-        if 'def handler(' in content:
-            print("✅ Handler function exists")
+        if 'class VercelHandler(http.server.BaseHTTPRequestHandler):' in content:
+            print("✅ VercelHandler class exists")
         else:
-            print("❌ Handler function missing")
+            print("❌ VercelHandler class missing")
             return False
             
-        if 'from flask import Flask' in content:
-            print("✅ Flask import present")
+        if 'import http.server' in content:
+            print("✅ http.server import present")
         else:
-            print("❌ Flask import missing")
+            print("❌ http.server import missing")
             return False
             
         return True
