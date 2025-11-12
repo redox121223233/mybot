@@ -19,7 +19,6 @@ from telegram.ext import Application, CommandHandler, CallbackQueryHandler, Mess
 from PIL import Image, ImageDraw, ImageFont
 import arabic_reshaper
 from bidi.algorithm import get_display
-from flask import Flask, request
 
 # Configure logging
 logging.basicConfig(
@@ -27,9 +26,6 @@ logging.basicConfig(
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
-
-# Flask app for Vercel
-app = Flask(__name__)
 
 # Bot Configuration
 ADMIN_ID = 6053579919
@@ -680,37 +676,64 @@ def init_bot():
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
-# Flask routes
-@app.route('/')
-def home():
-    return "Simple Sticker Bot is running!"
-
-@app.route('/webhook', methods=['POST'])
-def webhook():
-    """Webhook handler"""
+# Vercel serverless function entry point
+def handler(request):
+    """Vercel serverless function handler"""
     try:
+        # Initialize bot if not already done
         if not application:
             init_bot()
         
-        if request.is_json:
-            update_data = request.get_json()
-            update = Update.de_json(update_data, application.bot)
-            asyncio.run(application.process_update(update))
-            return "OK"
+        # Parse request
+        if hasattr(request, 'json'):
+            data = request.json()
+        elif hasattr(request, 'get_json'):
+            data = request.get_json()
         else:
-            return "Invalid request", 400
+            # Try to parse as JSON string
+            import json
+            data = json.loads(request.body) if hasattr(request, 'body') else {}
+        
+        if data:
+            update = Update.de_json(data, application.bot)
+            asyncio.run(application.process_update(update))
+            return {"status": "ok"}
+        else:
+            return {"status": "error", "message": "Invalid request"}
+            
     except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        return "Error", 500
+        logger.error(f"Handler error: {e}")
+        return {"status": "error", "message": str(e)}
 
-# Vercel serverless function handler
-def handler(environ, start_response):
-    """Vercel serverless function handler"""
-    return app(environ, start_response)
+# Alternative Flask-style handler for compatibility
+def flask_handler():
+    """Flask-style handler"""
+    from flask import Flask, request
+    
+    app = Flask(__name__)
+    
+    @app.route('/', methods=['GET', 'POST'])
+    def index():
+        if request.method == 'GET':
+            return {"status": "ok", "message": "Simple Sticker Bot is running!"}
+        
+        # Handle webhook
+        if request.is_json:
+            data = request.get_json()
+            if data:
+                update = Update.de_json(data, application.bot)
+                asyncio.run(application.process_update(update))
+                return "OK"
+        
+        return "Error", 400
+    
+    return app
 
 # Initialize on import
 init_bot()
 
+# Main entry point for different environments
 if __name__ == "__main__":
-    init_bot()
-    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
+    # Run Flask app for local development
+    flask_app = flask_handler()
+    flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
