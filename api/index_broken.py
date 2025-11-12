@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Simple Telegram Sticker Bot - Clean Version for Vercel
-Exactly as requested: 4 buttons only, simple and working
+Simple Telegram Sticker Bot - Clean Version
+Exactly as requested: 4 buttons only, no games, simple and clean
 """
 
 import os
@@ -37,8 +37,8 @@ SUPPORT_USERNAME = "@onedaytoalive"
 ADVANCED_DAILY_LIMIT = 3
 
 # Data Storage
-USERS = {}
-USER_LIMITS = {}
+USERS: dict[int, dict] = {}
+USER_LIMITS: dict[int, dict] = {}
 
 def load_data():
     """Load data from files"""
@@ -103,88 +103,18 @@ def get_remaining(user_id: int) -> int:
     reset_daily_limit(user_id)
     return ADVANCED_DAILY_LIMIT - get_limits(user_id)["advanced_used"]
 
-def create_sticker(text: str, image_data: bytes) -> bytes:
-    """Create simple sticker"""
+def create_sticker(text: str, image_data: bytes, 
+                   position_x: int = 256, position_y: int = 256,
+                   font_size: int = 40, color: str = "#FFFFFF") -> bytes:
+    """Create sticker"""
     try:
         # Load image
         img = Image.open(io.BytesIO(image_data))
         img = img.convert('RGBA')
-        
-        # Resize to fit 512x512
         img.thumbnail((512, 512), Image.Resampling.LANCZOS)
         
         # Create canvas
         canvas = Image.new('RGBA', (512, 512), (0, 0, 0, 0))
-        
-        # Center the image
-        x_offset = (512 - img.width) // 2
-        y_offset = (512 - img.height) // 2
-        canvas.paste(img, (x_offset, y_offset), img)
-        
-        draw = ImageDraw.Draw(canvas)
-        
-        # Process Arabic text
-        if re.search(r'[\u0600-\u06FF]', text):
-            try:
-                text = arabic_reshaper.reshape(text)
-                text = get_display(text)
-            except:
-                pass
-        
-        # Load font
-        font = None
-        for font_path in ["fonts/Vazirmatn-Regular.ttf", "fonts/IRANSans.ttf"]:
-            if os.path.exists(font_path):
-                try:
-                    font = ImageFont.truetype(font_path, 40)
-                    break
-                except:
-                    continue
-        
-        if not font:
-            font = ImageFont.load_default()
-        
-        # Get text dimensions
-        bbox = draw.textbbox((0, 0), text, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-        
-        # Center text
-        x = (512 - text_width) // 2
-        y = (512 - text_height) // 2
-        
-        # Add shadow
-        draw.text((x+2, y+2), text, font=font, fill="#000000")
-        
-        # Draw main text
-        draw.text((x, y), text, font=font, fill="#FFFFFF")
-        
-        # Save as WebP
-        output = io.BytesIO()
-        canvas.save(output, format='WebP', quality=95)
-        output.seek(0)
-        return output.getvalue()
-        
-    except Exception as e:
-        logger.error(f"Error creating sticker: {e}")
-        return None
-
-def create_advanced_sticker(text: str, image_data: bytes, 
-                           position_x: int = 256, position_y: int = 256,
-                           font_size: int = 40, color: str = "#FFFFFF") -> bytes:
-    """Create advanced sticker"""
-    try:
-        # Load image
-        img = Image.open(io.BytesIO(image_data))
-        img = img.convert('RGBA')
-        
-        # Resize to fit 512x512
-        img.thumbnail((512, 512), Image.Resampling.LANCZOS)
-        
-        # Create canvas
-        canvas = Image.new('RGBA', (512, 512), (0, 0, 0, 0))
-        
-        # Center the image
         x_offset = (512 - img.width) // 2
         y_offset = (512 - img.height) // 2
         canvas.paste(img, (x_offset, y_offset), img)
@@ -212,19 +142,17 @@ def create_advanced_sticker(text: str, image_data: bytes,
         if not font:
             font = ImageFont.load_default()
         
-        # Get text dimensions
+        # Draw text
         bbox = draw.textbbox((0, 0), text, font=font)
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
         
-        # Position text
         x = position_x - text_width // 2
         y = position_y - text_height // 2
         
-        # Add shadow
+        # Shadow
         draw.text((x+2, y+2), text, font=font, fill="#000000")
-        
-        # Draw main text
+        # Main text
         draw.text((x, y), text, font=font, fill=color)
         
         # Save as WebP
@@ -234,7 +162,7 @@ def create_advanced_sticker(text: str, image_data: bytes,
         return output.getvalue()
         
     except Exception as e:
-        logger.error(f"Error creating advanced sticker: {e}")
+        logger.error(f"Error creating sticker: {e}")
         return None
 
 # Session storage
@@ -363,164 +291,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         session = get_session(user_id)
         session["mode"] = "advanced"
         remaining = get_remaining(user_id)
-        
-        # Show advanced options
-        keyboard = [
-            [InlineKeyboardButton("📍 موقعیت متن", callback_data="adv_position")],
-            [InlineKeyboardButton("🌈 رنگ متن", callback_data="adv_color")],
-            [InlineKeyboardButton("📏 اندازه فونت", callback_data="adv_size")],
-            [InlineKeyboardButton("✅ ساخت استیکر", callback_data="adv_create")],
-            [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
-        ]
-        
-        text = (
-            f"⚡ استیکر پیشرفته\n\n"
-            f"📊 سهمیه: {remaining} از {ADVANCED_DAILY_LIMIT}\n\n"
-            f"⚙️ تنظیمات استیکر:"
-        )
-        
-        session["text"] = None
-        session["image"] = None
-        session["position"] = (256, 256)
-        session["color"] = "#FFFFFF"
-        session["font_size"] = 40
-        
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-    
-    elif data.startswith("adv_"):
-        session = get_session(user_id)
-        
-        if data == "adv_position":
-            keyboard = [
-                [InlineKeyboardButton("⬆️ بالا", callback_data="pos_top")],
-                [InlineKeyboardButton("⬅️ چپ", callback_data="pos_left")],
-                [InlineKeyboardButton("⭕ مرکز", callback_data="pos_center")],
-                [InlineKeyboardButton("➡️ راست", callback_data="pos_right")],
-                [InlineKeyboardButton("⬇️ پایین", callback_data="pos_bottom")],
-                [InlineKeyboardButton("🔙 بازگشت", callback_data="advanced")]
-            ]
-            await query.edit_message_text("📍 موقعیت متن را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
-        
-        elif data == "adv_color":
-            keyboard = [
-                [InlineKeyboardButton("⚪ سفید", callback_data="color_#FFFFFF")],
-                [InlineKeyboardButton("⚫ مشکی", callback_data="color_#000000")],
-                [InlineKeyboardButton("🔴 قرمز", callback_data="color_#FF0000")],
-                [InlineKeyboardButton("🔵 آبی", callback_data="color_#0000FF")],
-                [InlineKeyboardButton("🔙 بازگشت", callback_data="advanced")]
-            ]
-            await query.edit_message_text("🌈 رنگ متن را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
-        
-        elif data == "adv_size":
-            keyboard = [
-                [InlineKeyboardButton("🔹 کوچک (30)", callback_data="size_30")],
-                [InlineKeyboardButton("🔸 متوسط (40)", callback_data="size_40")],
-                [InlineKeyboardButton("🔺 بزرگ (50)", callback_data="size_50")],
-                [InlineKeyboardButton("🔻 خیلی بزرگ (60)", callback_data="size_60")],
-                [InlineKeyboardButton("🔙 بازگشت", callback_data="advanced")]
-            ]
-            await query.edit_message_text("📏 اندازه فونت را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
-        
-        elif data == "adv_create":
-            if not session.get("image") or not session.get("text"):
-                await query.edit_message_text("❌ لطفا ابتدا عکس و متن را وارد کنید!")
-                return
-            
-            await query.edit_message_text("⏳ در حال ساخت استیکر پیشرفته...")
-            
-            sticker_bytes = create_advanced_sticker(
-                session["text"],
-                session["image"],
-                session["position"][0],
-                session["position"][1],
-                session["font_size"],
-                session["color"]
-            )
-            
-            if sticker_bytes:
-                sticker_file = io.BytesIO(sticker_bytes)
-                sticker_file.name = f"sticker_{uuid.uuid4().hex[:8]}.webp"
-                
-                use_advanced(user_id)
-                remaining = get_remaining(user_id)
-                
-                await query.message.reply_sticker(sticker=sticker_file)
-                await query.message.reply_text(
-                    f"✅ استیکر پیشرفته ساخته شد!\n\n"
-                    f"📊 سهمیه باقی‌مانده: {remaining} از {ADVANCED_DAILY_LIMIT}",
-                    reply_markup=InlineKeyboardMarkup(get_main_menu())
-                )
-            else:
-                await query.edit_message_text("❌ خطا در ساخت استیکر")
-            
-            clear_session(user_id)
-        
-        elif data.startswith("pos_"):
-            positions = {
-                "pos_top": (256, 100),
-                "pos_left": (100, 256),
-                "pos_center": (256, 256),
-                "pos_right": (412, 256),
-                "pos_bottom": (256, 412)
-            }
-            pos_name = data.split("_")[1]
-            if pos_name in positions:
-                session["position"] = positions[f"pos_{pos_name}"]
-                await query.edit_message_text(f"✅ موقعیت به {pos_name} تغییر کرد\n\n⚙️ تنظیمات دیگر را انتخاب کنید:", reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📍 موقعیت متن", callback_data="adv_position")],
-                    [InlineKeyboardButton("🌈 رنگ متن", callback_data="adv_color")],
-                    [InlineKeyboardButton("📏 اندازه فونت", callback_data="adv_size")],
-                    [InlineKeyboardButton("✅ ساخت استیکر", callback_data="adv_create")],
-                    [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
-                ]))
-        
-        elif data.startswith("color_"):
-            color = data.split("_")[1]
-            session["color"] = color
-            await query.edit_message_text(f"✅ رنگ به {color} تغییر کرد\n\n⚙️ تنظیمات دیگر را انتخاب کنید:", reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("📍 موقعیت متن", callback_data="adv_position")],
-                [InlineKeyboardButton("🌈 رنگ متن", callback_data="adv_color")],
-                [InlineKeyboardButton("📏 اندازه فونت", callback_data="adv_size")],
-                [InlineKeyboardButton("✅ ساخت استیکر", callback_data="adv_create")],
-                [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
-                ]))
-        
-        elif data.startswith("size_"):
-            size = int(data.split("_")[1])
-            session["font_size"] = size
-            await query.edit_message_text(f"✅ اندازه فونت به {size} تغییر کرد\n\n⚙️ تنظیمات دیگر را انتخاب کنید:", reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("📍 موقعیت متن", callback_data="adv_position")],
-                [InlineKeyboardButton("🌈 رنگ متن", callback_data="adv_color")],
-                [InlineKeyboardButton("📏 اندازه فونت", callback_data="adv_size")],
-                [InlineKeyboardButton("✅ ساخت استیکر", callback_data="adv_create")],
-                [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
-                ]))
-    
-    elif data == "advanced":
-        # Return to advanced menu
-        if not can_use_advanced(user_id):
-            await query.edit_message_text("⚠️ سهمیه پیشرفته تمام شده!\n\n📍 می‌توانید از استیکر ساده استفاده کنید")
-            return
-        
-        session = get_session(user_id)
-        session["mode"] = "advanced"
-        remaining = get_remaining(user_id)
-        
-        keyboard = [
-            [InlineKeyboardButton("📍 موقعیت متن", callback_data="adv_position")],
-            [InlineKeyboardButton("🌈 رنگ متن", callback_data="adv_color")],
-            [InlineKeyboardButton("📏 اندازه فونت", callback_data="adv_size")],
-            [InlineKeyboardButton("✅ ساخت استیکر", callback_data="adv_create")],
-            [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
-        ]
-        
-        text = (
-            f"⚡ استیکر پیشرفته\n\n"
-            f"📊 سهمیه: {remaining} از {ADVANCED_DAILY_LIMIT}\n\n"
-            f"⚙️ تنظیمات استیکر:"
-        )
-        
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.edit_message_text(f"⚡ استیکر پیشرفته\n\n📊 سهمیه: {remaining} از {ADVANCED_DAILY_LIMIT}\n\n📸 عکس خود را ارسال کنید:")
     
     elif data == "quota":
         reset_daily_limit(user_id)
@@ -583,11 +354,9 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         photo_bytes = await photo_file.download_as_bytearray()
         
         session["image"] = photo_bytes
+        session["waiting_text"] = True
         
-        if session["mode"] == "simple":
-            await update.message.reply_text("✅ عکس دریافت شد!\n\n📝 متن خود را بنویسید:")
-        else:
-            await update.message.reply_text("✅ عکس دریافت شد!\n\n📝 متن خود را بنویسید:")
+        await update.message.reply_text("✅ عکس دریافت شد!\n\n📝 متن خود را بنویسید:")
         
     except Exception as e:
         logger.error(f"Error handling photo: {e}")
@@ -598,7 +367,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     session = get_session(user_id)
     
-    if "mode" not in session or not session.get("image"):
+    if not session.get("waiting_text"):
         return
     
     try:
@@ -609,28 +378,16 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("⏳ در حال ساخت استیکر...")
         
         if mode == "simple":
+            # Simple sticker - default settings
             sticker_bytes = create_sticker(text, image_data)
         else:
-            # For advanced, store text and show options again
-            session["text"] = text
-            
-            remaining = get_remaining(user_id)
-            keyboard = [
-                [InlineKeyboardButton("📍 موقعیت متن", callback_data="adv_position")],
-                [InlineKeyboardButton("🌈 رنگ متن", callback_data="adv_color")],
-                [InlineKeyboardButton("📏 اندازه فونت", callback_data="adv_size")],
-                [InlineKeyboardButton("✅ ساخت استیکر", callback_data="adv_create")],
-                [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
-            ]
-            
-            await update.message.reply_text(
-                f"⚡ استیکر پیشرفته\n\n"
-                f"📝 متن: {text}\n\n"
-                f"📊 سهمیه: {remaining} از {ADVANCED_DAILY_LIMIT}\n\n"
-                f"⚙️ تنظیمات استیکر:",
-                reply_markup=InlineKeyboardMarkup(keyboard)
+            # Advanced sticker - custom settings
+            sticker_bytes = create_sticker(
+                text, image_data,
+                position_x=256, position_y=200,
+                font_size=45, color="#FFFFFF"
             )
-            return
+            use_advanced(user_id)
         
         if sticker_bytes:
             sticker_file = io.BytesIO(sticker_bytes)
@@ -638,11 +395,19 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             await update.message.reply_sticker(sticker=sticker_file)
             
-            await update.message.reply_text(
-                "✅ استیکر ساده ساخته شد!\n\n"
-                "🎨 برای استیکر جدید از منو استفاده کنید",
-                reply_markup=InlineKeyboardMarkup(get_main_menu())
-            )
+            if mode == "advanced":
+                remaining = get_remaining(user_id)
+                await update.message.reply_text(
+                    f"✅ استیکر پیشرفته ساخته شد!\n\n"
+                    f"📊 سهمیه باقی‌مانده: {remaining} از {ADVANCED_DAILY_LIMIT}",
+                    reply_markup=InlineKeyboardMarkup(get_main_menu())
+                )
+            else:
+                await update.message.reply_text(
+                    "✅ استیکر ساده ساخته شد!\n\n"
+                    "🎨 برای استیکر جدید از منو استفاده کنید",
+                    reply_markup=InlineKeyboardMarkup(get_main_menu())
+                )
         else:
             await update.message.reply_text("❌ خطا در ساخت استیکر")
         
