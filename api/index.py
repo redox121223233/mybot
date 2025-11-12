@@ -261,7 +261,9 @@ def get_main_menu():
         [InlineKeyboardButton("📞 پشتیبانی", callback_data="support")]
     ]
 
-# Handlers
+# Global application
+application = None
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start"""
     user_id = update.effective_user.id
@@ -293,10 +295,10 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     text = (
-        f"👑 پنل ادمین\n\n"
+        f"👹 پنل ادمین\n\n"
         f"👥 کاربران: {len(USERS)}\n"
-        f"⚡ لیمیت روزانه: {ADVANCED_DAILY_LIMIT}\n"
-        f"📊 وضعیت: فعال ✅"
+        f"⚡ limite روزانه: {ADVANCED_DAILY_LIMIT}\n"
+        f"📺 وضعیت: فعال ✅"
     )
     
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(get_main_menu()))
@@ -312,7 +314,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• نمایش تعداد استیکر پیشرفته باقی‌مانده\n"
         "• نمایش زمان تا ریست شدن سهمیه\n\n"
         "📞 **پشتیبانی:**\n"
-        f"• ارتباط با ادمین: {SUPPORT_USERNAME}\n\n"
+        f"• تماس با ادمین: {SUPPORT_USERNAME}\n\n"
         "📝 **نحوه استفاده:**\n"
         "۱. استیکر ساز → ساده یا پیشرفته\n"
         "۲. ارسال عکس\n"
@@ -353,7 +355,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "simple":
         session = get_session(user_id)
         session["mode"] = "simple"
-        await query.edit_message_text("🎨 استیکر ساده\n\n📸 عکس خود را ارسال کنید:")
+        await query.edit_message_text("🎨 استیکر ساده\n\n📷 عکس خود را ارسال کنید:")
     
     elif data == "advanced":
         if not can_use_advanced(user_id):
@@ -394,7 +396,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             keyboard = [
                 [InlineKeyboardButton("⬆️ بالا", callback_data="pos_top")],
                 [InlineKeyboardButton("⬅️ چپ", callback_data="pos_left")],
-                [InlineKeyboardButton("⭕ مرکز", callback_data="pos_center")],
+                [InlineKeyboardButton("⭿ مرکز", callback_data="pos_center")],
                 [InlineKeyboardButton("➡️ راست", callback_data="pos_right")],
                 [InlineKeyboardButton("⬇️ پایین", callback_data="pos_bottom")],
                 [InlineKeyboardButton("🔙 بازگشت", callback_data="advanced")]
@@ -483,7 +485,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("📏 اندازه فونت", callback_data="adv_size")],
                 [InlineKeyboardButton("✅ ساخت استیکر", callback_data="adv_create")],
                 [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
-                ]))
+            ]))
         
         elif data.startswith("size_"):
             size = int(data.split("_")[1])
@@ -494,7 +496,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton("📏 اندازه فونت", callback_data="adv_size")],
                 [InlineKeyboardButton("✅ ساخت استیکر", callback_data="adv_create")],
                 [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
-                ]))
+            ]))
     
     elif data == "advanced":
         # Return to advanced menu
@@ -654,32 +656,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ خطا در ساخت استیکر")
         clear_session(user_id)
 
-# Flask routes
-@app.route('/')
-def home():
-    return "Simple Sticker Bot is running!"
-
-@app.route('/api/webhook', methods=['POST'])
-def webhook():
-    """Webhook handler"""
-    try:
-        if request.is_json:
-            update_data = request.get_json()
-            update = Update.de_json(update_data, bot.application.bot)
-            asyncio.run(bot.application.process_update(update))
-            return "OK"
-        else:
-            return "Invalid request", 400
-    except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        return "Error", 500
-
-# Bot setup
-bot = None
-
-def main():
-    """Main function"""
-    global bot
+# Initialize bot
+def init_bot():
+    """Initialize bot application"""
+    global application
     
     # Load data
     load_data()
@@ -699,22 +679,38 @@ def main():
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    
-    bot = type('Bot', (), {'application': application})()
-    
-    # Set webhook
-    webhook_url = os.environ.get("VERCEL_URL")
-    if webhook_url:
-        full_url = f"https://{webhook_url}/api/webhook"
-        try:
-            asyncio.run(application.bot.set_webhook(full_url))
-            logger.info("Webhook set successfully")
-        except Exception as e:
-            logger.error(f"Failed to set webhook: {e}")
-    
-    # Start Flask
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+
+# Flask routes
+@app.route('/')
+def home():
+    return "Simple Sticker Bot is running!"
+
+@app.route('/webhook', methods=['POST'])
+def webhook():
+    """Webhook handler"""
+    try:
+        if not application:
+            init_bot()
+        
+        if request.is_json:
+            update_data = request.get_json()
+            update = Update.de_json(update_data, application.bot)
+            asyncio.run(application.process_update(update))
+            return "OK"
+        else:
+            return "Invalid request", 400
+    except Exception as e:
+        logger.error(f"Webhook error: {e}")
+        return "Error", 500
+
+# Vercel serverless function handler
+def handler(environ, start_response):
+    """Vercel serverless function handler"""
+    return app(environ, start_response)
+
+# Initialize on import
+init_bot()
 
 if __name__ == "__main__":
-    main()
+    init_bot()
+    app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
