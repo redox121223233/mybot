@@ -201,7 +201,7 @@ def is_valid_pack_name(name: str) -> bool:
     return True
 
 # ============ Font and Rendering Logic ============
-FONT_DIR = os.path.join(os.path.dirname(__file__), "..", "fonts")
+FONT_DIR = os.path.join(os.getcwd(), "fonts")
 LOCAL_FONT_FILES = {
     "Vazirmatn": "Vazirmatn-Regular.ttf",
     "Sahel": "Sahel.ttf",
