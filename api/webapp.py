@@ -1,0 +1,464 @@
+#!/usr/bin/env python3
+"""
+Serve Mini App HTML
+"""
+from http.server import BaseHTTPRequestHandler
+
+HTML_CONTENT = """<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Mini App استیکر ساز</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, 'Vazir', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 0;
+            margin: 0;
+        }
+
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            padding: 1rem;
+        }
+
+        .content {
+            padding: 2rem 0;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 2rem;
+            animation: fadeInDown 0.7s ease-out;
+        }
+
+        .logo-container {
+            display: inline-block;
+            padding: 1rem;
+            background: linear-gradient(135deg, #5B7AFF 0%, #764ba2 100%);
+            border-radius: 50%;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            margin-bottom: 1rem;
+        }
+
+        .logo-icon {
+            width: 48px;
+            height: 48px;
+            fill: white;
+        }
+
+        h1 {
+            font-size: 2rem;
+            font-weight: bold;
+            background: linear-gradient(to right, #5B7AFF, #764ba2, #5B7AFF);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.5rem;
+        }
+
+        .welcome-text {
+            font-size: 1.125rem;
+            color: rgba(255,255,255,0.9);
+            margin-top: 0.5rem;
+        }
+
+        .warning-card {
+            background: rgba(255, 243, 205, 0.95);
+            border: 1px solid #ffc107;
+            border-radius: 0.5rem;
+            padding: 1rem;
+            margin: 1rem 0;
+            text-align: center;
+        }
+
+        .warning-text {
+            font-size: 0.875rem;
+            color: #856404;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 1rem;
+            margin: 1.5rem 0;
+            animation: fadeInUp 0.7s ease-out 0.15s both;
+        }
+
+        .feature-card {
+            background: white;
+            border-radius: 1rem;
+            padding: 1.5rem;
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+
+        .feature-card:hover {
+            transform: translateY(-5px) scale(1.05);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+            border-color: #5B7AFF;
+        }
+
+        .feature-icon {
+            font-size: 2rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .feature-title {
+            font-size: 1rem;
+            font-weight: bold;
+            margin-bottom: 0.5rem;
+            color: #333;
+        }
+
+        .feature-desc {
+            font-size: 0.75rem;
+            color: #666;
+        }
+
+        .action-buttons {
+            margin: 1.5rem 0;
+            animation: fadeInUp 0.7s ease-out 0.3s both;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 1.125rem 1.5rem;
+            border: none;
+            border-radius: 0.75rem;
+            font-size: 1.125rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .btn-primary {
+            background: linear-gradient(to right, #5B7AFF, #764ba2);
+            color: white;
+            box-shadow: 0 5px 15px rgba(91, 122, 255, 0.4);
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(91, 122, 255, 0.5);
+        }
+
+        .btn-secondary {
+            background: rgba(255,255,255,0.9);
+            color: #333;
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+        }
+
+        .btn-secondary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.15);
+            background: white;
+        }
+
+        .info-card {
+            background: rgba(255,255,255,0.95);
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            margin: 1.5rem 0;
+            border: 2px solid rgba(91, 122, 255, 0.2);
+            animation: fadeInUp 0.7s ease-out 0.5s both;
+        }
+
+        .info-title {
+            font-size: 1.125rem;
+            font-weight: bold;
+            margin-bottom: 1rem;
+            color: #333;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .info-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .info-item {
+            padding: 0.5rem 0;
+            font-size: 0.875rem;
+            color: #666;
+            display: flex;
+            align-items: start;
+            gap: 0.625rem;
+        }
+
+        .info-number {
+            color: #5B7AFF;
+            font-weight: bold;
+            min-width: 1.25rem;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 1.25rem;
+            font-size: 0.875rem;
+            color: rgba(255,255,255,0.8);
+            animation: fadeIn 0.7s ease-out 0.7s both;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: #333;
+            color: white;
+            padding: 1rem 1.5rem;
+            border-radius: 0.5rem;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+            z-index: 1000;
+            opacity: 0;
+            transition: all 0.3s ease;
+            max-width: 90%;
+        }
+
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+
+        .toast.success {
+            background: #4CAF50;
+        }
+
+        .toast.error {
+            background: #f44336;
+        }
+
+        .toast-title {
+            font-weight: bold;
+            margin-bottom: 0.25rem;
+        }
+
+        .toast-description {
+            font-size: 0.875rem;
+            opacity: 0.9;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes fadeInDown {
+            from {
+                opacity: 0;
+                transform: translateY(-20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes fadeInUp {
+            from {
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="content">
+            <div class="header">
+                <div class="logo-container">
+                    <svg class="logo-icon" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M12 2L2 7L12 12L22 7L12 2Z" fill="currentColor"/>
+                        <path d="M2 17L12 22L22 17" stroke="currentColor" stroke-width="2"/>
+                        <path d="M2 12L12 17L22 12" stroke="currentColor" stroke-width="2"/>
+                    </svg>
+                </div>
+                
+                <div>
+                    <h1>Mini App تلگرام</h1>
+                    <p class="welcome-text" id="welcomeText">به Mini App تلگرام خوش آمدید! 👋</p>
+                </div>
+
+                <div id="warningCard" class="warning-card" style="display: none;">
+                    <p class="warning-text">⚠️ این برنامه باید از داخل تلگرام باز شود</p>
+                </div>
+            </div>
+
+            <div class="features-grid">
+                <div class="feature-card" onclick="handleAction('ساخت استیکر')">
+                    <div class="feature-icon">✨</div>
+                    <div class="feature-title">ساخت استیکر</div>
+                    <div class="feature-desc">استیکرهای منحصر به فرد خود را بسازید</div>
+                </div>
+
+                <div class="feature-card" onclick="handleAction('چت هوشمند')">
+                    <div class="feature-icon">💬</div>
+                    <div class="feature-title">چت هوشمند</div>
+                    <div class="feature-desc">با ربات تعامل کنید</div>
+                </div>
+
+                <div class="feature-card" onclick="handleAction('سریع و آسان')">
+                    <div class="feature-icon">⚡</div>
+                    <div class="feature-title">سریع و آسان</div>
+                    <div class="feature-desc">استفاده ساده و سریع</div>
+                </div>
+
+                <div class="feature-card" onclick="handleAction('کیفیت بالا')">
+                    <div class="feature-icon">⭐</div>
+                    <div class="feature-title">کیفیت بالا</div>
+                    <div class="feature-desc">خروجی با کیفیت عالی</div>
+                </div>
+            </div>
+
+            <div class="action-buttons">
+                <button class="btn btn-primary" onclick="handleAction('create_sticker')">
+                    <span class="feature-icon">✨</span>
+                    ساخت استیکر جدید
+                </button>
+
+                <button class="btn btn-secondary" onclick="handleAction('view_gallery')">
+                    <span class="feature-icon">⭐</span>
+                    مشاهده گالری
+                </button>
+            </div>
+
+            <div class="info-card">
+                <h3 class="info-title">
+                    <span>💬</span>
+                    راهنمای استفاده
+                </h3>
+                <ul class="info-list">
+                    <li class="info-item">
+                        <span class="info-number">۱.</span>
+                        روی یکی از گزینه‌ها کلیک کنید
+                    </li>
+                    <li class="info-item">
+                        <span class="info-number">۲.</span>
+                        از دکمه "ارسال به ربات" استفاده کنید
+                    </li>
+                    <li class="info-item">
+                        <span class="info-number">۳.</span>
+                        دستورات را در چت ربات دنبال کنید
+                    </li>
+                </ul>
+            </div>
+
+            <p class="footer">ساخته شده با ❤️ برای تلگرام</p>
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script>
+        const tg = window.Telegram?.WebApp;
+        let telegramUser = null;
+        let isInTelegram = false;
+
+        function init() {
+            if (tg) {
+                isInTelegram = true;
+                tg.ready();
+                tg.expand();
+
+                if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
+                    telegramUser = tg.initDataUnsafe.user;
+                    document.getElementById('welcomeText').textContent = 
+                        `سلام ${telegramUser.first_name}! 👋`;
+                }
+
+                tg.MainButton.text = "ارسال به ربات";
+                tg.MainButton.color = "#5B7AFF";
+                tg.MainButton.textColor = "#ffffff";
+                tg.MainButton.show();
+
+                tg.MainButton.onClick(function() {
+                    handleMainButtonClick();
+                });
+
+                if (tg.themeParams.bg_color) {
+                    document.body.style.background = tg.themeParams.bg_color;
+                }
+            } else {
+                document.getElementById('warningCard').style.display = 'block';
+            }
+        }
+
+        function handleAction(action) {
+            if (!tg) {
+                showToast('❌ خطا', 'لطفاً از داخل تلگرام باز کنید', 'error');
+                return;
+            }
+
+            tg.sendData(JSON.stringify({ action }));
+            showToast('✅ درخواست ارسال شد', `عملیات "${action}" به ربات ارسال شد`, 'success');
+
+            if (tg.HapticFeedback) {
+                tg.HapticFeedback.impactOccurred('light');
+            }
+        }
+
+        function handleMainButtonClick() {
+            tg.sendData(JSON.stringify({ action: 'main_button_clicked' }));
+            showToast('✅ ارسال شد', 'اطلاعات به ربات ارسال شد', 'success');
+        }
+
+        function showToast(title, description, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.innerHTML = `
+                <div class="toast-title">${title}</div>
+                <div class="toast-description">${description}</div>
+            `;
+            toast.className = `toast ${type} show`;
+            
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        document.addEventListener('DOMContentLoaded', function() {
+            init();
+
+            const clickableElements = document.querySelectorAll('.feature-card, .btn');
+            clickableElements.forEach(element => {
+                element.addEventListener('click', () => {
+                    if (tg && tg.HapticFeedback) {
+                        tg.HapticFeedback.impactOccurred('light');
+                    }
+                });
+            });
+        });
+    </script>
+</body>
+</html>"""
+
+class handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(200)
+        self.send_header('Content-type', 'text/html; charset=utf-8')
+        self.end_headers()
+        self.wfile.write(HTML_CONTENT.encode('utf-8'))
