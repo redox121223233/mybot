@@ -422,13 +422,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Flask routes
 @app.route('/')
 def home():
-    # Serve the mini app HTML
-       try:
-           with open('templates/miniapp.html', 'r', encoding='utf-8') as f:
-               html_content = f.read()
-           return html_content, 200, {'Content-Type': 'text/html; charset=utf-8'}
-       except FileNotFoundError:
-           return "Mini App file not found!", 404
+    return "Simple Sticker Bot is running!"
 
 @app.route('/api/webhook', methods=['POST'])
 def webhook():
