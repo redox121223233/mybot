@@ -184,9 +184,7 @@ def clear_session(user_id: int):
 def get_main_menu():
     """Get main menu keyboard"""
     return [
-        [InlineKeyboardButton("🚀 باز کردن Mini App", web_app=WebAppInfo(url=WEB_APP_URL))],
-        [InlineKeyboardButton("🎨 استیکر ساز", callback_data="sticker_maker")],
-        [InlineKeyboardButton("📊 سهمیه من", callback_data="quota")],
+        [InlineKeyboardButton("🚀 باز کردن برنامه ساخت استیکر", web_app=WebAppInfo(url=WEB_APP_URL))],
         [InlineKeyboardButton("📖 راهنما", callback_data="help")],
         [InlineKeyboardButton("📞 پشتیبانی", callback_data="support")]
     ]
@@ -210,8 +208,6 @@ def init_bot():
     application.add_handler(CommandHandler("admin", admin))
     application.add_handler(CommandHandler("help", help_cmd))
     application.add_handler(CallbackQueryHandler(button_callback))
-    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     
     return application
 
@@ -230,18 +226,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     text = """🎨 **به ربات استیکر ساز خوش آمدید!** 🌟
 
-🌐 **ویژگی‌های جدید:**
-• 🚀 Mini App: باز کردن وب اپلیکیشن حرفه‌ای
-• 🎨 استیکر ساز: ساخت استیکرهای سفارشی
-• 📊 سهمیه: مشاهده محدودیت‌های روزانه
-• 📖 راهنما: آموزش استفاده از ربات
+    برای ساخت استیکرهای زیبا و سفارشی، از برنامه وب ما استفاده کنید.
 
-🎯 **ویژگی‌های استیکر ساز:**
-• ✅ ساده: فقط عکس + متن
-• ⚡ پیشرفته: ۳ بار در روز با تنظیمات کامل
-
-روی یکی از گزینه‌های زیر کلیک کنید:"""
-    
+    👇 **روی دکمه زیر کلیک کنید تا شروع کنید!**
+    """
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(get_main_menu()))
 
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -294,145 +282,40 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle button clicks"""
     query = update.callback_query
     await query.answer()
-    
-    user_id = update.effective_user.id
+
     data = query.data
-    
-    if data == "sticker_maker":
-        keyboard = [
-            [InlineKeyboardButton("🎨 استیکر ساده", callback_data="simple")],
-            [InlineKeyboardButton("⚡ استیکر پیشرفته", callback_data="advanced")],
-            [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
-        ]
-        
-        text = """🎨 نوع استیکر را انتخاب کنید:
 
-📍 **ساده:** نامحدود، فقط عکس + متن
-
-⚡ **پیشرفته:** ۳ بار در روز، با تنظیمات کامل"""
-        
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-    
-    elif data == "simple":
-        session = get_session(user_id)
-        session["mode"] = "simple"
-        await query.edit_message_text("🎨 استیکر ساده\n\n📷 عکس خود را ارسال کنید:")
-    
-    elif data == "advanced":
-        if not can_use_advanced(user_id):
-            await query.edit_message_text("⚠️ سهمیه پیشرفته تمام شده!\n\n📍 می‌توانید از استیکر ساده استفاده کنید")
-            return
-        
-        session = get_session(user_id)
-        session["mode"] = "advanced"
-        remaining = get_remaining(user_id)
-        
-        text = f"""⚡ استیکر پیشرفته
-
-📊 سهمیه: {remaining} از {ADVANCED_DAILY_LIMIT}
-
-📷 عکس خود را ارسال کنید:"""
-        
-        await query.edit_message_text(text)
-    
-    elif data == "quota":
-        reset_daily_limit(user_id)
-        remaining = get_remaining(user_id)
-        used = ADVANCED_DAILY_LIMIT - remaining
-        
-        text = f"""📊 سهمیه شما
-
-🎨 **استیکر ساده:**
-✅ نامحدود
-
-⚡ **استیکر پیشرفته:**
-📈 استفاده شده: {used} از {ADVANCED_DAILY_LIMIT}
-📊 باقی‌مانده: {remaining} استیکر"""
-        
-        keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="back")]]
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-    
-    elif data == "help":
+    if data == "help":
+        # Let the help_cmd function handle the response
         await help_cmd(update, context)
-    
+
     elif data == "support":
-        text = f"""📞 پشتیبانی ربات
+        text = f"""📞 **پشتیبانی ربات**
 
-👨‍💼 ادمین: {SUPPORT_USERNAME}
+        👨‍💼 ادمین: {SUPPORT_USERNAME}
 
-📧 برای سوالات و مشکلات با ادمین در تماس باشید"""
-        
-        keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="back")]]
+        برای سوالات و مشکلات با ادمین در تماس باشید.
+        """
+        keyboard = [[InlineKeyboardButton("🔙 بازگشت به منوی اصلی", callback_data="back")]]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-    
+
     elif data == "back":
-        await query.edit_message_text("🎯 به منوی اصلی بازگشتیم:\n\nیک گزینه را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(get_main_menu()))
+        # This will bring the user back to the main menu
+        # It's good practice to re-send the start message
+        # in case the original one was deleted or is far up in the chat.
+        user_id = update.effective_user.id
+        if user_id not in USERS:
+            USERS[user_id] = {
+                "first_name": update.effective_user.first_name,
+                "joined_at": datetime.now(timezone.utc).isoformat()
+            }
+            save_data()
+        
+        start_text = """🎨 **به ربات استیکر ساز خوش آمدید!** 🌟
 
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle photo"""
-    user_id = update.effective_user.id
-    session = get_session(user_id)
-    
-    if "mode" not in session:
-        return
-    
-    try:
-        # Get photo
-        photo_file = await update.message.photo[-1].get_file()  # Get highest quality
-        photo_bytes = await photo_file.download_as_bytearray()
-        
-        session["image"] = photo_bytes
-        
-        if session["mode"] == "simple":
-            await update.message.reply_text("✅ عکس دریافت شد!\n\n📝 متن خود را بنویسید:")
-        else:
-            await update.message.reply_text("✅ عکس دریافت شد!\n\n📝 متن خود را بنویسید:")
-        
-    except Exception as e:
-        logger.error(f"Error handling photo: {e}")
-        await update.message.reply_text("❌ خطا در دریافت عکس")
-
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle text"""
-    user_id = update.effective_user.id
-    session = get_session(user_id)
-    
-    if "mode" not in session or not session.get("image"):
-        return
-    
-    try:
-        text = update.message.text
-        image_data = session["image"]
-        mode = session["mode"]
-        
-        await update.message.reply_text("⏳ در حال ساخت استیکر...")
-        
-        # Create sticker
-        sticker_bytes = create_sticker(text, image_data)
-        
-        if sticker_bytes:
-            sticker_file = io.BytesIO(sticker_bytes)
-            sticker_file.name = f"sticker_{uuid.uuid4().hex[:8]}.webp"
-            
-            await update.message.reply_sticker(sticker=sticker_file)
-            
-            if mode == "advanced":
-                use_advanced(user_id)
-            
-            await update.message.reply_text(
-                "✅ استیکر ساخته شد!\n\n🎨 برای ساخت استیکر جدید از منو استفاده کنید",
-                reply_markup=InlineKeyboardMarkup(get_main_menu())
-            )
-        else:
-            await update.message.reply_text("❌ خطا در ساخت استیکر")
-        
-        # Clear session
-        clear_session(user_id)
-        
-    except Exception as e:
-        logger.error(f"Error creating sticker: {e}")
-        await update.message.reply_text("❌ خطا در ساخت استیکر")
-        clear_session(user_id)
+        برای ساخت استیکر، از دکمه زیر استفاده کنید:
+        """
+        await query.edit_message_text(start_text, reply_markup=InlineKeyboardMarkup(get_main_menu()))
 
 # Global application
 application = None
@@ -464,14 +347,15 @@ class handler(BaseHTTPRequestHandler):
     
     def do_POST(self):
         """Handle POST requests (Telegram webhook)"""
+        global application
+        if application is None:
+            application = init_bot()
+
         try:
             # Initialize bot if not already done
-            global application
             if application is None:
-                application = init_bot()
-                if application is None:
-                    raise Exception("Failed to initialize bot")
-            
+                raise Exception("Failed to initialize bot")
+
             # Read request body
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length)
@@ -511,5 +395,4 @@ class handler(BaseHTTPRequestHandler):
             response = {"status": "error", "message": str(e)}
             self.wfile.write(json.dumps(response).encode())
 
-# Initialize on import
-application = init_bot()
+# Lazy initialization on first POST request
