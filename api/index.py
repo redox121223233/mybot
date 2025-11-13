@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
-Simple Telegram Sticker Bot - Fixed Version for Vercel
-Exactly as requested: 4 buttons only, simple and working
+Simple Telegram Sticker Bot - Optimized for Vercel
+Fixed CancelledError and simplified webhook handling
 """
 
 import os
@@ -14,7 +14,7 @@ from datetime import datetime, timezone, timedelta
 import uuid
 import re
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from PIL import Image, ImageDraw, ImageFont
 import arabic_reshaper
@@ -31,6 +31,7 @@ logger = logging.getLogger(__name__)
 ADMIN_ID = 6053579919
 SUPPORT_USERNAME = "@onedaytoalive"
 ADVANCED_DAILY_LIMIT = 3
+WEB_APP_URL = "https://see-my-branches.lovable.app"  # آدرس وب اپلیکیشن شما
 
 # Data Storage
 USERS = {}
@@ -165,74 +166,6 @@ def create_sticker(text: str, image_data: bytes) -> bytes:
         logger.error(f"Error creating sticker: {e}")
         return None
 
-def create_advanced_sticker(text: str, image_data: bytes, 
-                           position_x: int = 256, position_y: int = 256,
-                           font_size: int = 40, color: str = "#FFFFFF") -> bytes:
-    """Create advanced sticker"""
-    try:
-        # Load image
-        img = Image.open(io.BytesIO(image_data))
-        img = img.convert('RGBA')
-        
-        # Resize to fit 512x512
-        img.thumbnail((512, 512), Image.Resampling.LANCZOS)
-        
-        # Create canvas
-        canvas = Image.new('RGBA', (512, 512), (0, 0, 0, 0))
-        
-        # Center the image
-        x_offset = (512 - img.width) // 2
-        y_offset = (512 - img.height) // 2
-        canvas.paste(img, (x_offset, y_offset), img)
-        
-        draw = ImageDraw.Draw(canvas)
-        
-        # Process Arabic text
-        if re.search(r'[\u0600-\u06FF]', text):
-            try:
-                text = arabic_reshaper.reshape(text)
-                text = get_display(text)
-            except:
-                pass
-        
-        # Load font
-        font = None
-        for font_path in ["fonts/Vazirmatn-Regular.ttf", "fonts/IRANSans.ttf"]:
-            if os.path.exists(font_path):
-                try:
-                    font = ImageFont.truetype(font_path, font_size)
-                    break
-                except:
-                    continue
-        
-        if not font:
-            font = ImageFont.load_default()
-        
-        # Get text dimensions
-        bbox = draw.textbbox((0, 0), text, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-        
-        # Position text
-        x = position_x - text_width // 2
-        y = position_y - text_height // 2
-        
-        # Add shadow
-        draw.text((x+2, y+2), text, font=font, fill="#000000")
-        
-        # Draw main text
-        draw.text((x, y), text, font=font, fill=color)
-        
-        # Save as WebP
-        output = io.BytesIO()
-        canvas.save(output, format='WebP', quality=95)
-        output.seek(0)
-        return output.getvalue()
-        
-    except Exception as e:
-        logger.error(f"Error creating advanced sticker: {e}")
-        return None
-
 # Session storage
 SESSIONS = {}
 
@@ -247,19 +180,42 @@ def clear_session(user_id: int):
     if user_id in SESSIONS:
         del SESSIONS[user_id]
 
-# Main menu
+# Main menu with WebApp button
 def get_main_menu():
     """Get main menu keyboard"""
     return [
+        [InlineKeyboardButton("🚀 باز کردن Mini App", web_app=WebAppInfo(url=WEB_APP_URL))],
         [InlineKeyboardButton("🎨 استیکر ساز", callback_data="sticker_maker")],
         [InlineKeyboardButton("📊 سهمیه من", callback_data="quota")],
         [InlineKeyboardButton("📖 راهنما", callback_data="help")],
         [InlineKeyboardButton("📞 پشتیبانی", callback_data="support")]
     ]
 
-# Global application
-application = None
+# Initialize bot
+def init_bot():
+    """Initialize bot application"""
+    # Load data
+    load_data()
+    
+    # Setup bot
+    bot_token = os.environ.get("BOT_TOKEN")
+    if not bot_token:
+        logger.error("BOT_TOKEN not found")
+        return None
+    
+    application = Application.builder().token(bot_token).build()
+    
+    # Add handlers
+    application.add_handler(CommandHandler("start", start))
+    application.add_handler(CommandHandler("admin", admin))
+    application.add_handler(CommandHandler("help", help_cmd))
+    application.add_handler(CallbackQueryHandler(button_callback))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    
+    return application
 
+# Handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /start"""
     user_id = update.effective_user.id
@@ -272,13 +228,19 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
         save_data()
     
-    text = (
-        "🎨 به ربات استیکر ساز خوش آمدید!\n\n"
-        "✨ ویژگی‌ها:\n"
-        "📍 استیکر ساده: نامحدود (عکس + متن)\n"
-        "⚡ استیکر پیشرفته: ۳ بار در روز (عکس + متن + تنظیمات)\n\n"
-        "📊 سهمیه شما در بخش «سهمیه من» قابل مشاهده است"
-    )
+    text = """🎨 **به ربات استیکر ساز خوش آمدید!** 🌟
+
+🌐 **ویژگی‌های جدید:**
+• 🚀 Mini App: باز کردن وب اپلیکیشن حرفه‌ای
+• 🎨 استیکر ساز: ساخت استیکرهای سفارشی
+• 📊 سهمیه: مشاهده محدودیت‌های روزانه
+• 📖 راهنما: آموزش استفاده از ربات
+
+🎯 **ویژگی‌های استیکر ساز:**
+• ✅ ساده: فقط عکس + متن
+• ⚡ پیشرفته: ۳ بار در روز با تنظیمات کامل
+
+روی یکی از گزینه‌های زیر کلیک کنید:"""
     
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(get_main_menu()))
 
@@ -290,33 +252,38 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ فقط ادمین!")
         return
     
-    text = (
-        f"👹 پنل ادمین\n\n"
-        f"👥 کاربران: {len(USERS)}\n"
-        f"⚡ limite روزانه: {ADVANCED_DAILY_LIMIT}\n"
-        f"🎬 وضعیت: فعال ✅"
-    )
+    text = f"""👨‍💼 پنل ادمین
+
+👥 کاربران: {len(USERS)}
+⚡ محدودیت روزانه: {ADVANCED_DAILY_LIMIT}
+🎯 وضعیت: فعال ✅"""
     
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(get_main_menu()))
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Help command"""
-    text = (
-        "📖 راهنمای ربات\n\n"
-        "🎨 **استیکر ساز:**\n"
-        "• ساده: نامحدود، فقط عکس + متن\n"
-        "• پیشرفته: ۳ بار در روز، با تنظیمات کامل\n\n"
-        "📊 **سهمیه من:**\n"
-        "• نمایش تعداد استیکر پیشرفته باقی‌مانده\n"
-        "• نمایش زمان تا ریست شدن سهمیه\n\n"
-        "📞 **پشتیبانی:**\n"
-        f"• تماس با ادمین: {SUPPORT_USERNAME}\n\n"
-        "📝 **نحوه استفاده:**\n"
-        "۱. استیکر ساز → ساده یا پیشرفته\n"
-        "۲. ارسال عکس\n"
-        "۳. نوشتن متن\n"
-        "۴. دریافت استیکر"
-    )
+    text = f"""📖 راهنمای ربات استیکر ساز
+
+🌐 **Mini App:**
+• 🚀 باز کردن وب اپلیکیشن حرفه‌ای
+• 📱 رابط کاربری مدرن و فارسی
+• ⚡ سرعت بالا و بدون نیاز به دانلود
+
+🎨 **استیکر ساز:**
+• ✅ ساده: فقط عکس + متن
+• ⚡ پیشرفته: ۳ بار در روز با تنظیمات
+
+📊 **سهمیه:**
+• مشاهده تعداد استیکرهای باقی‌مانده
+• زمان باقی‌مانده تا ریست شدن
+
+📞 **پشتیبانی:**
+• ادمین: {SUPPORT_USERNAME}
+
+📝 **نحوه استفاده:**
+۱. 🚀 روی دکمه "باز کردن Mini App" کلیک کنید
+۲. 📱 از وب اپلیکیشن برای ساخت استیکر استفاده کنید
+۳. 💾 استیکر ساخته شده را دانلود کنید"""
     
     if update.message:
         await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(get_main_menu()))
@@ -338,13 +305,11 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
         ]
         
-        text = (
-            "🎨 نوع استیکر را انتخاب کنید:\n\n"
-            "📍 **ساده:** نامحدود استفاده\n"
-            "   فقط عکس + متن\n\n"
-            "⚡ **پیشرفته:** ۳ بار در روز\n"
-            "   عکس + متن + تنظیمات"
-        )
+        text = """🎨 نوع استیکر را انتخاب کنید:
+
+📍 **ساده:** نامحدود، فقط عکس + متن
+
+⚡ **پیشرفته:** ۳ بار در روز، با تنظیمات کامل"""
         
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
     
@@ -362,55 +327,27 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         session["mode"] = "advanced"
         remaining = get_remaining(user_id)
         
-        # Show advanced options
-        keyboard = [
-            [InlineKeyboardButton("📍 موقعیت متن", callback_data="adv_position")],
-            [InlineKeyboardButton("🌈 رنگ متن", callback_data="adv_color")],
-            [InlineKeyboardButton("📏 اندازه فونت", callback_data="adv_size")],
-            [InlineKeyboardButton("✅ ساخت استیکر", callback_data="adv_create")],
-            [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
-        ]
+        text = f"""⚡ استیکر پیشرفته
+
+📊 سهمیه: {remaining} از {ADVANCED_DAILY_LIMIT}
+
+📷 عکس خود را ارسال کنید:"""
         
-        text = (
-            f"⚡ استیکر پیشرفته\n\n"
-            f"📊 سهمیه: {remaining} از {ADVANCED_DAILY_LIMIT}\n\n"
-            f"⚙️ تنظیمات استیکر:"
-        )
-        
-        session["text"] = None
-        session["image"] = None
-        session["position"] = (256, 256)
-        session["color"] = "#FFFFFF"
-        session["font_size"] = 40
-        
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+        await query.edit_message_text(text)
     
     elif data == "quota":
         reset_daily_limit(user_id)
         remaining = get_remaining(user_id)
         used = ADVANCED_DAILY_LIMIT - remaining
         
-        # Calculate time until reset
-        limits = get_limits(user_id)
-        try:
-            last_reset = datetime.fromisoformat(limits["last_reset"])
-            next_reset = last_reset + timedelta(hours=24)
-            time_until = next_reset - datetime.now(timezone.utc)
-            hours = int(time_until.total_seconds() // 3600)
-            minutes = int((time_until.total_seconds() % 3600) // 60)
-            time_text = f"🔄 ریست بعد از: {hours} ساعت و {minutes} دقیقه"
-        except:
-            time_text = "🔄 ریست نامشخص"
-        
-        text = (
-            f"📊 سهمیه شما\n\n"
-            f"🎨 **استیکر ساده:**\n"
-            f"✅ نامحدود\n\n"
-            f"⚡ **استیکر پیشرفته:**\n"
-            f"📈 استفاده شده: {used} از {ADVANCED_DAILY_LIMIT}\n"
-            f"📊 باقی‌مانده: {remaining} استیکر\n"
-            f"{time_text}"
-        )
+        text = f"""📊 سهمیه شما
+
+🎨 **استیکر ساده:**
+✅ نامحدود
+
+⚡ **استیکر پیشرفته:**
+📈 استفاده شده: {used} از {ADVANCED_DAILY_LIMIT}
+📊 باقی‌مانده: {remaining} استیکر"""
         
         keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="back")]]
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
@@ -419,18 +356,17 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await help_cmd(update, context)
     
     elif data == "support":
-        text = (
-            f"📞 پشتیبانی ربات\n\n"
-            f"👨‍💻 ادمین: {SUPPORT_USERNAME}\n\n"
-            "👹 برای سوال و مشکل با ادمین در ارتباط باشید\n"
-            f"💬 [{SUPPORT_USERNAME}](https://t.me/{SUPPORT_USERNAME[1:]})"
-        )
+        text = f"""📞 پشتیبانی ربات
+
+👨‍💼 ادمین: {SUPPORT_USERNAME}
+
+📧 برای سوالات و مشکلات با ادمین در تماس باشید"""
         
         keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="back")]]
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard), parse_mode='Markdown')
+        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
     
     elif data == "back":
-        await query.edit_message_text("🎨 به منوی اصلی بازگشتید:\n\nیک گزینه را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(get_main_menu()))
+        await query.edit_message_text("🎯 به منوی اصلی بازگشتیم:\n\nیک گزینه را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(get_main_menu()))
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle photo"""
@@ -442,7 +378,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     try:
         # Get photo
-        photo_file = await update.message.photo.get_file()
+        photo_file = await update.message.photo[-1].get_file()  # Get highest quality
         photo_bytes = await photo_file.download_as_bytearray()
         
         session["image"] = photo_bytes
@@ -471,29 +407,8 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await update.message.reply_text("⏳ در حال ساخت استیکر...")
         
-        if mode == "simple":
-            sticker_bytes = create_sticker(text, image_data)
-        else:
-            # For advanced, store text and show options again
-            session["text"] = text
-            
-            remaining = get_remaining(user_id)
-            keyboard = [
-                [InlineKeyboardButton("📍 موقعیت متن", callback_data="adv_position")],
-                [InlineKeyboardButton("🌈 رنگ متن", callback_data="adv_color")],
-                [InlineKeyboardButton("📏 اندازه فونت", callback_data="adv_size")],
-                [InlineKeyboardButton("✅ ساخت استیکر", callback_data="adv_create")],
-                [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
-            ]
-            
-            await update.message.reply_text(
-                f"⚡ استیکر پیشرفته\n\n"
-                f"📝 متن: {text}\n\n"
-                f"📊 سهمیه: {remaining} از {ADVANCED_DAILY_LIMIT}\n\n"
-                f"⚙️ تنظیمات استیکر:",
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
-            return
+        # Create sticker
+        sticker_bytes = create_sticker(text, image_data)
         
         if sticker_bytes:
             sticker_file = io.BytesIO(sticker_bytes)
@@ -501,9 +416,11 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             await update.message.reply_sticker(sticker=sticker_file)
             
+            if mode == "advanced":
+                use_advanced(user_id)
+            
             await update.message.reply_text(
-                "✅ استیکر ساده ساخته شد!\n\n"
-                "🎨 برای استیکر جدید از منو استفاده کنید",
+                "✅ استیکر ساخته شد!\n\n🎨 برای ساخت استیکر جدید از منو استفاده کنید",
                 reply_markup=InlineKeyboardMarkup(get_main_menu())
             )
         else:
@@ -517,40 +434,14 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ خطا در ساخت استیکر")
         clear_session(user_id)
 
-# Initialize bot
-def init_bot():
-    """Initialize bot application"""
-    global application
-    
-    # Load data
-    load_data()
-    
-    # Setup bot
-    bot_token = os.environ.get("BOT_TOKEN")
-    if not bot_token:
-        logger.error("BOT_TOKEN not found")
-        return None
-    
-    application = Application.builder().token(bot_token).build()
-    
-    # Add handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("admin", admin))
-    application.add_handler(CommandHandler("help", help_cmd))
-    application.add_handler(CallbackQueryHandler(button_callback))
-    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-    
-    # Initialize the application only
-    asyncio.run(application.initialize())
-    logger.info("Bot application initialized successfully")
-    return application
+# Global application
+application = None
 
-# Vercel Handler Class - Required for Vercel Python deployment
+# Vercel Handler Class
 from http.server import BaseHTTPRequestHandler
 
 class handler(BaseHTTPRequestHandler):
-    """Vercel Python handler class that inherits from BaseHTTPRequestHandler"""
+    """Vercel Python handler class"""
     
     def do_GET(self):
         """Handle GET requests"""
@@ -559,7 +450,7 @@ class handler(BaseHTTPRequestHandler):
             self.send_header('Content-type', 'application/json')
             self.end_headers()
             
-            response = {"status": "ok", "message": "Simple Sticker Bot is running!"}
+            response = {"status": "ok", "message": "Sticker Bot is running!", "web_app": WEB_APP_URL}
             self.wfile.write(json.dumps(response).encode())
             
         except Exception as e:
@@ -578,6 +469,8 @@ class handler(BaseHTTPRequestHandler):
             global application
             if application is None:
                 application = init_bot()
+                if application is None:
+                    raise Exception("Failed to initialize bot")
             
             # Read request body
             content_length = int(self.headers['Content-Length'])
@@ -587,26 +480,11 @@ class handler(BaseHTTPRequestHandler):
                 # Parse JSON data
                 data = json.loads(post_data.decode('utf-8'))
                 
-                # Create a new application instance for this request
-                bot_token = os.environ.get("BOT_TOKEN")
-                if bot_token:
-                    temp_app = Application.builder().token(bot_token).build()
-                    asyncio.run(temp_app.initialize())
-                    
-                    # Process Telegram update
-                    update = Update.de_json(data, temp_app.bot)
-                    
-                    # Add handlers temporarily
-                    temp_app.add_handler(CommandHandler("start", start))
-                    temp_app.add_handler(CommandHandler("admin", admin))
-                    temp_app.add_handler(CommandHandler("help", help_cmd))
-                    temp_app.add_handler(CallbackQueryHandler(button_callback))
-                    temp_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-                    temp_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-                    
-                    asyncio.run(temp_app.start())
-                    asyncio.run(temp_app.process_update(update))
-                    asyncio.run(temp_app.stop())
+                # Process update
+                update = Update.de_json(data, application.bot)
+                
+                # Process the update
+                asyncio.run(application.process_update(update))
                 
                 # Send success response
                 self.send_response(200)
@@ -626,7 +504,7 @@ class handler(BaseHTTPRequestHandler):
                 
         except Exception as e:
             logger.error(f"POST handler error: {e}")
-            self.send_response(500)
+            self.send_response(200)  # Always return 200 to Telegram
             self.send_header('Content-type', 'application/json')
             self.end_headers()
             
@@ -634,4 +512,4 @@ class handler(BaseHTTPRequestHandler):
             self.wfile.write(json.dumps(response).encode())
 
 # Initialize on import
-init_bot()
+application = init_bot()
