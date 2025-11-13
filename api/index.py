@@ -705,6 +705,67 @@ def handler(request):
         logger.error(f"Handler error: {e}")
         return {"status": "error", "message": str(e)}
 
+# Vercel Handler Class - Required for Vercel Python deployment
+class handler:
+    """Vercel Python handler class"""
+    def __init__(self):
+        self.application = None
+    
+    def __call__(self, request):
+        """Handle incoming requests"""
+        from http.server import BaseHTTPRequestHandler
+        import json
+        
+        try:
+            # Initialize bot if not already done
+            global application
+            if application is None:
+                init_bot()
+            
+            # Parse request data
+            data = None
+            if hasattr(request, 'body'):
+                # Vercel provides request as a dict-like object
+                body = request.body if isinstance(request.body, str) else request.body.decode('utf-8')
+                if body:
+                    data = json.loads(body)
+            elif hasattr(request, 'get_json'):
+                data = request.get_json()
+            elif hasattr(request, 'json'):
+                data = request.json
+            
+            # Handle GET requests
+            if hasattr(request, 'method') and request.method == 'GET':
+                return {
+                    "statusCode": 200,
+                    "headers": {"Content-Type": "application/json"},
+                    "body": json.dumps({"status": "ok", "message": "Simple Sticker Bot is running!"})
+                }
+            
+            # Handle POST webhook requests
+            if data:
+                update = Update.de_json(data, application.bot)
+                asyncio.run(application.process_update(update))
+                return {
+                    "statusCode": 200,
+                    "headers": {"Content-Type": "application/json"},
+                    "body": json.dumps({"status": "ok"})
+                }
+            else:
+                return {
+                    "statusCode": 400,
+                    "headers": {"Content-Type": "application/json"},
+                    "body": json.dumps({"status": "error", "message": "Invalid request"})
+                }
+                
+        except Exception as e:
+            logger.error(f"Handler error: {e}")
+            return {
+                "statusCode": 500,
+                "headers": {"Content-Type": "application/json"},
+                "body": json.dumps({"status": "error", "message": str(e)})
+            }
+
 # Alternative Flask-style handler for compatibility
 def flask_handler():
     """Flask-style handler"""
