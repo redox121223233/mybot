@@ -706,65 +706,80 @@ def handler(request):
         return {"status": "error", "message": str(e)}
 
 # Vercel Handler Class - Required for Vercel Python deployment
-class handler:
-    """Vercel Python handler class"""
-    def __init__(self):
-        self.application = None
+from http.server import BaseHTTPRequestHandler
+import json
+
+class handler(BaseHTTPRequestHandler):
+    """Vercel Python handler class that inherits from BaseHTTPRequestHandler"""
     
-    def __call__(self, request):
-        """Handle incoming requests"""
-        from http.server import BaseHTTPRequestHandler
-        import json
-        
+    def do_GET(self):
+        """Handle GET requests"""
         try:
             # Initialize bot if not already done
             global application
             if application is None:
                 init_bot()
             
-            # Parse request data
-            data = None
-            if hasattr(request, 'body'):
-                # Vercel provides request as a dict-like object
-                body = request.body if isinstance(request.body, str) else request.body.decode('utf-8')
-                if body:
-                    data = json.loads(body)
-            elif hasattr(request, 'get_json'):
-                data = request.get_json()
-            elif hasattr(request, 'json'):
-                data = request.json
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
             
-            # Handle GET requests
-            if hasattr(request, 'method') and request.method == 'GET':
-                return {
-                    "statusCode": 200,
-                    "headers": {"Content-Type": "application/json"},
-                    "body": json.dumps({"status": "ok", "message": "Simple Sticker Bot is running!"})
-                }
+            response = {"status": "ok", "message": "Simple Sticker Bot is running!"}
+            self.wfile.write(json.dumps(response).encode())
             
-            # Handle POST webhook requests
-            if data:
+        except Exception as e:
+            logger.error(f"GET handler error: {e}")
+            self.send_response(500)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            
+            response = {"status": "error", "message": str(e)}
+            self.wfile.write(json.dumps(response).encode())
+    
+    def do_POST(self):
+        """Handle POST requests (Telegram webhook)"""
+        try:
+            # Initialize bot if not already done
+            global application
+            if application is None:
+                init_bot()
+            
+            # Read request body
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            
+            if post_data:
+                # Parse JSON data
+                data = json.loads(post_data.decode('utf-8'))
+                
+                # Process Telegram update
                 update = Update.de_json(data, application.bot)
                 asyncio.run(application.process_update(update))
-                return {
-                    "statusCode": 200,
-                    "headers": {"Content-Type": "application/json"},
-                    "body": json.dumps({"status": "ok"})
-                }
+                
+                # Send success response
+                self.send_response(200)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                
+                response = {"status": "ok"}
+                self.wfile.write(json.dumps(response).encode())
             else:
-                return {
-                    "statusCode": 400,
-                    "headers": {"Content-Type": "application/json"},
-                    "body": json.dumps({"status": "error", "message": "Invalid request"})
-                }
+                # No data received
+                self.send_response(400)
+                self.send_header('Content-type', 'application/json')
+                self.end_headers()
+                
+                response = {"status": "error", "message": "No data received"}
+                self.wfile.write(json.dumps(response).encode())
                 
         except Exception as e:
-            logger.error(f"Handler error: {e}")
-            return {
-                "statusCode": 500,
-                "headers": {"Content-Type": "application/json"},
-                "body": json.dumps({"status": "error", "message": str(e)})
-            }
+            logger.error(f"POST handler error: {e}")
+            self.send_response(500)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            
+            response = {"status": "error", "message": str(e)}
+            self.wfile.write(json.dumps(response).encode())
 
 # Alternative Flask-style handler for compatibility
 def flask_handler():
