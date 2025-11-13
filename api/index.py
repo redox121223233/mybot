@@ -14,7 +14,7 @@ from datetime import datetime, timezone, timedelta
 import uuid
 import re
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from PIL import Image, ImageDraw, ImageFont
 import arabic_reshaper
@@ -248,14 +248,19 @@ def clear_session(user_id: int):
         del SESSIONS[user_id]
 
 # Main menu
-def get_main_menu():
+def get_main_menu(webapp_url=None):
     """Get main menu keyboard"""
-    return [
+    buttons = [
         [InlineKeyboardButton("🎨 استیکر ساز", callback_data="sticker_maker")],
         [InlineKeyboardButton("📊 سهمیه من", callback_data="quota")],
         [InlineKeyboardButton("📖 راهنما", callback_data="help")],
         [InlineKeyboardButton("📞 پشتیبانی", callback_data="support")]
     ]
+    
+    if webapp_url:
+        buttons.insert(0, [InlineKeyboardButton("🚀 باز کردن Mini App", web_app=WebAppInfo(url=webapp_url))])
+    
+    return buttons
 
 # Global application
 application = None
@@ -272,15 +277,22 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         }
         save_data()
     
+    # Get webapp URL from environment or use default
+    webapp_url = os.environ.get("WEBAPP_URL", None)
+    
     text = (
         "🎨 به ربات استیکر ساز خوش آمدید!\n\n"
         "✨ ویژگی‌ها:\n"
         "📍 استیکر ساده: نامحدود (عکس + متن)\n"
         "⚡ استیکر پیشرفته: ۳ بار در روز (عکس + متن + تنظیمات)\n\n"
-        "📊 سهمیه شما در بخش «سهمیه من» قابل مشاهده است"
     )
     
-    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(get_main_menu()))
+    if webapp_url:
+        text += "🚀 می‌توانید از Mini App هم استفاده کنید!\n\n"
+    
+    text += "📊 سهمیه شما در بخش «سهمیه من» قابل مشاهده است"
+    
+    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(get_main_menu(webapp_url)))
 
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin panel"""
@@ -517,6 +529,79 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ خطا در ساخت استیکر")
         clear_session(user_id)
 
+async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle data from Mini App"""
+    try:
+        user_id = update.effective_user.id
+        
+        # Get data from web_app_data
+        if update.message and update.message.web_app_data:
+            data_string = update.message.web_app_data.data
+            data = json.loads(data_string)
+            
+            action = data.get("action", "unknown")
+            
+            logger.info(f"Received webapp data from {user_id}: {action}")
+            
+            # Handle different actions
+            if action == "create_sticker":
+                await update.message.reply_text(
+                    "🎨 عالی! بیا استیکر بسازیم!\n\n"
+                    "📷 لطفاً عکس خود را ارسال کنید:",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="back")]])
+                )
+                session = get_session(user_id)
+                session["mode"] = "simple"
+                
+            elif action == "view_gallery":
+                await update.message.reply_text(
+                    "⭐ گالری استیکرهای شما\n\n"
+                    "💡 در حال حاضر این قابلیت در دست توسعه است.\n"
+                    "به زودی می‌توانید تمام استیکرهای خود را مشاهده کنید!",
+                    reply_markup=InlineKeyboardMarkup(get_main_menu())
+                )
+                
+            elif action == "chat":
+                await update.message.reply_text(
+                    "💬 سلام! چطور می‌تونم کمکت کنم؟\n\n"
+                    "من می‌تونم برات:\n"
+                    "🎨 استیکر بسازم\n"
+                    "⚡ استیکر پیشرفته با تنظیمات کامل\n"
+                    "📊 سهمیه‌ات رو نشون بدم",
+                    reply_markup=InlineKeyboardMarkup(get_main_menu())
+                )
+                
+            elif action == "quick_sticker" or action == "gallery":
+                await update.message.reply_text(
+                    f"🎯 درخواست «{action}» دریافت شد!\n\n"
+                    "📷 برای شروع، عکس خود را ارسال کنید:",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="back")]])
+                )
+                session = get_session(user_id)
+                session["mode"] = "simple"
+                
+            elif action == "main_button":
+                await update.message.reply_text(
+                    "✅ دکمه اصلی فشرده شد!\n\n"
+                    "از منوی زیر یک گزینه را انتخاب کنید:",
+                    reply_markup=InlineKeyboardMarkup(get_main_menu())
+                )
+                
+            else:
+                await update.message.reply_text(
+                    f"✅ درخواست «{action}» دریافت شد!\n\n"
+                    "از منوی زیر ادامه دهید:",
+                    reply_markup=InlineKeyboardMarkup(get_main_menu())
+                )
+                
+    except Exception as e:
+        logger.error(f"Error handling webapp data: {e}")
+        await update.message.reply_text(
+            "❌ خطا در پردازش درخواست\n\n"
+            "لطفاً دوباره تلاش کنید.",
+            reply_markup=InlineKeyboardMarkup(get_main_menu())
+        )
+
 # Initialize bot
 def init_bot():
     """Initialize bot application"""
@@ -538,6 +623,7 @@ def init_bot():
     application.add_handler(CommandHandler("admin", admin))
     application.add_handler(CommandHandler("help", help_cmd))
     application.add_handler(CallbackQueryHandler(button_callback))
+    application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp_data))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     
@@ -609,6 +695,7 @@ class handler(BaseHTTPRequestHandler):
                     temp_app.add_handler(CommandHandler("admin", admin))
                     temp_app.add_handler(CommandHandler("help", help_cmd))
                     temp_app.add_handler(CallbackQueryHandler(button_callback))
+                    temp_app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp_data))
                     temp_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
                     temp_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
                     
