@@ -443,47 +443,47 @@ class handler(BaseHTTPRequestHandler):
         if application is None:
             application = init_bot()
 
-        try:
-            # Initialize bot if not already done
-            if application is None:
-                raise Exception("Failed to initialize bot")
-
-            # Read request body
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
-            
-            if post_data:
-                # Parse JSON data
-                data = json.loads(post_data.decode('utf-8'))
-                
-                # Process update
-                update = Update.de_json(data, application.bot)
-                
-                # Process the update
-                asyncio.run(application.process_update(update))
-                
-                # Send success response
-                self.send_response(200)
-                self.send_header('Content-type', 'application/json')
-                self.end_headers()
-                
-                response = {"status": "ok"}
-                self.wfile.write(json.dumps(response).encode())
-            else:
-                # No data received
-                self.send_response(400)
-                self.send_header('Content-type', 'application/json')
-                self.end_headers()
-                
-                response = {"status": "error", "message": "No data received"}
-                self.wfile.write(json.dumps(response).encode())
-                
-        except Exception as e:
-            logger.error(f"POST handler error: {e}")
-            self.send_response(200)  # Always return 200 to Telegram
+        # Check if bot initialization was successful
+        if application is None:
+            self.send_response(500)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
-            
+            self.wfile.write(json.dumps({"status": "error", "message": "Bot initialization failed"}).encode())
+            return
+
+        async def process_webhook():
+            try:
+                content_length = int(self.headers['Content-Length'])
+                post_data = self.rfile.read(content_length)
+                
+                if not post_data:
+                    logger.warning("POST request with no data received.")
+                    return
+
+                data = json.loads(post_data.decode('utf-8'))
+                update = Update.de_json(data, application.bot)
+
+                # Correct lifecycle for serverless environment
+                await application.initialize()
+                await application.process_update(update)
+                await application.shutdown()
+
+            except json.JSONDecodeError:
+                logger.error("Failed to decode JSON from webhook.")
+            except Exception as e:
+                logger.error(f"Error processing webhook: {e}")
+
+        try:
+            asyncio.run(process_webhook())
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "ok"}).encode())
+        except Exception as e:
+            logger.error(f"POST handler error: {e}")
+            self.send_response(500)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
             response = {"status": "error", "message": str(e)}
             self.wfile.write(json.dumps(response).encode())
 
