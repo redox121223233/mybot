@@ -578,6 +578,14 @@ class handler(BaseHTTPRequestHandler):
             global application
             if application is None:
                 application = init_bot()
+                if application is None:
+                    # BOT_TOKEN not found, return error
+                    self.send_response(500)
+                    self.send_header('Content-type', 'application/json')
+                    self.end_headers()
+                    response = {"status": "error", "message": "BOT_TOKEN not configured"}
+                    self.wfile.write(json.dumps(response).encode())
+                    return
             
             # Read request body
             content_length = int(self.headers['Content-Length'])
@@ -633,5 +641,5 @@ class handler(BaseHTTPRequestHandler):
             response = {"status": "error", "message": str(e)}
             self.wfile.write(json.dumps(response).encode())
 
-# Initialize on import
-init_bot()
+# Initialize only when needed (not on import)
+# init_bot()  # Commented out to prevent auto-initialization on Vercel
