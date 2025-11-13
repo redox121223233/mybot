@@ -208,6 +208,9 @@ def init_bot():
     application.add_handler(CommandHandler("admin", admin))
     application.add_handler(CommandHandler("help", help_cmd))
     application.add_handler(CallbackQueryHandler(button_callback))
+    application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, web_app_data))
     
     return application
 
@@ -310,12 +313,101 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "joined_at": datetime.now(timezone.utc).isoformat()
             }
             save_data()
-        
+
         start_text = """🎨 **به ربات استیکر ساز خوش آمدید!** 🌟
 
         برای ساخت استیکر، از دکمه زیر استفاده کنید:
         """
         await query.edit_message_text(start_text, reply_markup=InlineKeyboardMarkup(get_main_menu()))
+
+async def web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handles data sent from the web app."""
+    user_id = update.effective_user.id
+    web_app_data = json.loads(update.effective_message.web_app_data.data)
+    action = web_app_data.get('action')
+
+    if action == 'create_sticker':
+        if not can_use_advanced(user_id):
+            await update.message.reply_text(
+                "⚠️ متاسفانه سهمیه روزانه شما برای ساخت استیکر پیشرفته تمام شده است."
+            )
+            return
+
+        session = get_session(user_id)
+        session["state"] = "awaiting_photo"
+        session["mode"] = "advanced"
+
+        remaining = get_remaining(user_id)
+        await update.message.reply_text(
+            f"⚡️ ساخت استیکر پیشرفته\n"
+            f"📊 سهمیه باقی‌مانده: {remaining} از {ADVANCED_DAILY_LIMIT}\n\n"
+            f"📷 لطفا عکس مورد نظر خود را برای استیکر ارسال کنید:"
+        )
+    elif action == 'view_gallery':
+        await update.message.reply_text("🖼 قابلیت گالری به زودی اضافه خواهد شد!")
+    else:
+        logger.warning(f"Received unknown action from web app: {action}")
+
+async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle photo received from the user."""
+    user_id = update.effective_user.id
+    session = get_session(user_id)
+
+    if "state" not in session or session["state"] != "awaiting_photo":
+        return
+
+    try:
+        photo_file = await update.message.photo[-1].get_file()
+        photo_bytes = await photo_file.download_as_bytearray()
+        session["image"] = photo_bytes
+        session["state"] = "awaiting_text"
+        await update.message.reply_text("✅ عکس دریافت شد! حالا متن استیکر را بنویسید:")
+    except Exception as e:
+        logger.error(f"Error handling photo: {e}")
+        await update.message.reply_text("❌ خطا در دریافت عکس. لطفا دوباره تلاش کنید.")
+        clear_session(user_id)
+
+async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle text for the sticker."""
+    user_id = update.effective_user.id
+    session = get_session(user_id)
+
+    if "state" not in session or session["state"] != "awaiting_text":
+        return
+
+    try:
+        text = update.message.text
+        image_data = session.get("image")
+
+        if not image_data:
+            await update.message.reply_text("❌ اول باید یک عکس بفرستید. لطفا دوباره از وب اپلیکیشن شروع کنید.")
+            clear_session(user_id)
+            return
+
+        await update.message.reply_text("⏳ در حال ساخت استیکر...")
+
+        sticker_bytes = create_sticker(text, image_data)
+
+        if sticker_bytes:
+            sticker_file = io.BytesIO(sticker_bytes)
+            sticker_file.name = f"sticker_{uuid.uuid4().hex[:8]}.webp"
+            await update.message.reply_sticker(sticker=sticker_file)
+
+            if session.get("mode") == "advanced":
+                use_advanced(user_id)
+
+            await update.message.reply_text(
+                "✅ استیکر شما ساخته شد!",
+                reply_markup=InlineKeyboardMarkup(get_main_menu())
+            )
+        else:
+            await update.message.reply_text("❌ مشکلی در ساخت استیکر پیش آمد. لطفا دوباره تلاش کنید.")
+
+        clear_session(user_id)
+    except Exception as e:
+        logger.error(f"Error in handle_text: {e}")
+        await update.message.reply_text("❌ یک خطای غیرمنتظره رخ داد.")
+        clear_session(user_id)
 
 # Global application
 application = None
