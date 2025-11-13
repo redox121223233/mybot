@@ -250,15 +250,19 @@ def clear_session(user_id: int):
 # Main menu
 def get_main_menu(webapp_url=None):
     """Get main menu keyboard"""
-    buttons = [
+    buttons = []
+    
+    # Add Mini App button first if available
+    if webapp_url:
+        buttons.append([InlineKeyboardButton("🚀 باز کردن Mini App", web_app=WebAppInfo(url=webapp_url))])
+    
+    # Add regular buttons
+    buttons.extend([
         [InlineKeyboardButton("🎨 استیکر ساز", callback_data="sticker_maker")],
         [InlineKeyboardButton("📊 سهمیه من", callback_data="quota")],
         [InlineKeyboardButton("📖 راهنما", callback_data="help")],
         [InlineKeyboardButton("📞 پشتیبانی", callback_data="support")]
-    ]
-    
-    if webapp_url:
-        buttons.insert(0, [InlineKeyboardButton("🚀 باز کردن Mini App", web_app=WebAppInfo(url=webapp_url))])
+    ])
     
     return buttons
 
@@ -294,6 +298,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(get_main_menu(webapp_url)))
 
+async def webapp_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Open Mini App directly"""
+    webapp_url = os.environ.get("WEBAPP_URL", None)
+    
+    if not webapp_url:
+        await update.message.reply_text(
+            "❌ Mini App هنوز فعال نشده!\n\n"
+            "لطفاً از دکمه‌های زیر استفاده کنید:",
+            reply_markup=InlineKeyboardMarkup(get_main_menu())
+        )
+        return
+    
+    keyboard = [[InlineKeyboardButton("🚀 باز کردن Mini App", web_app=WebAppInfo(url=webapp_url))]]
+    
+    await update.message.reply_text(
+        "🎨 Mini App استیکر ساز\n\n"
+        "روی دکمه زیر کلیک کنید تا Mini App باز شود:",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
+
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Admin panel"""
     user_id = update.effective_user.id
@@ -302,14 +326,17 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ فقط ادمین!")
         return
     
+    webapp_url = os.environ.get("WEBAPP_URL", "Not set")
+    
     text = (
         f"👹 پنل ادمین\n\n"
         f"👥 کاربران: {len(USERS)}\n"
         f"⚡ limite روزانه: {ADVANCED_DAILY_LIMIT}\n"
+        f"🌐 Mini App: {webapp_url}\n"
         f"🎬 وضعیت: فعال ✅"
     )
     
-    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(get_main_menu()))
+    await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(get_main_menu(webapp_url)))
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Help command"""
@@ -580,12 +607,60 @@ async def handle_webapp_data(update: Update, context: ContextTypes.DEFAULT_TYPE)
                 session = get_session(user_id)
                 session["mode"] = "simple"
                 
-            elif action == "main_button":
+            elif action == "main_button" or action == "main_button_clicked":
                 await update.message.reply_text(
                     "✅ دکمه اصلی فشرده شد!\n\n"
                     "از منوی زیر یک گزینه را انتخاب کنید:",
                     reply_markup=InlineKeyboardMarkup(get_main_menu())
                 )
+                
+            # Handle Persian action names
+            elif action == "ساخت استیکر":
+                await update.message.reply_text(
+                    "🎨 عالی! بیا استیکر بسازیم!\n\n"
+                    "📷 لطفاً عکس خود را ارسال کنید:",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="back")]])
+                )
+                session = get_session(user_id)
+                session["mode"] = "simple"
+                
+            elif action == "چت هوشمند":
+                await update.message.reply_text(
+                    "💬 سلام! چطور می‌تونم کمکت کنم؟\n\n"
+                    "من می‌تونم برات:\n"
+                    "🎨 استیکر بسازم\n"
+                    "⚡ استیکر پیشرفته با تنظیمات کامل\n"
+                    "📊 سهمیه‌ات رو نشون بدم",
+                    reply_markup=InlineKeyboardMarkup(get_main_menu())
+                )
+                
+            elif action == "سریع و آسان":
+                await update.message.reply_text(
+                    "⚡ استیکر سریع!\n\n"
+                    "📷 عکس خود را ارسال کنید تا سریع استیکر بسازم:",
+                    reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="back")]])
+                )
+                session = get_session(user_id)
+                session["mode"] = "simple"
+                
+            elif action == "کیفیت بالا":
+                # Check if can use advanced
+                if can_use_advanced(user_id):
+                    await update.message.reply_text(
+                        "⭐ استیکر با کیفیت بالا!\n\n"
+                        "📷 عکس خود را ارسال کنید:",
+                        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("🔙 بازگشت", callback_data="back")]])
+                    )
+                    session = get_session(user_id)
+                    session["mode"] = "advanced"
+                else:
+                    remaining = get_remaining(user_id)
+                    await update.message.reply_text(
+                        f"⚠️ سهمیه پیشرفته تمام شده!\n\n"
+                        f"📊 سهمیه شما: {remaining} از {ADVANCED_DAILY_LIMIT}\n"
+                        f"💡 می‌توانید از استیکر ساده استفاده کنید",
+                        reply_markup=InlineKeyboardMarkup(get_main_menu())
+                    )
                 
             else:
                 await update.message.reply_text(
@@ -622,6 +697,7 @@ def init_bot():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("admin", admin))
     application.add_handler(CommandHandler("help", help_cmd))
+    application.add_handler(CommandHandler("webapp", webapp_command))
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp_data))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
@@ -645,7 +721,15 @@ class handler(BaseHTTPRequestHandler):
             self.send_header('Content-type', 'application/json')
             self.end_headers()
             
-            response = {"status": "ok", "message": "Simple Sticker Bot is running!"}
+            # Get webapp URL
+            webapp_url = os.environ.get("WEBAPP_URL", None)
+            
+            response = {
+                "status": "ok", 
+                "message": "Sticker Bot is running!",
+                "users": len(USERS),
+                "web_app": webapp_url if webapp_url else "Not configured"
+            }
             self.wfile.write(json.dumps(response).encode())
             
         except Exception as e:
@@ -694,6 +778,7 @@ class handler(BaseHTTPRequestHandler):
                     temp_app.add_handler(CommandHandler("start", start))
                     temp_app.add_handler(CommandHandler("admin", admin))
                     temp_app.add_handler(CommandHandler("help", help_cmd))
+                    temp_app.add_handler(CommandHandler("webapp", webapp_command))
                     temp_app.add_handler(CallbackQueryHandler(button_callback))
                     temp_app.add_handler(MessageHandler(filters.StatusUpdate.WEB_APP_DATA, handle_webapp_data))
                     temp_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
