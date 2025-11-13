@@ -675,6 +675,10 @@ def init_bot():
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+    
+    # Initialize the application
+    asyncio.run(application.initialize())
+    logger.info("Bot application initialized successfully")
 
 # Vercel serverless function entry point
 def handler(request):
@@ -744,6 +748,9 @@ class handler(BaseHTTPRequestHandler):
             if application is None:
                 init_bot()
             
+            # Start the application for this request
+            asyncio.run(application.start())
+            
             # Read request body
             content_length = int(self.headers['Content-Length'])
             post_data = self.rfile.read(content_length)
@@ -780,6 +787,13 @@ class handler(BaseHTTPRequestHandler):
             
             response = {"status": "error", "message": str(e)}
             self.wfile.write(json.dumps(response).encode())
+        finally:
+            # Stop the application after processing
+            try:
+                if application:
+                    asyncio.run(application.stop())
+            except Exception as stop_error:
+                logger.error(f"Error stopping application: {stop_error}")
 
 # Alternative Flask-style handler for compatibility
 def flask_handler():
