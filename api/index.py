@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Simple Telegram Sticker Bot - Clean Version for Vercel
+Simple Telegram Sticker Bot - Fixed Version for Vercel
 Exactly as requested: 4 buttons only, simple and working
 """
 
@@ -252,7 +252,7 @@ def get_main_menu():
     """Get main menu keyboard"""
     return [
         [InlineKeyboardButton("🎨 استیکر ساز", callback_data="sticker_maker")],
-        [InlineKeyboardButton("📋 سهمیه من", callback_data="quota")],
+        [InlineKeyboardButton("📊 سهمیه من", callback_data="quota")],
         [InlineKeyboardButton("📖 راهنما", callback_data="help")],
         [InlineKeyboardButton("📞 پشتیبانی", callback_data="support")]
     ]
@@ -294,7 +294,7 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👹 پنل ادمین\n\n"
         f"👥 کاربران: {len(USERS)}\n"
         f"⚡ limite روزانه: {ADVANCED_DAILY_LIMIT}\n"
-        f"📺 وضعیت: فعال ✅"
+        f"🎬 وضعیت: فعال ✅"
     )
     
     await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(get_main_menu()))
@@ -306,7 +306,7 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🎨 **استیکر ساز:**\n"
         "• ساده: نامحدود، فقط عکس + متن\n"
         "• پیشرفته: ۳ بار در روز، با تنظیمات کامل\n\n"
-        "📋 **سهمیه من:**\n"
+        "📊 **سهمیه من:**\n"
         "• نمایش تعداد استیکر پیشرفته باقی‌مانده\n"
         "• نمایش زمان تا ریست شدن سهمیه\n\n"
         "📞 **پشتیبانی:**\n"
@@ -385,141 +385,6 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
     
-    elif data.startswith("adv_"):
-        session = get_session(user_id)
-        
-        if data == "adv_position":
-            keyboard = [
-                [InlineKeyboardButton("⬆️ بالا", callback_data="pos_top")],
-                [InlineKeyboardButton("⬅️ چپ", callback_data="pos_left")],
-                [InlineKeyboardButton("⭿ مرکز", callback_data="pos_center")],
-                [InlineKeyboardButton("➡️ راست", callback_data="pos_right")],
-                [InlineKeyboardButton("⬇️ پایین", callback_data="pos_bottom")],
-                [InlineKeyboardButton("🔙 بازگشت", callback_data="advanced")]
-            ]
-            await query.edit_message_text("📍 موقعیت متن را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
-        
-        elif data == "adv_color":
-            keyboard = [
-                [InlineKeyboardButton("⚪ سفید", callback_data="color_#FFFFFF")],
-                [InlineKeyboardButton("⚫ مشکی", callback_data="color_#000000")],
-                [InlineKeyboardButton("🔴 قرمز", callback_data="color_#FF0000")],
-                [InlineKeyboardButton("🔵 آبی", callback_data="color_#0000FF")],
-                [InlineKeyboardButton("🔙 بازگشت", callback_data="advanced")]
-            ]
-            await query.edit_message_text("🌈 رنگ متن را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
-        
-        elif data == "adv_size":
-            keyboard = [
-                [InlineKeyboardButton("🔹 کوچک (30)", callback_data="size_30")],
-                [InlineKeyboardButton("🔸 متوسط (40)", callback_data="size_40")],
-                [InlineKeyboardButton("🔺 بزرگ (50)", callback_data="size_50")],
-                [InlineKeyboardButton("🔻 خیلی بزرگ (60)", callback_data="size_60")],
-                [InlineKeyboardButton("🔙 بازگشت", callback_data="advanced")]
-            ]
-            await query.edit_message_text("📏 اندازه فونت را انتخاب کنید:", reply_markup=InlineKeyboardMarkup(keyboard))
-        
-        elif data == "adv_create":
-            if not session.get("image") or not session.get("text"):
-                await query.edit_message_text("❌ لطفا ابتدا عکس و متن را وارد کنید!")
-                return
-            
-            await query.edit_message_text("⏳ در حال ساخت استیکر پیشرفته...")
-            
-            sticker_bytes = create_advanced_sticker(
-                session["text"],
-                session["image"],
-                session["position"][0],
-                session["position"][1],
-                session["font_size"],
-                session["color"]
-            )
-            
-            if sticker_bytes:
-                sticker_file = io.BytesIO(sticker_bytes)
-                sticker_file.name = f"sticker_{uuid.uuid4().hex[:8]}.webp"
-                
-                use_advanced(user_id)
-                remaining = get_remaining(user_id)
-                
-                await query.message.reply_sticker(sticker=sticker_file)
-                await query.message.reply_text(
-                    f"✅ استیکر پیشرفته ساخته شد!\n\n"
-                    f"📊 سهمیه باقی‌مانده: {remaining} از {ADVANCED_DAILY_LIMIT}",
-                    reply_markup=InlineKeyboardMarkup(get_main_menu())
-                )
-            else:
-                await query.edit_message_text("❌ خطا در ساخت استیکر")
-            
-            clear_session(user_id)
-        
-        elif data.startswith("pos_"):
-            positions = {
-                "pos_top": (256, 100),
-                "pos_left": (100, 256),
-                "pos_center": (256, 256),
-                "pos_right": (412, 256),
-                "pos_bottom": (256, 412)
-            }
-            pos_name = data.split("_")[1]
-            if pos_name in positions:
-                session["position"] = positions[f"pos_{pos_name}"]
-                await query.edit_message_text(f"✅ موقعیت به {pos_name} تغییر کرد\n\n⚙️ تنظیمات دیگر را انتخاب کنید:", reply_markup=InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📍 موقعیت متن", callback_data="adv_position")],
-                    [InlineKeyboardButton("🌈 رنگ متن", callback_data="adv_color")],
-                    [InlineKeyboardButton("📏 اندازه فونت", callback_data="adv_size")],
-                    [InlineKeyboardButton("✅ ساخت استیکر", callback_data="adv_create")],
-                    [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
-                ]))
-        
-        elif data.startswith("color_"):
-            color = data.split("_")[1]
-            session["color"] = color
-            await query.edit_message_text(f"✅ رنگ به {color} تغییر کرد\n\n⚙️ تنظیمات دیگر را انتخاب کنید:", reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("📍 موقعیت متن", callback_data="adv_position")],
-                [InlineKeyboardButton("🌈 رنگ متن", callback_data="adv_color")],
-                [InlineKeyboardButton("📏 اندازه فونت", callback_data="adv_size")],
-                [InlineKeyboardButton("✅ ساخت استیکر", callback_data="adv_create")],
-                [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
-            ]))
-        
-        elif data.startswith("size_"):
-            size = int(data.split("_")[1])
-            session["font_size"] = size
-            await query.edit_message_text(f"✅ اندازه فونت به {size} تغییر کرد\n\n⚙️ تنظیمات دیگر را انتخاب کنید:", reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("📍 موقعیت متن", callback_data="adv_position")],
-                [InlineKeyboardButton("🌈 رنگ متن", callback_data="adv_color")],
-                [InlineKeyboardButton("📏 اندازه فونت", callback_data="adv_size")],
-                [InlineKeyboardButton("✅ ساخت استیکر", callback_data="adv_create")],
-                [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
-            ]))
-    
-    elif data == "advanced":
-        # Return to advanced menu
-        if not can_use_advanced(user_id):
-            await query.edit_message_text("⚠️ سهمیه پیشرفته تمام شده!\n\n📍 می‌توانید از استیکر ساده استفاده کنید")
-            return
-        
-        session = get_session(user_id)
-        session["mode"] = "advanced"
-        remaining = get_remaining(user_id)
-        
-        keyboard = [
-            [InlineKeyboardButton("📍 موقعیت متن", callback_data="adv_position")],
-            [InlineKeyboardButton("🌈 رنگ متن", callback_data="adv_color")],
-            [InlineKeyboardButton("📏 اندازه فونت", callback_data="adv_size")],
-            [InlineKeyboardButton("✅ ساخت استیکر", callback_data="adv_create")],
-            [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
-        ]
-        
-        text = (
-            f"⚡ استیکر پیشرفته\n\n"
-            f"📊 سهمیه: {remaining} از {ADVANCED_DAILY_LIMIT}\n\n"
-            f"⚙️ تنظیمات استیکر:"
-        )
-        
-        await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
-    
     elif data == "quota":
         reset_daily_limit(user_id)
         remaining = get_remaining(user_id)
@@ -557,7 +422,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = (
             f"📞 پشتیبانی ربات\n\n"
             f"👨‍💻 ادمین: {SUPPORT_USERNAME}\n\n"
-            "🔹 برای سوال و مشکل با ادمین در ارتباط باشید\n"
+            "👹 برای سوال و مشکل با ادمین در ارتباط باشید\n"
             f"💬 [{SUPPORT_USERNAME}](https://t.me/{SUPPORT_USERNAME[1:]})"
         )
         
@@ -664,7 +529,7 @@ def init_bot():
     bot_token = os.environ.get("BOT_TOKEN")
     if not bot_token:
         logger.error("BOT_TOKEN not found")
-        return
+        return None
     
     application = Application.builder().token(bot_token).build()
     
@@ -676,43 +541,13 @@ def init_bot():
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
     
-    # Initialize and start the application
+    # Initialize the application only
     asyncio.run(application.initialize())
-    asyncio.run(application.start())
-    logger.info("Bot application initialized and started successfully")
-
-# Vercel serverless function entry point
-def handler(request):
-    """Vercel serverless function handler"""
-    try:
-        # Initialize bot if not already done
-        if not application:
-            init_bot()
-        
-        # Parse request
-        if hasattr(request, 'json'):
-            data = request.json()
-        elif hasattr(request, 'get_json'):
-            data = request.get_json()
-        else:
-            # Try to parse as JSON string
-            import json
-            data = json.loads(request.body) if hasattr(request, 'body') else {}
-        
-        if data:
-            update = Update.de_json(data, application.bot)
-            asyncio.run(application.process_update(update))
-            return {"status": "ok"}
-        else:
-            return {"status": "error", "message": "Invalid request"}
-            
-    except Exception as e:
-        logger.error(f"Handler error: {e}")
-        return {"status": "error", "message": str(e)}
+    logger.info("Bot application initialized successfully")
+    return application
 
 # Vercel Handler Class - Required for Vercel Python deployment
 from http.server import BaseHTTPRequestHandler
-import json
 
 class handler(BaseHTTPRequestHandler):
     """Vercel Python handler class that inherits from BaseHTTPRequestHandler"""
@@ -720,11 +555,6 @@ class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         """Handle GET requests"""
         try:
-            # Initialize bot if not already done
-            global application
-            if application is None:
-                init_bot()
-            
             self.send_response(200)
             self.send_header('Content-type', 'application/json')
             self.end_headers()
@@ -747,12 +577,7 @@ class handler(BaseHTTPRequestHandler):
             # Initialize bot if not already done
             global application
             if application is None:
-                init_bot()
-            
-            # Check if application is running, if not start it
-            import asyncio
-            if not application.running:
-                asyncio.run(application.start())
+                application = init_bot()
             
             # Read request body
             content_length = int(self.headers['Content-Length'])
@@ -762,9 +587,26 @@ class handler(BaseHTTPRequestHandler):
                 # Parse JSON data
                 data = json.loads(post_data.decode('utf-8'))
                 
-                # Process Telegram update
-                update = Update.de_json(data, application.bot)
-                asyncio.run(application.process_update(update))
+                # Create a new application instance for this request
+                bot_token = os.environ.get("BOT_TOKEN")
+                if bot_token:
+                    temp_app = Application.builder().token(bot_token).build()
+                    asyncio.run(temp_app.initialize())
+                    
+                    # Process Telegram update
+                    update = Update.de_json(data, temp_app.bot)
+                    
+                    # Add handlers temporarily
+                    temp_app.add_handler(CommandHandler("start", start))
+                    temp_app.add_handler(CommandHandler("admin", admin))
+                    temp_app.add_handler(CommandHandler("help", help_cmd))
+                    temp_app.add_handler(CallbackQueryHandler(button_callback))
+                    temp_app.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+                    temp_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+                    
+                    asyncio.run(temp_app.start())
+                    asyncio.run(temp_app.process_update(update))
+                    asyncio.run(temp_app.stop())
                 
                 # Send success response
                 self.send_response(200)
@@ -791,35 +633,5 @@ class handler(BaseHTTPRequestHandler):
             response = {"status": "error", "message": str(e)}
             self.wfile.write(json.dumps(response).encode())
 
-# Alternative Flask-style handler for compatibility
-def flask_handler():
-    """Flask-style handler"""
-    from flask import Flask, request
-    
-    app = Flask(__name__)
-    
-    @app.route('/', methods=['GET', 'POST'])
-    def index():
-        if request.method == 'GET':
-            return {"status": "ok", "message": "Simple Sticker Bot is running!"}
-        
-        # Handle webhook
-        if request.is_json:
-            data = request.get_json()
-            if data:
-                update = Update.de_json(data, application.bot)
-                asyncio.run(application.process_update(update))
-                return "OK"
-        
-        return "Error", 400
-    
-    return app
-
 # Initialize on import
 init_bot()
-
-# Main entry point for different environments
-if __name__ == "__main__":
-    # Run Flask app for local development
-    flask_app = flask_handler()
-    flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000)))
