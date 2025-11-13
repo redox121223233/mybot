@@ -1,0 +1,450 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Mini App استیکر ساز</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Tahoma', 'Arial', sans-serif;
+            background: var(--tg-theme-bg-color, linear-gradient(135deg, #667eea 0%, #764ba2 100%));
+            color: var(--tg-theme-text-color, #333);
+            padding: 0;
+            margin: 0;
+            overflow-x: hidden;
+        }
+
+        .container {
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            padding: 30px 20px;
+            animation: fadeIn 0.7s ease-in;
+        }
+
+        .logo {
+            display: inline-block;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            border-radius: 50%;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            margin-bottom: 20px;
+            animation: bounce 1s ease-in-out;
+        }
+
+        .logo svg {
+            width: 60px;
+            height: 60px;
+            fill: white;
+        }
+
+        h1 {
+            font-size: 28px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 10px;
+        }
+
+        .welcome-text {
+            font-size: 16px;
+            color: var(--tg-theme-hint-color, #888);
+            margin-top: 10px;
+        }
+
+        .features-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 15px;
+            margin: 30px 0;
+            animation: fadeInUp 0.7s ease-in 0.2s both;
+        }
+
+        .feature-card {
+            background: var(--tg-theme-secondary-bg-color, white);
+            border-radius: 15px;
+            padding: 20px;
+            text-align: center;
+            box-shadow: 0 5px 15px rgba(0,0,0,0.1);
+            cursor: pointer;
+            transition: all 0.3s ease;
+            border: 2px solid transparent;
+        }
+
+        .feature-card:hover,
+        .feature-card:active {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15);
+            border-color: #667eea;
+        }
+
+        .feature-icon {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .feature-title {
+            font-size: 16px;
+            font-weight: bold;
+            margin-bottom: 8px;
+            color: var(--tg-theme-text-color, #333);
+        }
+
+        .feature-desc {
+            font-size: 12px;
+            color: var(--tg-theme-hint-color, #888);
+        }
+
+        .action-buttons {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin: 30px 0;
+            animation: fadeInUp 0.7s ease-in 0.4s both;
+        }
+
+        .btn {
+            padding: 18px 25px;
+            border: none;
+            border-radius: 12px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+            text-decoration: none;
+            color: white;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-primary:hover,
+        .btn-primary:active {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(102, 126, 234, 0.5);
+        }
+
+        .btn-secondary {
+            background: var(--tg-theme-secondary-bg-color, #f0f0f0);
+            color: var(--tg-theme-text-color, #333);
+            box-shadow: 0 3px 10px rgba(0,0,0,0.1);
+        }
+
+        .btn-secondary:hover,
+        .btn-secondary:active {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 15px rgba(0,0,0,0.15);
+        }
+
+        .info-card {
+            background: var(--tg-theme-secondary-bg-color, #e7f3ff);
+            border-radius: 12px;
+            padding: 20px;
+            margin: 20px 0;
+            border: 1px solid rgba(102, 126, 234, 0.2);
+            animation: fadeInUp 0.7s ease-in 0.6s both;
+        }
+
+        .info-card h3 {
+            font-size: 18px;
+            margin-bottom: 15px;
+            color: var(--tg-theme-text-color, #333);
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .info-card ul {
+            list-style: none;
+            padding: 0;
+        }
+
+        .info-card li {
+            padding: 8px 0;
+            font-size: 14px;
+            color: var(--tg-theme-hint-color, #666);
+            display: flex;
+            align-items: start;
+            gap: 10px;
+        }
+
+        .info-card li span {
+            color: #667eea;
+            font-weight: bold;
+            min-width: 20px;
+        }
+
+        .footer {
+            text-align: center;
+            padding: 20px;
+            font-size: 14px;
+            color: var(--tg-theme-hint-color, #888);
+            animation: fadeIn 0.7s ease-in 0.8s both;
+        }
+
+        .toast {
+            position: fixed;
+            bottom: 20px;
+            left: 50%;
+            transform: translateX(-50%) translateY(100px);
+            background: #333;
+            color: white;
+            padding: 15px 25px;
+            border-radius: 8px;
+            box-shadow: 0 5px 20px rgba(0,0,0,0.3);
+            z-index: 1000;
+            opacity: 0;
+            transition: all 0.3s ease;
+        }
+
+        .toast.show {
+            transform: translateX(-50%) translateY(0);
+            opacity: 1;
+        }
+
+        .toast.success {
+            background: #4CAF50;
+        }
+
+        .toast.error {
+            background: #f44336;
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        @keyframes fadeInUp {
+            from { 
+                opacity: 0;
+                transform: translateY(20px);
+            }
+            to { 
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        @keyframes bounce {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        .warning-box {
+            background: #fff3cd;
+            border: 1px solid #ffc107;
+            border-radius: 8px;
+            padding: 15px;
+            margin: 20px 0;
+            color: #856404;
+            text-align: center;
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <div class="logo">
+                <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M12 2L2 7L12 12L22 7L12 2Z"/>
+                    <path d="M2 17L12 22L22 17"/>
+                    <path d="M2 12L12 17L22 12"/>
+                </svg>
+            </div>
+            <h1>🎨 Mini App استیکر ساز</h1>
+            <p class="welcome-text" id="welcomeText">به Mini App تلگرام خوش آمدید! 👋</p>
+        </div>
+
+        <div id="notInTelegram" class="warning-box" style="display: none;">
+            ⚠️ این برنامه فقط از داخل تلگرام قابل استفاده است
+        </div>
+
+        <div class="features-grid">
+            <div class="feature-card" onclick="sendAction('create_sticker')">
+                <div class="feature-icon">🎨</div>
+                <div class="feature-title">ساخت استیکر</div>
+                <div class="feature-desc">استیکر منحصر به فرد بسازید</div>
+            </div>
+
+            <div class="feature-card" onclick="sendAction('chat')">
+                <div class="feature-icon">💬</div>
+                <div class="feature-title">چت هوشمند</div>
+                <div class="feature-desc">با ربات تعامل کنید</div>
+            </div>
+
+            <div class="feature-card" onclick="sendAction('quick_sticker')">
+                <div class="feature-icon">⚡</div>
+                <div class="feature-title">سریع و آسان</div>
+                <div class="feature-desc">استیکر فوری بسازید</div>
+            </div>
+
+            <div class="feature-card" onclick="sendAction('gallery')">
+                <div class="feature-icon">⭐</div>
+                <div class="feature-title">کیفیت بالا</div>
+                <div class="feature-desc">خروجی با کیفیت عالی</div>
+            </div>
+        </div>
+
+        <div class="action-buttons">
+            <button class="btn btn-primary" onclick="sendAction('create_sticker')">
+                <span>🎨</span>
+                ساخت استیکر جدید
+            </button>
+
+            <button class="btn btn-secondary" onclick="sendAction('view_gallery')">
+                <span>⭐</span>
+                مشاهده گالری
+            </button>
+        </div>
+
+        <div class="info-card">
+            <h3>
+                <span>💡</span>
+                راهنمای استفاده
+            </h3>
+            <ul>
+                <li>
+                    <span>۱.</span>
+                    روی یکی از گزینه‌ها کلیک کنید
+                </li>
+                <li>
+                    <span>۲.</span>
+                    دستورات را در چت ربات دنبال کنید
+                </li>
+                <li>
+                    <span>۳.</span>
+                    از استیکرهای خود لذت ببرید!
+                </li>
+            </ul>
+        </div>
+
+        <div class="footer">
+            ساخته شده با ❤️ برای تلگرام
+        </div>
+    </div>
+
+    <div id="toast" class="toast"></div>
+
+    <script>
+        // Get Telegram WebApp instance
+        const tg = window.Telegram.WebApp;
+        
+        // Initialize
+        if (tg) {
+            tg.ready();
+            tg.expand();
+
+            // Apply Telegram theme
+            document.body.style.backgroundColor = tg.themeParams.bg_color || '#f0f0f0';
+            
+            // Show user name if available
+            if (tg.initDataUnsafe && tg.initDataUnsafe.user) {
+                const user = tg.initDataUnsafe.user;
+                document.getElementById('welcomeText').textContent = 
+                    `سلام ${user.first_name}! 👋`;
+            }
+
+            // Configure Main Button
+            tg.MainButton.text = "ارسال به ربات";
+            tg.MainButton.color = "#667eea";
+            tg.MainButton.textColor = "#ffffff";
+            tg.MainButton.show();
+
+            // Main Button click handler
+            tg.MainButton.onClick(function() {
+                sendAction('main_button');
+            });
+
+            // Back Button handler
+            tg.BackButton.onClick(function() {
+                showToast('بازگشت به منوی اصلی', 'success');
+            });
+
+        } else {
+            // Not in Telegram
+            document.getElementById('notInTelegram').style.display = 'block';
+        }
+
+        // Send action to bot
+        function sendAction(action) {
+            if (!tg) {
+                showToast('❌ لطفاً از داخل تلگرام باز کنید', 'error');
+                return;
+            }
+
+            // Get user data
+            const userData = tg.initDataUnsafe.user || {};
+            
+            // Prepare data
+            const data = {
+                action: action,
+                user_id: userData.id,
+                first_name: userData.first_name,
+                timestamp: Date.now()
+            };
+
+            // Send to bot via WebApp
+            tg.sendData(JSON.stringify(data));
+
+            // Show feedback
+            showToast(`✅ درخواست "${getActionName(action)}" ارسال شد`, 'success');
+
+            // Optional: close the Mini App after sending
+            // setTimeout(() => tg.close(), 1000);
+        }
+
+        // Get action display name
+        function getActionName(action) {
+            const names = {
+                'create_sticker': 'ساخت استیکر',
+                'chat': 'چت',
+                'quick_sticker': 'استیکر سریع',
+                'gallery': 'گالری',
+                'view_gallery': 'مشاهده گالری',
+                'main_button': 'دکمه اصلی'
+            };
+            return names[action] || action;
+        }
+
+        // Show toast notification
+        function showToast(message, type = 'success') {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            toast.className = `toast ${type} show`;
+            
+            setTimeout(() => {
+                toast.classList.remove('show');
+            }, 3000);
+        }
+
+        // Add haptic feedback on clicks (Telegram feature)
+        document.querySelectorAll('.feature-card, .btn').forEach(element => {
+            element.addEventListener('click', () => {
+                if (tg && tg.HapticFeedback) {
+                    tg.HapticFeedback.impactOccurred('light');
+                }
+            });
+        });
+    </script>
+</body>
+</html>
