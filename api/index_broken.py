@@ -184,7 +184,7 @@ def get_main_menu():
     """Get main menu keyboard"""
     return [
         [InlineKeyboardButton("🎨 استیکر ساز", callback_data="sticker_maker")],
-        [InlineKeyboardButton("📊 سهمیه من", callback_data="quota")],
+        [InlineKeyboardButton("📋 سهمیه من", callback_data="quota")],
         [InlineKeyboardButton("📖 راهنما", callback_data="help")],
         [InlineKeyboardButton("📞 پشتیبانی", callback_data="support")]
     ]
@@ -221,7 +221,7 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     
     text = (
-        f"👹 پنل ادمین\n\n"
+        f"👑 پنل ادمین\n\n"
         f"👥 کاربران: {len(USERS)}\n"
         f"⚡ لیمیت روزانه: {ADVANCED_DAILY_LIMIT}\n"
         f"📊 وضعیت: فعال ✅"
@@ -236,9 +236,9 @@ async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "🎨 **استیکر ساز:**\n"
         "• ساده: نامحدود، فقط عکس + متن\n"
         "• پیشرفته: ۳ بار در روز، با تنظیمات کامل\n\n"
-        "📊 **سهمیه من:**\n"
+        "📋 **سهمیه من:**\n"
         "• نمایش تعداد استیکر پیشرفته باقی‌مانده\n"
-        "•显示 زمان تا ریست شدن سهمیه\n\n"
+        "• نمایش زمان تا ریست شدن سهمیه\n\n"
         "📞 **پشتیبانی:**\n"
         f"• ارتباط با ادمین: {SUPPORT_USERNAME}\n\n"
         "📝 **نحوه استفاده:**\n"
@@ -272,7 +272,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "🎨 نوع استیکر را انتخاب کنید:\n\n"
             "📍 **ساده:** نامحدود استفاده\n"
             "   فقط عکس + متن\n\n"
-            "⚡ **پرفته:** ۳ بار در روز\n"
+            "⚡ **پیشرفته:** ۳ بار در روز\n"
             "   عکس + متن + تنظیمات"
         )
         
@@ -330,7 +330,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         text = (
             f"📞 پشتیبانی ربات\n\n"
             f"👨‍💻 ادمین: {SUPPORT_USERNAME}\n\n"
-            "📍 برای سوال و مشکل با ادمین در ارتباط باشید\n"
+            "🔹 برای سوال و مشکل با ادمین در ارتباط باشید\n"
             f"💬 [{SUPPORT_USERNAME}](https://t.me/{SUPPORT_USERNAME[1:]})"
         )
         
@@ -420,6 +420,10 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
         clear_session(user_id)
 
 # Flask routes
+@app.route('/')
+def home():
+    return "Simple Sticker Bot is running!"
+
 @app.route('/api/webhook', methods=['POST'])
 def webhook():
     """Webhook handler"""
@@ -434,11 +438,6 @@ def webhook():
     except Exception as e:
         logger.error(f"Webhook error: {e}")
         return "Error", 500
-
-@app.route('/api/webhook', methods=['GET'])
-def webhook_status():
-    """Webhook status check"""
-    return "Bot API is running", 200
 
 # Bot setup
 bot = None
