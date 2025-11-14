@@ -439,6 +439,11 @@ def webhook():
         logger.error(f"Webhook error: {e}")
         return "Error", 500
 
+   @app.route('/api/webhook', methods=['GET'])
+   def webhook_status():
+       """Webhook status check"""
+       return "Bot API is running", 200
+
 # Bot setup
 bot = None
 

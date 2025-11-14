@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ربات استیکر ساز</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Vazirmatn', sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .container {
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 20px 40px rgba(0, 0, 0, 0.1);
+            padding: 40px;
+            text-align: center;
+            max-width: 500px;
+            width: 100%;
+        }
+
+        .logo {
+            font-size: 80px;
+            margin-bottom: 20px;
+        }
+
+        h1 {
+            color: #333;
+            font-size: 28px;
+            margin-bottom: 15px;
+        }
+
+        .description {
+            color: #666;
+            font-size: 16px;
+            line-height: 1.6;
+            margin-bottom: 30px;
+        }
+
+        .features {
+            background: #f8f9fa;
+            border-radius: 10px;
+            padding: 20px;
+            margin-bottom: 30px;
+        }
+
+        .features h3 {
+            color: #333;
+            font-size: 18px;
+            margin-bottom: 15px;
+        }
+
+        .feature-list {
+            list-style: none;
+        }
+
+        .feature-list li {
+            color: #666;
+            font-size: 14px;
+            margin-bottom: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .feature-list li span {
+            margin-left: 8px;
+        }
+
+        .telegram-btn {
+            display: inline-flex;
+            align-items: center;
+            background: #0088cc;
+            color: white;
+            text-decoration: none;
+            padding: 15px 30px;
+            border-radius: 50px;
+            font-size: 18px;
+            font-weight: bold;
+            transition: all 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0, 136, 204, 0.3);
+        }
+
+        .telegram-btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(0, 136, 204, 0.4);
+        }
+
+        .telegram-icon {
+            font-size: 24px;
+            margin-left: 10px;
+        }
+
+        .status {
+            margin-top: 20px;
+            padding: 15px;
+            background: #e8f5e8;
+            border-radius: 10px;
+            color: #2e7d32;
+            font-size: 14px;
+        }
+
+        .status.active {
+            background: #e8f5e8;
+            color: #2e7d32;
+        }
+
+        @media (max-width: 480px) {
+            .container {
+                padding: 30px 20px;
+            }
+
+            h1 {
+                font-size: 24px;
+            }
+
+            .telegram-btn {
+                padding: 12px 25px;
+                font-size: 16px;
+            }
+        }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://sites.super.myninja.ai/_assets/ninja-daytona-script.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="logo">🎨</div>
+        <h1>ربات استیکر ساز</h1>
+        <p class="description">
+            ربات تلگرام حرفه‌ای برای ساخت استیکرهای شخصی با متن و تصویر دلخواه شما
+        </p>
+
+        <div class="features">
+            <h3>✨ امکانات ربات</h3>
+            <ul class="feature-list">
+                <li><span>🎨</span> استیکر ساده - نامحدود استفاده</li>
+                <li><span>⚡</span> استیکر پیشرفته - 3 بار در روز</li>
+                <li><span>📝</span> پشتیبانی از متن فارسی و انگلیسی</li>
+                <li><span>🎯</span> تنظیم موقعیت، رنگ و فونت متن</li>
+                <li><span>📱</span> رابط کاربری ساده و کاربرپسند</li>
+            </ul>
+        </div>
+
+        <a href="https://t.me/your_bot_username" class="telegram-btn">
+            <span class="telegram-icon">📱</span>
+            شروع ساخت استیکر
+        </a>
+
+        <div class="status active">
+            ✅ ربات در حال اجراست | آماده به خدمت‌رسانی
+        </div>
+    </div>
+
+    <script>
+        // Check bot status
+        async function checkBotStatus() {
+            try {
+                const response = await fetch('/api/webhook', {
+                    method: 'GET',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    }
+                });
+                
+                const statusElement = document.querySelector('.status');
+                if (response.ok || response.status === 400) {
+                    statusElement.innerHTML = '✅ ربات در حال اجراست | آماده به خدمت‌رسانی';
+                    statusElement.className = 'status active';
+                } else {
+                    statusElement.innerHTML = '⚠️ ربات در حال بارگذاری است...';
+                    statusElement.className = 'status';
+                }
+            } catch (error) {
+                const statusElement = document.querySelector('.status');
+                statusElement.innerHTML = '⚠️ ربات در حال بارگذاری است...';
+                statusElement.className = 'status';
+            }
+        }
+
+        // Check status on page load
+        document.addEventListener('DOMContentLoaded', checkBotStatus);
+
+        // Update bot link with actual bot username if available
+        window.addEventListener('load', () => {
+            const telegramBtn = document.querySelector('.telegram-btn');
+            // This will be replaced with actual bot username from environment or API
+            telegramBtn.href = 'https://t.me/your_sticker_bot';
+        });
+    </script>
+</body>
+</html>
