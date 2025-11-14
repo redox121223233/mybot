@@ -1,53 +1,44 @@
-# وظایف بازسازی ربات تلگرام
+## TODO: Enhanced Sticker Bot with Website Sticker Creator
 
-## [ ] حذف بخش‌های غیرضروری
-- [ ] حذف قابلیت جستجوی اینترنت
-- [ ] حذف قابلیت موسیقی
-- [ ] حذف قابلیت فیلم و سریال
-- [ ] حذف قابلیت چت با AI
-- [ ] حذف قابلیت آب و هوا
-- [ ] حذف قابلیت ارز دیجیتال
-- [ ] حذف قابلیت خرید و کوپن
-- [ ] حذف قابلیت اخبار
-- [ ] حذف قابلیت ترجمه و محاسبه
+### ✅ Completed
+- [x] Clone repository
+- [x] Basic website setup
+- [x] Initial bot integration
 
-## [ ] بهبود بخش استیکر ساز
-- [ ] اصلاح تابع create_sticker برای کارایی بهتر
-- [ ] اضافه کردن قابلیت انتخاب رنگ پس‌زمینه
-- [ ] اضافه کردن قابلیت انتخاب فونت
-- [ ] اضافه کردن قابلیت استیکر از روی متن
+### 🔄 In Progress
+- [ ] Create advanced website sticker creator
+- [ ] Implement pack name validation
+- [ ] Add simple and advanced modes
+- [ ] Set up daily limits for advanced mode
+- [ ] Update bot with pack creation
+- [ ] Create comprehensive user guide
+- [ ] Design professional UI/UX
 
-## [ ] گسترش بخش بازی
-- [ ] افزودن بازی حدس عدد
-- [ ] افزودن بازی سنگ کاغذ قیچی
-- [ ] افزودن بازی کلمات
-- [ ] افزودن بازی حافظه
+### 📋 Tasks to Complete
+1. **Website Enhancements:**
+   - [ ] Online sticker creator interface
+   - [ ] Pack name input with validation
+   - [ ] Simple mode (image + text, no limits)
+   - [ ] Advanced mode (position, size, color, daily limits)
+   - [ ] Default background option
+   - [ ] Download functionality
 
-## [ ] بهینه‌سازی منو اصلی
-- [x] طراحی منوی ساده با فقط بازی و استیکر ساز
-- [x] اضافه کردن دکمه‌های بازی جدید
+2. **Bot Updates:**
+   - [ ] Update bot username to @matnsticker_bot
+   - [ ] Pack name validation logic
+   - [ ] Integration with website created stickers
+   - [ ] Enhanced admin panel
 
-## [ ] ایجاد فایل اصلی ربات
-- [x] ایجاد فایل main.py برای اجرای ربات
-- [x] اضافه کردن handlerهای مربوط به_callback_query
-- [x] اضافه کردن handlerهای مربوط به دستورات
+3. **UI/UX Improvements:**
+   - [ ] Modern, responsive design
+   - [ ] Persian/Arabic text support
+   - [ ] Professional animations
+   - [ ] Mobile-optimized interface
+   - [ ] Help guide integration
 
-## [ ] بهبود مستندات
-- [x] آپدیت فایل requirements.txt
-- [x] بازنویسی README.md
-
-## [ ] تست و کامیت
-- [x] تست عملکرد ربات
-- [x] کامیت تغییرات به ریپازیتوری
-
-## ✅ پروژه با موفقیت تکمیل شد!
-🎉 ربات تلگرام با موفقیت بازسازی شد و فقط قابلیت‌های بازی و استیکر ساز نگه داده شد.
-
-### تغییرات اصلی:
-- ❌ حذف تمام بخش‌های غیرضروری
-- ✅ بازنویسی کامل کد برای سادگی
-- 🎮 اضافه شدن ۴ بازی جدید + بازی تصادفی
-- 🎨 بهبود بخش استیکر ساز با رنگ‌های مختلف
-- 📱 طراحی منوی کاربرپسند
-- 📚 مستندات کامل و README.md به‌روز
-- 🚀 پوش موفقیت‌آمیز به ریپازیتوری
+4. **Technical Setup:**
+   - [ ] API endpoints for website-bot communication
+   - [ ] Rate limiting system
+   - [ ] File upload handling
+   - [ ] Telegram bot API integration
+   - [ ] Error handling and validation

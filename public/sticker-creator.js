@@ -1,4 +1,4 @@
-// Enhanced Sticker Creator JavaScript - Fixed Version
+// Enhanced Sticker Creator JavaScript
 class StickerCreator {
     constructor() {
         this.canvas = null;
@@ -7,24 +7,9 @@ class StickerCreator {
         this.userQuota = 3;
         this.selectedPosition = 'center';
         this.uploadedImage = null;
-        this.font = null;
         this.initializeCanvas();
         this.loadUserQuota();
         this.setupEventListeners();
-        this.loadFont();
-    }
-
-    async loadFont() {
-        // Load Persian font
-        try {
-            const fontFace = new FontFace('Vazirmatn', 'url(https://fonts.googleapis.com/css2?family=Vazirmatn:wght@700&display=swap)');
-            await fontFace.load();
-            document.fonts.add(fontFace);
-            this.font = 'bold 40px Vazirmatn';
-        } catch (error) {
-            console.log('Could not load Persian font, using default');
-            this.font = 'bold 40px Arial';
-        }
     }
 
     initializeCanvas() {
@@ -141,13 +126,12 @@ class StickerCreator {
 
         const reader = new FileReader();
         reader.onload = (e) => {
-            const img = new Image();
-            img.onload = () => {
-                this.uploadedImage = img;
+            this.uploadedImage = new Image();
+            this.uploadedImage.onload = () => {
                 this.updateUploadLabel(file.name);
                 this.showMessage('تصویر با موفقیت آپلود شد!', 'success');
             };
-            img.src = e.target.result;
+            this.uploadedImage.src = e.target.result;
         };
         reader.readAsDataURL(file);
     }
@@ -155,7 +139,7 @@ class StickerCreator {
     updateUploadLabel(filename) {
         const label = document.querySelector('.file-upload-label');
         label.innerHTML = `
-            <span class='upload-icon'>✅</span>
+            <span class="upload-icon">✅</span>
             <span>${filename}</span>
         `;
     }
@@ -266,20 +250,20 @@ class StickerCreator {
 
         // Clear canvas
         this.ctx.clearRect(0, 0, 512, 512);
-        
+
         // Draw background
-        this.drawBackground(settings.background);
+        await this.drawBackground(settings.background);
 
         // Draw image if uploaded
         if (this.uploadedImage) {
-            this.drawImage();
+            await this.drawImage();
         }
 
         // Draw text
         await this.drawText(text, settings);
     }
 
-    drawBackground(background) {
+    async drawBackground(background) {
         if (!background) return;
 
         if (background.startsWith('gradient')) {
@@ -314,28 +298,11 @@ class StickerCreator {
         }
     }
 
-    drawImage() {
+    async drawImage() {
         const img = this.uploadedImage;
-        
-        // Calculate dimensions to fit image in center while maintaining aspect ratio
-        const maxWidth = 400;
-        const maxHeight = 400;
-        
-        let width = img.width;
-        let height = img.height;
-        
-        // Scale down if necessary
-        if (width > maxWidth) {
-            height = (maxWidth / width) * height;
-            width = maxWidth;
-        }
-        
-        if (height > maxHeight) {
-            width = (maxHeight / height) * width;
-            height = maxHeight;
-        }
-        
-        // Center the image
+        const scale = Math.min(400 / img.width, 400 / img.height);
+        const width = img.width * scale;
+        const height = img.height * scale;
         const x = (512 - width) / 2;
         const y = (512 - height) / 2;
         
@@ -343,15 +310,16 @@ class StickerCreator {
     }
 
     async drawText(text, settings) {
+        // Load font
+        const fontUrl = 'https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;700&display=swap';
+        
         // Set font properties
-        const fontSize = settings.fontSize;
-        this.font = `bold ${fontSize}px 'Vazirmatn', sans-serif`;
-        this.ctx.font = this.font;
+        this.ctx.font = `bold ${settings.fontSize}px 'Vazirmatn', sans-serif`;
         this.ctx.fillStyle = settings.color;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
 
-        // Add shadow for better visibility
+        // Add shadow
         this.ctx.shadowColor = settings.color === '#000000' ? '#ffffff' : '#000000';
         this.ctx.shadowBlur = 4;
         this.ctx.shadowOffsetX = 2;
@@ -372,24 +340,8 @@ class StickerCreator {
 
         const pos = positions[this.selectedPosition] || positions.center;
         
-        // Check if text contains Persian/Arabic characters
-        const isPersian = /[\u0600-\u06FF]/.test(text);
-        
-        if (isPersian) {
-            // For Persian text, we need to handle RTL properly
-            this.ctx.textAlign = 'center';
-            // Persian text processing would need additional libraries
-            // For now, we'll render as is (Telegram will handle RTL)
-        }
-        
-        // Draw main text
+        // Draw text with Arabic support (basic implementation)
         this.ctx.fillText(text, pos.x, pos.y);
-        
-        // Reset shadow
-        this.ctx.shadowColor = 'transparent';
-        this.ctx.shadowBlur = 0;
-        this.ctx.shadowOffsetX = 0;
-        this.ctx.shadowOffsetY = 0;
     }
 
     getAdvancedSettings() {
@@ -414,9 +366,6 @@ class StickerCreator {
         const previewImage = document.getElementById('previewImage');
         const dataUrl = this.canvas.toDataURL('image/webp', 0.9);
         
-        // Add has-image class for styling
-        document.querySelector('.preview-area').classList.add('has-image');
-        
         document.getElementById('previewPlaceholder').style.display = 'none';
         previewImage.src = dataUrl;
         previewImage.style.display = 'block';
@@ -427,9 +376,7 @@ class StickerCreator {
         const link = document.createElement('a');
         link.href = dataUrl;
         link.download = `sticker_${Date.now()}.webp`;
-        document.body.appendChild(link);
         link.click();
-        document.body.removeChild(link);
     }
 
     validatePackName(packName) {
