@@ -717,20 +717,32 @@ class handler(BaseHTTPRequestHandler):
     def do_GET(self):
         """Handle GET requests"""
         try:
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            
-            # Get webapp URL
-            webapp_url = os.environ.get("WEBAPP_URL", None)
-            
-            response = {
-                "status": "ok", 
-                "message": "Sticker Bot is running!",
-                "users": len(USERS),
-                "web_app": webapp_url if webapp_url else "Not configured"
-            }
-            self.wfile.write(json.dumps(response).encode())
+               # Try to serve the mini app HTML file
+               try:
+                   with open("public/index.html", "r", encoding="utf-8") as f:
+                       html_content = f.read()
+                       
+                   self.send_response(200)
+                   self.send_header("Content-type", "text/html; charset=utf-8")
+                   self.end_headers()
+                   self.wfile.write(html_content.encode("utf-8"))
+                   
+               except FileNotFoundError:
+                   # Fallback to JSON if HTML file not found
+                   self.send_response(200)
+                   self.send_header("Content-type", "application/json")
+                   self.end_headers()
+                   
+                   # Get webapp URL
+                   webapp_url = os.environ.get("WEBAPP_URL", None)
+                   
+                   response = {
+                       "status": "ok", 
+                       "message": "Sticker Bot is running!",
+                       "users": len(USERS),
+                       "web_app": webapp_url if webapp_url else "Not configured"
+                   }
+                   self.wfile.write(json.dumps(response).encode())
             
         except Exception as e:
             logger.error(f"GET handler error: {e}")
