@@ -1,12 +1,7 @@
 #!/usr/bin/env python3
 """
-<<<<<<< HEAD
 Enhanced Telegram Sticker Bot - Working Version
 Supports pack creation, website integration, and channel subscription
-=======
-Enhanced Telegram Sticker Bot - Professional Version
-Supports online sticker creation, pack management, and advanced features
->>>>>>> f36420dcbbdb0803862906dab6a62e0567f89a3c
 """
 
 import os
@@ -20,11 +15,7 @@ import hashlib
 from datetime import datetime, timezone, timedelta
 from typing import Optional, Dict, Any
 
-<<<<<<< HEAD
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
-=======
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
->>>>>>> f36420dcbbdb0803862906dab6a62e0567f89a3c
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from telegram.error import TelegramError
 from PIL import Image, ImageDraw, ImageFont
@@ -84,7 +75,6 @@ def save_data():
         logger.error(f"Error saving data: {e}")
         pass
 
-<<<<<<< HEAD
 async def check_channel_subscription(user_id: int, bot: Bot) -> bool:
     """Check if user is subscribed to required channel"""
     try:
@@ -93,8 +83,6 @@ async def check_channel_subscription(user_id: int, bot: Bot) -> bool:
     except Exception as e:
         logger.error(f"Error checking channel subscription: {e}")
         return False  # Assume not subscribed if error occurs
-
-=======
 >>>>>>> f36420dcbbdb0803862906dab6a62e0567f89a3c
 def validate_pack_name(pack_name: str) -> tuple[bool, str]:
     """Validate sticker pack name according to Telegram rules"""
@@ -550,11 +538,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         
         await query.answer(f"موقعیت به {position} تغییر یافت")
         # Return to advanced menu
-<<<<<<< HEAD
-        await button_callback(update, context)
-=======
-        await button_callback(update, context)  # This will handle the advanced menu
->>>>>>> f36420dcbbdb0803862906dab6a62e0567f89a3c
+await button_callback(update, context)
     
     elif data == "adv_size":
         session = get_session(user_id)

@@ -310,20 +310,13 @@ class StickerCreator {
     }
 
     async drawText(text, settings) {
-        // Load font
-        const fontUrl = 'https://fonts.googleapis.com/css2?family=Vazirmatn:wght@400;700&display=swap';
+        // Use system fonts that work better without loading
+        const fontStack = "'Arial Black', 'Arial Bold', 'Arial', sans-serif";
         
         // Set font properties
-        this.ctx.font = `bold ${settings.fontSize}px 'Vazirmatn', sans-serif`;
-        this.ctx.fillStyle = settings.color;
+        this.ctx.font = `bold ${settings.fontSize}px ${fontStack}`;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
-
-        // Add shadow
-        this.ctx.shadowColor = settings.color === '#000000' ? '#ffffff' : '#000000';
-        this.ctx.shadowBlur = 4;
-        this.ctx.shadowOffsetX = 2;
-        this.ctx.shadowOffsetY = 2;
 
         // Calculate position
         const positions = {
@@ -340,8 +333,32 @@ class StickerCreator {
 
         const pos = positions[this.selectedPosition] || positions.center;
         
-        // Draw text with Arabic support (basic implementation)
+        // Add shadow for better visibility
+        this.ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+        this.ctx.shadowBlur = 6;
+        this.ctx.shadowOffsetX = 3;
+        this.ctx.shadowOffsetY = 3;
+        
+        // Draw stroke outline first for better visibility
+        if (settings.color === '#ffffff' || settings.color === '#FFFFFF') {
+            this.ctx.strokeStyle = '#000000';
+            this.ctx.lineWidth = 4;
+            this.ctx.strokeText(text, pos.x, pos.y);
+        } else {
+            this.ctx.strokeStyle = '#ffffff';
+            this.ctx.lineWidth = 3;
+            this.ctx.strokeText(text, pos.x, pos.y);
+        }
+        
+        // Draw fill text
+        this.ctx.fillStyle = settings.color;
         this.ctx.fillText(text, pos.x, pos.y);
+        
+        // Reset shadow
+        this.ctx.shadowColor = 'transparent';
+        this.ctx.shadowBlur = 0;
+        this.ctx.shadowOffsetX = 0;
+        this.ctx.shadowOffsetY = 0;
     }
 
     getAdvancedSettings() {
