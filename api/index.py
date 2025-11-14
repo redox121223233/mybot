@@ -14,7 +14,7 @@ from datetime import datetime, timezone, timedelta
 import uuid
 import re
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from PIL import Image, ImageDraw, ImageFont
 import arabic_reshaper
@@ -183,7 +183,7 @@ def clear_session(user_id: int):
 def get_main_menu():
     """Get main menu keyboard"""
     return [
-        [InlineKeyboardButton("🎨 استیکر ساز", callback_data="sticker_maker")],
+           [InlineKeyboardButton("📱 Mini App", web_app=WebAppInfo(url="https://mybot32.vercel.app"))],
         [InlineKeyboardButton("📋 سهمیه من", callback_data="quota")],
         [InlineKeyboardButton("📖 راهنما", callback_data="help")],
         [InlineKeyboardButton("📞 پشتیبانی", callback_data="support")]
@@ -362,6 +362,61 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"Error handling photo: {e}")
         await update.message.reply_text("❌ خطا در دریافت عکس")
 
+   async def handle_web_app_data(update: Update, context: ContextTypes.DEFAULT_TYPE):
+       """Handle web app data"""
+       user_id = update.effective_user.id
+       data = update.web_app_data.data
+       
+       try:
+           action_data = json.loads(data)
+           action = action_data.get("action", "")
+           
+           if action == "create_sticker":
+               await update.message.reply_text(
+                   "🎨 ساخت استیکر جدید:\n\n"
+                   "لطفاً نوع استیکر را انتخاب کنید:",
+                   reply_markup=InlineKeyboardMarkup([
+                       [InlineKeyboardButton("🎨 استیکر ساده", callback_data="simple")],
+                       [InlineKeyboardButton("⚡ استیکر پیشرفته", callback_data="advanced")]
+                   ])
+               )
+           elif action == "view_gallery":
+               await update.message.reply_text(
+                   "📸 گالری استیکرها:\n\n"
+                   "در حال حاضر گالری خالی است. "
+                   "برای ساخت استیکر جدید، روی دکمه "ساخت استیکر جدید" کلیک کنید."
+               )
+           elif action == "ساخت استیکر":
+               await update.message.reply_text(
+                   "🎨 برای ساخت استیکر:\n\n"
+                   "۱. نوع استیکر را انتخاب کنید\n"
+                   "۲. عکس خود را ارسال کنید\n"
+                   "۳. متن مورد نظر را بنویسید",
+                   reply_markup=InlineKeyboardMarkup([
+                       [InlineKeyboardButton("🎨 استیکر ساده", callback_data="simple")],
+                       [InlineKeyboardButton("⚡ استیکر پیشرفته", callback_data="advanced")]
+                   ])
+               )
+           elif action == "چت هوشمند":
+               await update.message.reply_text(
+                   "🤖 چت هوشمند ربات فعال شد!\n\n"
+                   "می‌توانید سوالات خود را بپرسید یا از دستورات زیر استفاده کنید:\n"
+                   "/start - شروع مجدد\n"
+                   "/help - راهنما\n"
+                   "/admin - پنل مدیریت"
+               )
+           else:
+               await update.message.reply_text(
+                   f"✅ درخواست شما دریافت شد: {action}\n\n"
+                   "ربات در حال پردازش درخواست شماست..."
+               )
+           
+       except json.JSONDecodeError:
+           await update.message.reply_text("❌ خطا در پردازش درخواست")
+       except Exception as e:
+           logger.error(f"Error handling web app data: {e}")
+           await update.message.reply_text("❌ خطای پیش‌بینی نشده رخ داد")
+
 async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle text"""
     user_id = update.effective_user.id
@@ -470,6 +525,7 @@ def main():
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
+       application.add_handler(MessageHandler(filters.WEB_APP_DATA, handle_web_app_data))
     
     bot = type('Bot', (), {'application': application})()
     
