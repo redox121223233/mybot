@@ -83,7 +83,7 @@ async def check_channel_subscription(user_id: int, bot: Bot) -> bool:
     except Exception as e:
         logger.error(f"Error checking channel subscription: {e}")
         return False  # Assume not subscribed if error occurs
->>>>>>> f36420dcbbdb0803862906dab6a62e0567f89a3c
+
 def validate_pack_name(pack_name: str) -> tuple[bool, str]:
     """Validate sticker pack name according to Telegram rules"""
     if not pack_name or len(pack_name.strip()) == 0:
