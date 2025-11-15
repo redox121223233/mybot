@@ -1,4 +1,4 @@
-// Enhanced Sticker Creator JavaScript - Final Version with Logging and Correct Submission Flow
+// Enhanced Sticker Creator JavaScript - Final Version with all fixes
 class StickerCreator {
     constructor() {
         this.canvas = document.createElement('canvas');
@@ -10,7 +10,6 @@ class StickerCreator {
         this.userId = this.tg.initDataUnsafe?.user?.id;
 
         this.currentMode = 'simple';
-        this.userQuota = 3;
         this.selectedPosition = 'center';
         this.uploadedImage = null;
 
@@ -37,7 +36,8 @@ class StickerCreator {
             this.submitSticker();
         });
 
-        document.querySelector('.btn-secondary[onclick="previewSticker()"]').addEventListener('click', () => {
+        document.querySelector('.btn-secondary[onclick="previewSticker()"]').addEventListener('click', (e) => {
+            e.preventDefault(); // Prevent form submission
              this.previewSticker();
         });
 
