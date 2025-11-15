@@ -78,59 +78,134 @@ def get_remaining(user_id: int) -> int:
     reset_daily_limit(user_id)
     return ADVANCED_DAILY_LIMIT - get_user_limits(user_id)["advanced_used"]
 
+def create_gradient_background() -> Image.Image:
+    """Create gradient background for stickers without image"""
+    canvas = Image.new('RGB', (512, 512), '#FF6B6B')
+    
+    # Add gradient effect
+    for y in range(512):
+        r = int(255 - (y * 50 / 512))
+        g = int(107 - (y * 30 / 512))
+        b = int(107 - (y * 30 / 512))
+        for x in range(512):
+            canvas.putpixel((x, y), (r, g, b))
+    
+    return canvas
+
 def create_sticker(text: str, image_data: Optional[bytes] = None, 
                    position_x: int = 256, position_y: int = 256,
                    font_size: int = 40, text_color: str = "#FFFFFF",
                    font_family: str = "Vazirmatn") -> bytes:
-    """Create sticker with all advanced controls"""
+    """Create sticker with all advanced controls - Fixed transparency error"""
     try:
-        canvas = Image.new('RGBA', (512, 512), (0, 0, 0, 0))
+        # Create base canvas
         if image_data:
+            # Load and process user image
             img = Image.open(io.BytesIO(image_data))
+            
+            # Convert to RGB to avoid transparency issues
+            if img.mode == 'RGBA':
+                # Create white background
+                background = Image.new('RGB', img.size, 'WHITE')
+                background.paste(img, mask=img.split()[-1] if len(img.split()) == 4 else None)
+                img = background
+            elif img.mode != 'RGB':
+                img = img.convert('RGB')
+            
+            # Resize image maintaining aspect ratio
             img.thumbnail((400, 400), Image.Resampling.LANCZOS)
-            canvas.paste(img, (int((512 - img.width) / 2), int((512 - img.height) / 2)), img)
+            
+            # Create 512x512 canvas with white background
+            canvas = Image.new('RGB', (512, 512), 'WHITE')
+            
+            # Calculate position to center the image
+            x_offset = (512 - img.width) // 2
+            y_offset = (512 - img.height) // 2
+            
+            # Paste image onto canvas (no transparency issues)
+            canvas.paste(img, (x_offset, y_offset))
         else:
-            # Create gradient background if no image
-            for y in range(512):
-                r = int(255 - (y * 50 / 512))
-                g = int(107 - (y * 30 / 512))
-                b = int(107 - (y * 30 / 512))
-                for x in range(512):
-                    canvas.putpixel((x, y), (r, g, b))
+            # Use gradient background if no image provided
+            canvas = create_gradient_background()
         
         draw = ImageDraw.Draw(canvas)
-        if re.search(r'[\u0600-\u06FF]', text):
-            text = arabic_reshaper.reshape(text)
-            text = get_display(text)
-
-        # Load font with fallback
-        font_path = os.path.join(os.path.dirname(__file__), f'../public/fonts/{font_family}-Regular.ttf')
-        if not os.path.exists(font_path):
-            font_path = os.path.join(os.path.dirname(__file__), '../public/fonts/Vazirmatn-Regular.ttf')
-        if not os.path.exists(font_path):
-            font = ImageFont.load_default()
-        else:
-            font = ImageFont.truetype(font_path, font_size)
-
-        bbox = draw.textbbox((0, 0), text, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-
-        x = position_x - text_width // 2
-        y = position_y - text_height // 2
         
-        # Shadow
-        draw.text((x + 2, y + 2), text, font=font, fill="#000000")
-        # Main text
-        draw.text((x, y), text, font=font, fill=text_color)
+        # Process Arabic/Persian text
+        display_text = text
+        if re.search(r'[\u0600-\u06FF]', text):
+            try:
+                reshaped_text = arabic_reshaper.reshape(text)
+                display_text = get_display(reshaped_text)
+            except Exception as e:
+                logger.warning(f"Arabic text processing failed: {e}")
+                display_text = text
 
+        # Load font with multiple fallbacks
+        font = None
+        font_paths = [
+            os.path.join(os.path.dirname(__file__), f'../public/fonts/{font_family}-Regular.ttf'),
+            os.path.join(os.path.dirname(__file__), '../public/fonts/Vazirmatn-Regular.ttf'),
+            os.path.join(os.path.dirname(__file__), '../public/fonts/IRANSans.ttf'),
+            os.path.join(os.path.dirname(__file__), '../public/fonts/Arial.ttf')
+        ]
+        
+        for font_path in font_paths:
+            if os.path.exists(font_path):
+                try:
+                    font = ImageFont.truetype(font_path, font_size)
+                    break
+                except Exception as e:
+                    logger.warning(f"Font loading failed for {font_path}: {e}")
+                    continue
+        
+        if font is None:
+            font = ImageFont.load_default()
+            logger.warning("Using default font")
+
+        # Get text dimensions with error handling
+        try:
+            bbox = draw.textbbox((0, 0), display_text, font=font)
+            text_width = bbox[2] - bbox[0]
+            text_height = bbox[3] - bbox[1]
+        except Exception as e:
+            logger.warning(f"Text bounding box calculation failed: {e}")
+            # Fallback dimensions
+            text_width = len(display_text) * font_size // 2
+            text_height = font_size
+
+        # Calculate text position
+        x = max(0, min(position_x - text_width // 2, 512 - text_width))
+        y = max(0, min(position_y - text_height // 2, 512 - text_height))
+        
+        # Add shadow for better visibility
+        shadow_color = "#000000" if text_color != "#000000" else "#FFFFFF"
+        draw.text((x + 2, y + 2), display_text, font=font, fill=shadow_color)
+        
+        # Draw main text
+        draw.text((x, y), display_text, font=font, fill=text_color)
+
+        # Save to WebP format
         output = io.BytesIO()
-        canvas.save(output, format='WebP', quality=95)
+        canvas.save(output, format='WebP', quality=95, optimize=True)
         output.seek(0)
         return output.getvalue()
+        
     except Exception as e:
         logger.error(f"Error in create_sticker: {e}")
-        return None
+        # Return a simple error sticker if creation fails
+        try:
+            error_canvas = Image.new('RGB', (512, 512), '#FF6B6B')
+            error_draw = ImageDraw.Draw(error_canvas)
+            error_font = ImageFont.load_default()
+            error_text = "ERROR"
+            error_draw.text((200, 250), error_text, font=error_font, fill="#FFFFFF")
+            
+            error_output = io.BytesIO()
+            error_canvas.save(error_output, format='WebP', quality=95)
+            error_output.seek(0)
+            return error_output.getvalue()
+        except:
+            return None
 
 # Initialize Telegram Bot
 bot_token = os.environ.get("BOT_TOKEN")
@@ -243,14 +318,16 @@ def add_sticker_to_pack_api():
             pack_name = data.get('pack_name')
             sticker_b64 = data.get('sticker', '')
             
-            # Validate required fields
-            if not all([user_id, pack_name, sticker_b64]):
-                return jsonify({"error": "Missing required data: user_id, pack_name, and sticker are required"}), 400
+            # Validate required fields (sticker is now optional)
+            if not all([user_id, pack_name]):
+                return jsonify({"error": "Missing required data: user_id and pack_name are required"}), 400
             
-            # Extract image data
-            if ',' in sticker_b64:
-                sticker_b64 = sticker_b64.split(',')[1]
-            sticker_bytes = base64.b64decode(sticker_b64)
+            # Extract image data (can be None for gradient background)
+            sticker_bytes = None
+            if sticker_b64:
+                if ',' in sticker_b64:
+                    sticker_b64 = sticker_b64.split(',')[1]
+                sticker_bytes = base64.b64decode(sticker_b64)
 
             # Get advanced options
             text = data.get('text', 'استیکر')
@@ -261,11 +338,15 @@ def add_sticker_to_pack_api():
             position_x = int(data.get('position_x', 256))
             position_y = int(data.get('position_y', 256))
 
-            # Check advanced limits
+            # Check advanced limits (text-only mode doesn't count)
             if sticker_type == 'advanced':
                 if not can_use_advanced(user_id):
                     return jsonify({"error": "Daily advanced limit exceeded"}), 429
                 use_advanced(user_id)
+            
+            # For text-only mode, use no image
+            if sticker_type == 'text-only':
+                sticker_bytes = None
 
             # Create sticker with advanced options
             sticker_bytes = create_sticker(

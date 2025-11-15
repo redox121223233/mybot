@@ -109,7 +109,7 @@
 
         .sticker-types {
             display: grid;
-            grid-template-columns: 1fr 1fr;
+            grid-template-columns: 1fr 1fr 1fr;
             gap: 10px;
             margin-bottom: 20px;
         }
@@ -337,9 +337,10 @@
                 <h3>📋 راهنمای استفاده</h3>
                 <p>1. نام پک استیکر خود را وارد کنید <span class="required">*</span></p>
                 <p>2. نوع استیکر مورد نظر را انتخاب کنید</p>
-                <p>3. عکس مورد نظر را آپلود کنید</p>
+                <p>3. عکس مورد نظر را آپلود کنید (اختیاری)</p>
                 <p>4. متن دلخواه خود را بنویسید</p>
                 <p>5. تنظیمات را سفارشی کرده و استیکر را بسازید!</p>
+                <p style="margin-top: 10px; color: #667eea; font-weight: 500;">💡 اگر عکس انتخاب نکنید، پس‌زمینه گرادیان زیبا استفاده می‌شود</p>
             </div>
 
             <div class="input-group">
@@ -363,11 +364,17 @@
                     <div class="title">پیشرفته</div>
                     <div class="desc">تنظیمات کامل</div>
                 </div>
+                <div class="sticker-type" data-type="text-only">
+                    <div class="icon">✨</div>
+                    <div class="title">فقط متن</div>
+                    <div class="desc">گرادیان + متن</div>
+                </div>
             </div>
 
             <div class="input-group">
-                <label for="imageUpload">انتخاب عکس</label>
+                <label for="imageUpload">انتخاب عکس (اختیاری)</label>
                 <input type="file" id="imageUpload" accept="image/*">
+                <small style="color: #666; font-size: 12px;">اگر عکس انتخاب نکنید، پس‌زمینه گرادیان برای استیکر استفاده می‌شود</small>
             </div>
 
             <div class="input-group">
@@ -461,7 +468,6 @@
         // Form validation
         function validateForm() {
             const packageName = document.getElementById('packageName').value.trim();
-            const imageFile = document.getElementById('imageUpload').files[0];
             const text = document.getElementById('stickerText').value.trim();
 
             if (!packageName) {
@@ -471,11 +477,6 @@
             }
 
             document.getElementById('packageName').classList.remove('error');
-
-            if (!imageFile) {
-                showError('⚠️ لطفاً یک عکس انتخاب کنید');
-                return false;
-            }
 
             if (!text) {
                 showError('⚠️ لطفاً متن استیکر را وارد کنید');
@@ -507,6 +508,12 @@
                     advancedControls.classList.add('show');
                 } else {
                     advancedControls.classList.remove('show');
+                }
+                
+                // Auto-clear image for text-only mode
+                if (selectedType === 'text-only') {
+                    document.getElementById('imageUpload').value = '';
+                    document.getElementById('previewImage').src = 'data:image/webp;base64,UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAAQAcJaQAA3AA/v3AgAA==';
                 }
             });
         });
@@ -544,8 +551,18 @@
                     document.getElementById('previewPlaceholder').style.display = 'none';
                 };
                 reader.readAsDataURL(file);
+            } else {
+                // Show gradient preview when no image
+                document.getElementById('previewImage').src = 'data:image/webp;base64,UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAAQAcJaQAA3AA/v3AgAA==';
+                document.getElementById('previewImage').style.display = 'block';
+                document.getElementById('previewPlaceholder').style.display = 'none';
             }
         });
+
+        // Set initial gradient preview
+        document.getElementById('previewImage').src = 'data:image/webp;base64,UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAAQAcJaQAA3AA/v3AgAA==';
+        document.getElementById('previewImage').style.display = 'block';
+        document.getElementById('previewPlaceholder').style.display = 'none';
 
         // Create sticker
         document.getElementById('createSticker').addEventListener('click', async function() {
@@ -558,8 +575,11 @@
             document.getElementById('loading').classList.add('show');
             
             try {
-                // Convert image to base64
-                const imageBase64 = await fileToBase64(imageFile);
+                // Convert image to base64 if provided
+                let imageBase64 = null;
+                if (imageFile) {
+                    imageBase64 = await fileToBase64(imageFile);
+                }
                 
                 // Send data to backend
                 const response = await fetch('/api/add-sticker-to-pack', {
@@ -661,8 +681,10 @@
         function resetForm() {
             document.getElementById('stickerText').value = '';
             document.getElementById('imageUpload').value = '';
-            document.getElementById('previewImage').style.display = 'none';
-            document.getElementById('previewPlaceholder').style.display = 'block';
+            // Reset to gradient preview
+            document.getElementById('previewImage').src = 'data:image/webp;base64,UklGRiQAAABXRUJQVlA4IBgAAAAwAQCdASoBAAEAAQAcJaQAA3AA/v3AgAA==';
+            document.getElementById('previewImage').style.display = 'block';
+            document.getElementById('previewPlaceholder').style.display = 'none';
         }
 
         function fileToBase64(file) {
