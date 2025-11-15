@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 """
-Webhook Setter Script - تنظیم مجدد webhook
+Webhook Setter Script - Hardened to remove whitespace and quotes
 """
 
 import requests
@@ -9,16 +9,16 @@ import json
 import os
 
 def set_webhook():
-    """تنظیم webhook برای ربات"""
+    """Set the webhook for the bot, ensuring URL is clean."""
     
     bot_token = os.environ.get("BOT_TOKEN")
     if not bot_token:
         print("❌ BOT_TOKEN not found in environment variables")
         return False
     
-    # URL با URL واقعی Vercel شما تنظیم شده
-    webhook_url = "https://mybot32.vercel.app/api/webhook"
-    
+    # Get URL and clean it thoroughly: strip whitespace, then strip quotes.
+    webhook_url = os.environ.get("VERCEL_URL", "https://mybot32.vercel.app/api/webhook").strip().strip('\'"')
+
     api_url = f"https://api.telegram.org/bot{bot_token}/setWebhook"
     
     data = {
@@ -27,7 +27,7 @@ def set_webhook():
     }
     
     try:
-        print(f"🔗 Setting webhook to: {webhook_url}")
+        print(f"🔗 Setting webhook to: '{webhook_url}'") # Log with quotes to see the final URL
         print("📤 Sending request to Telegram API...")
         
         response = requests.post(api_url, json=data, timeout=30)
@@ -48,51 +48,37 @@ def set_webhook():
         return False
 
 def get_webhook_info():
-    """دریافت اطلاعات webhook فعلی"""
-    
+    """Get current webhook info."""
     bot_token = os.environ.get("BOT_TOKEN")
     if not bot_token:
-        print("❌ BOT_TOKEN not found in environment variables")
+        print("❌ BOT_TOKEN not found")
         return False
     
     api_url = f"https://api.telegram.org/bot{bot_token}/getWebhookInfo"
     
     try:
-        print("🔍 Getting current webhook info...")
-        
         response = requests.get(api_url, timeout=30)
         result = response.json()
-        
-        print(f"📊 Status Code: {response.status_code}")
-        print(f"📋 Response: {json.dumps(result, indent=2, ensure_ascii=False)}")
-        
+        print(f"📋 Info: {json.dumps(result, indent=2, ensure_ascii=False)}")
         return result.get("ok", False)
-        
     except requests.exceptions.RequestException as e:
         print(f"❌ Request error: {e}")
         return False
 
 def delete_webhook():
-    """حذف webhook فعلی"""
-    
+    """Delete the current webhook."""
     bot_token = os.environ.get("BOT_TOKEN")
     if not bot_token:
-        print("❌ BOT_TOKEN not found in environment variables")
+        print("❌ BOT_TOKEN not found")
         return False
     
     api_url = f"https://api.telegram.org/bot{bot_token}/deleteWebhook"
     
     try:
-        print("🗑️  Deleting current webhook...")
-        
         response = requests.post(api_url, timeout=30)
         result = response.json()
-        
-        print(f"📊 Status Code: {response.status_code}")
-        print(f"📋 Response: {json.dumps(result, indent=2, ensure_ascii=False)}")
-        
+        print(f"🗑️ Deletion status: {json.dumps(result, indent=2, ensure_ascii=False)}")
         return result.get("ok", False)
-        
     except requests.exceptions.RequestException as e:
         print(f"❌ Request error: {e}")
         return False
@@ -101,26 +87,11 @@ if __name__ == "__main__":
     print("🚀 Webhook Management Tool")
     print("=" * 50)
     
-    while True:
-        print("\n📋 Menu:")
-        print("1. Get current webhook info")
-        print("2. Delete current webhook")
-        print("3. Set new webhook")
-        print("4. Exit")
-        
-        choice = input("\nEnter your choice (1-4): ").strip()
-        
-        if choice == "1":
-            print("\n1️⃣ Getting webhook info...")
-            get_webhook_info()
-        elif choice == "2":
-            print("\n2️⃣ Deleting webhook...")
-            delete_webhook()
-        elif choice == "3":
-            print("\n3️⃣ Setting webhook...")
-            set_webhook()
-        elif choice == "4":
-            print("👋 Goodbye!")
-            break
-        else:
-            print("❌ Invalid choice. Please try again.")
+    print("\n1️⃣ Attempting to delete existing webhook...")
+    delete_webhook()
+
+    print("\n2️⃣ Attempting to set new webhook...")
+    set_webhook()
+
+    print("\n3️⃣ Verifying current webhook info...")
+    get_webhook_info()
