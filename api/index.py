@@ -57,8 +57,18 @@ def create_sticker(text: str, image_data: Optional[bytes] = None) -> bytes:
         draw.text(pos, text, font=font, fill="#FFFFFF")
         
         output = io.BytesIO()
-        canvas.save(output, format='WebP')
+        canvas.save(output, format='WebP', quality=80, optimize=True)
         output.seek(0)
+        
+        # Check file size and compress further if needed
+        file_size = len(output.getvalue())
+        if file_size > 64 * 1024:  # If larger than 64KB
+            logger.warning(f"Sticker size {file_size} bytes, compressing further...")
+            canvas.save(output, format='WebP', quality=60, optimize=True, method=6)
+            output.seek(0)
+            file_size = len(output.getvalue())
+            logger.info(f"Compressed to {file_size} bytes")
+        
         return output.getvalue()
     except Exception as e:
         logger.error(f"Error in create_sticker: {e}")
@@ -105,7 +115,7 @@ def add_sticker_to_pack_api():
             bot = application.bot
             full_pack_name = f"{pack_name}_by_{bot.username}"
 
-            sticker_to_add = InputSticker(sticker_bytes, ['😊'])
+            sticker_to_add = InputSticker(sticker=sticker_bytes, emoji_list=["😀"])
 
             try:
                 await bot.get_sticker_set(full_pack_name)
