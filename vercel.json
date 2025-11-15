@@ -2,14 +2,26 @@
   "version": 2,
   "builds": [
     {
-      "src": "api/index.py",
+      "src": "api/index_updated.py",
+      "use": "@vercel/python"
+    },
+    {
+      "src": "api/miniapp.py",
       "use": "@vercel/python"
     }
   ],
   "routes": [
     {
-      "src": "/(.*)",
-      "dest": "api/index.py"
+      "src": "/api/(.*)",
+      "dest": "api/index_updated.py"
+    },
+    {
+      "src": "/miniapp/(.*)",
+      "dest": "api/miniapp.py"
+    },
+    {
+      "src": "/",
+      "dest": "api/index_updated.py"
     }
   ],
   "env": {

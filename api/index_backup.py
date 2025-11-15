@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """
-Updated Telegram Bot with Mini App Integration
+Simple Telegram Sticker Bot - Clean Version
+Exactly as requested: 4 buttons only, no games, simple and clean
 """
 
 import os
@@ -13,7 +14,7 @@ from datetime import datetime, timezone, timedelta
 import uuid
 import re
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from PIL import Image, ImageDraw, ImageFont
 import arabic_reshaper
@@ -34,7 +35,6 @@ app = Flask(__name__)
 ADMIN_ID = 6053579919
 SUPPORT_USERNAME = "@onedaytoalive"
 ADVANCED_DAILY_LIMIT = 3
-MINI_APP_URL = "https://your-vercel-domain.vercel.app/miniapp/"  # Update this with your Vercel URL
 
 # Data Storage
 USERS: dict[int, dict] = {}
@@ -183,8 +183,8 @@ def clear_session(user_id: int):
 def get_main_menu():
     """Get main menu keyboard"""
     return [
-        [InlineKeyboardButton("🎨 استیکر ساز (مینی اپ)", web_app=WebAppInfo(url=MINI_APP_URL))],
-        [InlineKeyboardButton("📊 سهمیه من", callback_data="quota")],
+        [InlineKeyboardButton("🎨 استیکر ساز", callback_data="sticker_maker")],
+        [InlineKeyboardButton("📋 سهمیه من", callback_data="quota")],
         [InlineKeyboardButton("📖 راهنما", callback_data="help")],
         [InlineKeyboardButton("📞 پشتیبانی", callback_data="support")]
     ]
@@ -204,12 +204,9 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     text = (
         "🎨 به ربات استیکر ساز خوش آمدید!\n\n"
-        "✨ **ویژگی‌های جدید مینی اپ:**\n"
-        "📦 ساخت پک استیکر با نام دلخواه (اجباری)\n"
-        "🎨 دو نوع استیکر: ساده و پیشرفته\n"
-        "⚙️ تنظیمات کامل متن (اندازه، رنگ، موقعیت)\n"
-        "👀 پیش نمایش زنده استیکر\n"
-        "🔗 دریافت لینک پک برای نصب و اشتراک‌گذاری\n\n"
+        "✨ ویژگی‌ها:\n"
+        "📍 استیکر ساده: نامحدود (عکس + متن)\n"
+        "⚡ استیکر پیشرفته: ۳ بار در روز (عکس + متن + تنظیمات)\n\n"
         "📊 سهمیه شما در بخش «سهمیه من» قابل مشاهده است"
     )
     
@@ -226,7 +223,7 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
         f"👑 پنل ادمین\n\n"
         f"👥 کاربران: {len(USERS)}\n"
-        f"⚡ محدودیت روزانه: {ADVANCED_DAILY_LIMIT}\n"
+        f"⚡ لیمیت روزانه: {ADVANCED_DAILY_LIMIT}\n"
         f"📊 وضعیت: فعال ✅"
     )
     
@@ -235,23 +232,20 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Help command"""
     text = (
-        "📖 **راهنمای ربات**\n\n"
-        "🎨 **مینی اپ استیکر ساز:**\n"
-        "• ساخت پک استیکر با نام دلخواه (اجباری)\n"
-        "• استیکر ساده: نامحدود استفاده (عکس + متن)\n"
-        "• استیکر پیشرفته: 3 بار در روز (عکس + متن + تنظیمات کامل)\n\n"
-        "📊 **سهمیه من:**\n"
+        "📖 راهنمای ربات\n\n"
+        "🎨 **استیکر ساز:**\n"
+        "• ساده: نامحدود، فقط عکس + متن\n"
+        "• پیشرفته: ۳ بار در روز، با تنظیمات کامل\n\n"
+        "📋 **سهمیه من:**\n"
         "• نمایش تعداد استیکر پیشرفته باقی‌مانده\n"
         "• نمایش زمان تا ریست شدن سهمیه\n\n"
         "📞 **پشتیبانی:**\n"
         f"• ارتباط با ادمین: {SUPPORT_USERNAME}\n\n"
         "📝 **نحوه استفاده:**\n"
-        "۱. روی 🎨 استیکر ساز کلیک کنید\n"
-        "۲. مینی اپ باز می‌شود\n"
-        "۳. نام پک را وارد کنید (اجباری)\n"
-        "۴. عکس و متن خود را آپلود کنید\n"
-        "۵. تنظیمات را سفارشی کرده و استیکر بسازید\n"
-        "۶. لینک پک را برای نصب دریافت کنید"
+        "۱. استیکر ساز → ساده یا پیشرفته\n"
+        "۲. ارسال عکس\n"
+        "۳. نوشتن متن\n"
+        "۴. دریافت استیکر"
     )
     
     if update.message:
@@ -269,22 +263,35 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     if data == "sticker_maker":
         keyboard = [
-            [InlineKeyboardButton("🎨 باز کردن مینی اپ", web_app=WebAppInfo(url=MINI_APP_URL))],
+            [InlineKeyboardButton("🎨 استیکر ساده", callback_data="simple")],
+            [InlineKeyboardButton("⚡ استیکر پیشرفته", callback_data="advanced")],
             [InlineKeyboardButton("🔙 بازگشت", callback_data="back")]
         ]
         
         text = (
-            "🎨 **استیکر ساز حرفه‌ای**\n\n"
-            "✨ با مینی اپ جدید ما:\n"
-            "📦 ساخت پک استیکر با نام دلخواه\n"
-            "🎨 استیکر ساده و پیشرفته\n"
-            "⚙️ تنظیمات کامل متن (اندازه، رنگ، موقعیت)\n"
-            "👀 پیش نمایش زنده استیکر\n"
-            "🔗 دریافت لینک پک برای اشتراک‌گذاری\n\n"
-            "روی دکمه زیر کلیک کنید تا مینی اپ باز شود:"
+            "🎨 نوع استیکر را انتخاب کنید:\n\n"
+            "📍 **ساده:** نامحدود استفاده\n"
+            "   فقط عکس + متن\n\n"
+            "⚡ **پیشرفته:** ۳ بار در روز\n"
+            "   عکس + متن + تنظیمات"
         )
         
         await query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(keyboard))
+    
+    elif data == "simple":
+        session = get_session(user_id)
+        session["mode"] = "simple"
+        await query.edit_message_text("🎨 استیکر ساده\n\n📸 عکس خود را ارسال کنید:")
+    
+    elif data == "advanced":
+        if not can_use_advanced(user_id):
+            await query.edit_message_text("⚠️ سهمیه پیشرفته تمام شده!\n\n📍 می‌توانید از استیکر ساده استفاده کنید")
+            return
+        
+        session = get_session(user_id)
+        session["mode"] = "advanced"
+        remaining = get_remaining(user_id)
+        await query.edit_message_text(f"⚡ استیکر پیشرفته\n\n📊 سهمیه: {remaining} از {ADVANCED_DAILY_LIMIT}\n\n📸 عکس خود را ارسال کنید:")
     
     elif data == "quota":
         reset_daily_limit(user_id)
@@ -304,14 +311,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
             time_text = "🔄 ریست نامشخص"
         
         text = (
-            f"📊 **سهمیه شما**\n\n"
+            f"📊 سهمیه شما\n\n"
             f"🎨 **استیکر ساده:**\n"
             f"✅ نامحدود\n\n"
             f"⚡ **استیکر پیشرفته:**\n"
             f"📈 استفاده شده: {used} از {ADVANCED_DAILY_LIMIT}\n"
             f"📊 باقی‌مانده: {remaining} استیکر\n"
-            f"{time_text}\n\n"
-            f"💡 نکته: برای ساخت استیکر پیشرفته، حتماً از مینی اپ استفاده کنید"
+            f"{time_text}"
         )
         
         keyboard = [[InlineKeyboardButton("🔙 بازگشت", callback_data="back")]]
@@ -322,9 +328,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     elif data == "support":
         text = (
-            f"📞 **پشتیبانی ربات**\n\n"
+            f"📞 پشتیبانی ربات\n\n"
             f"👨‍💻 ادمین: {SUPPORT_USERNAME}\n\n"
-            "❓ برای سوال و مشکل با ادمین در ارتباط باشید\n"
+            "🔹 برای سوال و مشکل با ادمین در ارتباط باشید\n"
             f"💬 [{SUPPORT_USERNAME}](https://t.me/{SUPPORT_USERNAME[1:]})"
         )
         
@@ -350,7 +356,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         session["image"] = photo_bytes
         session["waiting_text"] = True
         
-        await update.message.reply_text("✅ عکس دریافت شد!\n\n⚠️ **نکته مهم:** برای امکانات کامل (ساخت پک، تنظیمات پیشرفته، لینک پک) لطفاً از مینی اپ استفاده کنید:\n\n🎨 روی دکمه «استیکر ساز (مینی اپ)» در منوی اصلی کلیک کنید")
+        await update.message.reply_text("✅ عکس دریافت شد!\n\n📝 متن خود را بنویسید:")
         
     except Exception as e:
         logger.error(f"Error handling photo: {e}")
@@ -389,15 +395,19 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             await update.message.reply_sticker(sticker=sticker_file)
             
-            await update.message.reply_text(
-                "✅ استیکر ساخته شد!\n\n"
-                "⚠️ **برای امکانات کامل:**\n"
-                "📦 ساخت پک استیکر\n"
-                "⚙️ تنظیمات پیشرفته\n"
-                "🔗 لینک پک برای اشتراک‌گذاری\n\n"
-                "🎨 از مینی اپ استفاده کنید: روی دکمه «استیکر ساز (مینی اپ)» در منوی اصلی کلیک کنید",
-                reply_markup=InlineKeyboardMarkup(get_main_menu())
-            )
+            if mode == "advanced":
+                remaining = get_remaining(user_id)
+                await update.message.reply_text(
+                    f"✅ استیکر پیشرفته ساخته شد!\n\n"
+                    f"📊 سهمیه باقی‌مانده: {remaining} از {ADVANCED_DAILY_LIMIT}",
+                    reply_markup=InlineKeyboardMarkup(get_main_menu())
+                )
+            else:
+                await update.message.reply_text(
+                    "✅ استیکر ساده ساخته شد!\n\n"
+                    "🎨 برای استیکر جدید از منو استفاده کنید",
+                    reply_markup=InlineKeyboardMarkup(get_main_menu())
+                )
         else:
             await update.message.reply_text("❌ خطا در ساخت استیکر")
         
@@ -412,7 +422,7 @@ async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # Flask routes
 @app.route('/')
 def home():
-    return "Updated Sticker Bot with Mini App is running!"
+    return "Simple Sticker Bot is running!"
 
 @app.route('/api/webhook', methods=['POST'])
 def webhook():

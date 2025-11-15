@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="fa" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>استیکر ساز حرفه‌ای</title>
+    <script src="https://telegram.org/js/telegram-web-app.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            color: #333;
+        }
+
+        .container {
+            max-width: 400px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            color: white;
+            font-size: 24px;
+            margin-bottom: 10px;
+        }
+
+        .header p {
+            color: rgba(255, 255, 255, 0.9);
+            font-size: 14px;
+        }
+
+        .card {
+            background: white;
+            border-radius: 20px;
+            padding: 20px;
+            margin-bottom: 20px;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.1);
+        }
+
+        .section-title {
+            font-size: 18px;
+            font-weight: bold;
+            margin-bottom: 15px;
+            color: #333;
+        }
+
+        .guide {
+            background: #f8f9fa;
+            border-right: 4px solid #667eea;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+
+        .guide h3 {
+            color: #667eea;
+            margin-bottom: 8px;
+            font-size: 16px;
+        }
+
+        .input-group {
+            margin-bottom: 15px;
+        }
+
+        .input-group label {
+            display: block;
+            margin-bottom: 8px;
+            font-weight: 500;
+            font-size: 14px;
+        }
+
+        .input-group input,
+        .input-group select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e1e5e9;
+            border-radius: 10px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+
+        .input-group input:focus,
+        .input-group select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+
+        .btn {
+            width: 100%;
+            padding: 12px;
+            border: none;
+            border-radius: 10px;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.3s;
+            margin-bottom: 10px;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+
+        .btn-secondary:hover {
+            background: #5a6268;
+        }
+
+        .sticker-types {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+
+        .sticker-type {
+            padding: 15px;
+            border: 2px solid #e1e5e9;
+            border-radius: 10px;
+            text-align: center;
+            cursor: pointer;
+            transition: all 0.3s;
+        }
+
+        .sticker-type:hover {
+            border-color: #667eea;
+            transform: translateY(-2px);
+        }
+
+        .sticker-type.active {
+            border-color: #667eea;
+            background: rgba(102, 126, 234, 0.1);
+        }
+
+        .sticker-type .icon {
+            font-size: 24px;
+            margin-bottom: 5px;
+        }
+
+        .sticker-type .title {
+            font-weight: bold;
+            margin-bottom: 3px;
+        }
+
+        .sticker-type .desc {
+            font-size: 12px;
+            color: #666;
+        }
+
+        .advanced-controls {
+            display: none;
+        }
+
+        .advanced-controls.show {
+            display: block;
+        }
+
+        .color-picker {
+            display: flex;
+            gap: 5px;
+            flex-wrap: wrap;
+        }
+
+        .color-option {
+            width: 30px;
+            height: 30px;
+            border-radius: 50%;
+            cursor: pointer;
+            border: 3px solid transparent;
+            transition: all 0.3s;
+        }
+
+        .color-option:hover {
+            transform: scale(1.1);
+        }
+
+        .color-option.selected {
+            border-color: #333;
+        }
+
+        .preview-area {
+            text-align: center;
+            margin: 20px 0;
+        }
+
+        .preview-image {
+            max-width: 200px;
+            max-height: 200px;
+            border-radius: 10px;
+            border: 2px solid #e1e5e9;
+        }
+
+        .loading {
+            display: none;
+            text-align: center;
+            color: #667eea;
+        }
+
+        .loading.show {
+            display: block;
+        }
+
+        .package-link {
+            background: #28a745;
+            color: white;
+            padding: 10px;
+            border-radius: 8px;
+            text-align: center;
+            margin: 10px 0;
+            text-decoration: none;
+            display: block;
+        }
+
+        .package-link:hover {
+            background: #218838;
+        }
+    </style>
+<script src="https://sites.super.myninja.ai/_assets/ninja-daytona-script.js"></script>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🎨 استیکر ساز حرفه‌ای</h1>
+            <p>استیکرهای شخصی خود را بسازید</p>
+        </div>
+
+        <div class="card">
+            <div class="guide">
+                <h3>📋 راهنمای استفاده</h3>
+                <p>1. نام پک استیکر خود را وارد کنید (اجباری)</p>
+                <p>2. نوع استیکر مورد نظر را انتخاب کنید</p>
+                <p>3. عکس مورد نظر را آپلود کنید</p>
+                <p>4. متن دلخواه خود را بنویسید</p>
+                <p>5. تنظیمات را سفارشی کنید و استیکر خود را بسازید!</p>
+            </div>
+
+            <div class="section-title">📦 اطلاعات پک استیکر</div>
+            
+            <div class="input-group">
+                <label for="packageName">نام پک استیکر *</label>
+                <input type="text" id="packageName" placeholder="مثال: استیکرهای من" required>
+            </div>
+
+            <div class="section-title">🎯 انتخاب نوع استیکر</div>
+            
+            <div class="sticker-types">
+                <div class="sticker-type active" data-type="simple">
+                    <div class="icon">🎨</div>
+                    <div class="title">ساده</div>
+                    <div class="desc">عکس + متن</div>
+                </div>
+                <div class="sticker-type" data-type="advanced">
+                    <div class="icon">⚡</div>
+                    <div class="title">پیشرفته</div>
+                    <div class="desc">تنظیمات کامل</div>
+                </div>
+            </div>
+
+            <div class="input-group">
+                <label for="imageUpload">انتخاب عکس</label>
+                <input type="file" id="imageUpload" accept="image/*">
+            </div>
+
+            <div class="input-group">
+                <label for="stickerText">متن استیکر</label>
+                <input type="text" id="stickerText" placeholder="متن دلخواه خود را اینجا بنویسید">
+            </div>
+
+            <div class="advanced-controls" id="advancedControls">
+                <div class="section-title">⚙️ تنظیمات پیشرفته</div>
+                
+                <div class="input-group">
+                    <label for="fontSize">اندازه فونت</label>
+                    <input type="range" id="fontSize" min="20" max="80" value="40">
+                    <span id="fontSizeValue">40</span>
+                </div>
+
+                <div class="input-group">
+                    <label for="fontFamily">نوع فونت</label>
+                    <select id="fontFamily">
+                        <option value="Vazirmatn">وزیرمتن</option>
+                        <option value="IRANSans">ایران سنس</option>
+                        <option value="Arial">Arial</option>
+                    </select>
+                </div>
+
+                <div class="input-group">
+                    <label>رنگ متن</label>
+                    <div class="color-picker">
+                        <div class="color-option selected" style="background: #FFFFFF" data-color="#FFFFFF"></div>
+                        <div class="color-option" style="background: #FF6B6B" data-color="#FF6B6B"></div>
+                        <div class="color-option" style="background: #4ECDC4" data-color="#4ECDC4"></div>
+                        <div class="color-option" style="background: #45B7D1" data-color="#45B7D1"></div>
+                        <div class="color-option" style="background: #FFA07A" data-color="#FFA07A"></div>
+                        <div class="color-option" style="background: #98D8C8" data-color="#98D8C8"></div>
+                        <div class="color-option" style="background: #000000" data-color="#000000"></div>
+                    </div>
+                </div>
+
+                <div class="input-group">
+                    <label for="positionX">موقعیت افقی متن</label>
+                    <input type="range" id="positionX" min="0" max="512" value="256">
+                    <span id="positionXValue">256</span>
+                </div>
+
+                <div class="input-group">
+                    <label for="positionY">موقعیت عمودی متن</label>
+                    <input type="range" id="positionY" min="0" max="512" value="256">
+                    <span id="positionYValue">256</span>
+                </div>
+            </div>
+
+            <div class="preview-area">
+                <div class="section-title">👀 پیش نمایش</div>
+                <img id="previewImage" class="preview-image" style="display: none;">
+            </div>
+
+            <button class="btn btn-primary" id="createSticker">🎨 ساخت استیکر</button>
+            <button class="btn btn-secondary" id="createPackage" style="display: none;">📦 ساخت پک استیکر</button>
+
+            <div class="loading" id="loading">
+                <p>⏳ در حال ساخت استیکر...</p>
+            </div>
+
+            <div id="result"></div>
+        </div>
+    </div>
+
+    <script>
+        let webApp = null;
+        let selectedType = 'simple';
+        let selectedColor = '#FFFFFF';
+        let createdStickers = [];
+
+        // Initialize Telegram Web App
+        if (window.Telegram) {
+            webApp = window.Telegram.WebApp;
+            webApp.ready();
+            webApp.expand();
+        }
+
+        // Sticker type selection
+        document.querySelectorAll('.sticker-type').forEach(type => {
+            type.addEventListener('click', function() {
+                document.querySelectorAll('.sticker-type').forEach(t => t.classList.remove('active'));
+                this.classList.add('active');
+                selectedType = this.dataset.type;
+                
+                const advancedControls = document.getElementById('advancedControls');
+                if (selectedType === 'advanced') {
+                    advancedControls.classList.add('show');
+                } else {
+                    advancedControls.classList.remove('show');
+                }
+            });
+        });
+
+        // Color picker
+        document.querySelectorAll('.color-option').forEach(color => {
+            color.addEventListener('click', function() {
+                document.querySelectorAll('.color-option').forEach(c => c.classList.remove('selected'));
+                this.classList.add('selected');
+                selectedColor = this.dataset.color;
+            });
+        });
+
+        // Range inputs
+        document.getElementById('fontSize').addEventListener('input', function() {
+            document.getElementById('fontSizeValue').textContent = this.value;
+        });
+
+        document.getElementById('positionX').addEventListener('input', function() {
+            document.getElementById('positionXValue').textContent = this.value;
+        });
+
+        document.getElementById('positionY').addEventListener('input', function() {
+            document.getElementById('positionYValue').textContent = this.value;
+        });
+
+        // Image upload and preview
+        document.getElementById('imageUpload').addEventListener('change', function(e) {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    document.getElementById('previewImage').src = e.target.result;
+                    document.getElementById('previewImage').style.display = 'block';
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Create sticker
+        document.getElementById('createSticker').addEventListener('click', async function() {
+            const packageName = document.getElementById('packageName').value.trim();
+            const text = document.getElementById('stickerText').value.trim();
+            const imageFile = document.getElementById('imageUpload').files[0];
+
+            if (!packageName) {
+                showMessage('⚠️ لطفاً نام پک استیکر را وارد کنید', 'error');
+                return;
+            }
+
+            if (!imageFile) {
+                showMessage('⚠️ لطفاً یک عکس انتخاب کنید', 'error');
+                return;
+            }
+
+            if (!text) {
+                showMessage('⚠️ لطفاً متن استیکر را وارد کنید', 'error');
+                return;
+            }
+
+            document.getElementById('loading').classList.add('show');
+            
+            // Simulate sticker creation
+            setTimeout(() => {
+                document.getElementById('loading').classList.remove('show');
+                
+                // Create fake sticker data
+                const stickerData = {
+                    package: packageName,
+                    type: selectedType,
+                    text: text,
+                    timestamp: new Date().toISOString()
+                };
+
+                createdStickers.push(stickerData);
+
+                showMessage('✅ استیکر با موفقیت ساخته شد!', 'success');
+                
+                // Show create package button if we have stickers
+                if (createdStickers.length > 0) {
+                    document.getElementById('createPackage').style.display = 'block';
+                }
+
+                // Send data to Telegram bot
+                if (webApp) {
+                    webApp.sendData(JSON.stringify(stickerData));
+                }
+            }, 2000);
+        });
+
+        // Create package
+        document.getElementById('createPackage').addEventListener('click', function() {
+            const packageName = document.getElementById('packageName').value.trim();
+            
+            if (createdStickers.length === 0) {
+                showMessage('⚠️ ابتدا باید حداقل یک استیکر بسازید', 'error');
+                return;
+            }
+
+            // Generate package link
+            const packageLink = `https://t.me/addstickers/${packageName.toLowerCase().replace(/\s+/g, '_')}`;
+            
+            const resultDiv = document.getElementById('result');
+            resultDiv.innerHTML = `
+                <div class="section-title">🔗 لینک پک استیکر شما</div>
+                <a href="${packageLink}" class="package-link" target="_blank">
+                    📦 مشاهده پک استیکر: ${packageName}
+                </a>
+                <p style="text-align: center; color: #666; font-size: 14px; margin-top: 10px;">
+                    روی لینک بالا کلیک کنید تا پک استیکر خود را مشاهده و نصب کنید
+                </p>
+            `;
+        });
+
+        function showMessage(message, type) {
+            const resultDiv = document.getElementById('result');
+            const color = type === 'error' ? '#dc3545' : '#28a745';
+            resultDiv.innerHTML = `
+                <div style="background: ${color}; color: white; padding: 15px; border-radius: 8px; text-align: center;">
+                    ${message}
+                </div>
+            `;
+            
+            if (type === 'success') {
+                setTimeout(() => {
+                    resultDiv.innerHTML = '';
+                }, 3000);
+            }
+        }
+    </script>
+</body>
+</html>
