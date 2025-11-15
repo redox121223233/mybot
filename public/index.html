@@ -7,6 +7,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="css/sticker-styles.css">
     <style>
         * {
             margin: 0;
@@ -365,13 +366,7 @@
         }
 
         .preview-area {
-            background: linear-gradient(45deg, #f0f0f0 25%, transparent 25%),
-                        linear-gradient(-45deg, #f0f0f0 25%, transparent 25%),
-                        linear-gradient(45deg, transparent 75%, #f0f0f0 75%),
-                        linear-gradient(-45deg, transparent 75%, #f0f0f0 75%);
-            background-size: 20px 20px;
-            background-position: 0 0, 0 10px, 10px -10px, -10px 0px;
-            border: 2px dashed #e0e0e0;
+            background: var(--bg-gray);
             border-radius: 10px;
             padding: 20px;
             text-align: center;
@@ -380,13 +375,6 @@
             align-items: center;
             justify-content: center;
             margin-bottom: 20px;
-            transition: all 0.3s ease;
-        }
-
-        .preview-area.has-image {
-            border-style: solid;
-            border-color: #667eea;
-            background: var(--bg-gray);
         }
 
         .preview-placeholder {
@@ -667,11 +655,11 @@
 
                 <form id="stickerForm">
                     <div class="form-group">
-                        <label for="packName">نام پک استیکر (اختیاری)</label>
-                        <input type="text" id="packName" placeholder="مثال: استیکرهای من" maxlength="64">
-                        <small style="color: var(--text-secondary); display: block; margin-top: 5px;">
-                            اگر نمی‌خواهید پک بسازید، این بخش را خالی بگذارید
+                        <label for="packName">نام پک استیکر</label>
+                         <small style="color: var(--text-secondary); display: block; margin-top: 5px; margin-bottom: 5px;">
+                            نام پک باید منحصر به فرد باشد و فقط شامل حروف، اعداد و `_` باشد.
                         </small>
+                        <input type="text" id="packName" placeholder="مثال: استیکرهای_من" maxlength="64" required>
                     </div>
 
                     <div class="form-group">
@@ -750,7 +738,7 @@
                     </div>
 
                     <div class="action-buttons">
-                        <button type="button" class="btn btn-secondary" onclick="previewSticker()">
+                        <button type="button" class="btn btn-secondary" id="previewBtn">
                             👁️ پیش‌نمایش
                         </button>
                         <button type="submit" class="btn btn-primary" id="createBtn">
@@ -889,6 +877,294 @@
         </div>
     </div>
 
-    <script src="sticker-creator.js"></script>
+    <script>
+        let currentMode = 'simple';
+        let selectedPosition = 'center';
+        let uploadedImage = null;
+        let userQuota = 3;
+
+        // Initialize
+        document.addEventListener('DOMContentLoaded', function() {
+            loadUserQuota();
+            setupEventListeners();
+        });
+
+        function setupEventListeners() {
+            // Form submission
+            document.getElementById('stickerForm').addEventListener('submit', function(e) {
+                e.preventDefault();
+                createSticker();
+            });
+
+            // Font size slider
+            document.getElementById('fontSize').addEventListener('input', function(e) {
+                document.getElementById('fontSizeValue').textContent = e.target.value;
+            });
+
+            // Color picker
+            document.getElementById('textColor').addEventListener('input', function(e) {
+                updateColorPreview(e.target.value);
+            });
+
+            // Drag and drop
+            const uploadArea = document.querySelector('.file-upload-label');
+            uploadArea.addEventListener('dragover', function(e) {
+                e.preventDefault();
+                this.style.background = '#f0f0f0';
+            });
+
+            uploadArea.addEventListener('dragleave', function(e) {
+                e.preventDefault();
+                this.style.background = 'var(--bg-gray)';
+            });
+
+            uploadArea.addEventListener('drop', function(e) {
+                e.preventDefault();
+                this.style.background = 'var(--bg-gray)';
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    handleImageFile(files[0]);
+                }
+            });
+        }
+
+        function selectMode(mode) {
+            currentMode = mode;
+
+            // Update UI
+            document.querySelectorAll('.mode-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.closest('.mode-btn').classList.add('active');
+
+            // Show/hide advanced options
+            const advancedOptions = document.getElementById('advancedOptions');
+            const quotaInfo = document.getElementById('quotaInfo');
+
+            if (mode === 'advanced') {
+                advancedOptions.classList.add('show');
+                quotaInfo.style.display = 'block';
+                checkQuota();
+            } else {
+                advancedOptions.classList.remove('show');
+                quotaInfo.style.display = 'none';
+            }
+        }
+
+        function loadUserQuota() {
+            // Simulate loading user quota (in real app, this would be from API)
+            const savedQuota = localStorage.getItem('stickerQuota');
+            if (savedQuota) {
+                const data = JSON.parse(savedQuota);
+                const now = new Date();
+                const lastReset = new Date(data.lastReset);
+
+                if (now - lastReset >= 24 * 60 * 60 * 1000) {
+                    // Reset quota after 24 hours
+                    userQuota = 3;
+                    localStorage.setItem('stickerQuota', JSON.stringify({
+                        quota: 3,
+                        lastReset: now.toISOString()
+                    }));
+                } else {
+                    userQuota = data.quota;
+                }
+            }
+
+            document.getElementById('remainingQuota').textContent = userQuota;
+        }
+
+        function checkQuota() {
+            if (currentMode === 'advanced' && userQuota <= 0) {
+                showMessage('سهمیه پیشرفته شما تمام شده است! لطفاً فردا مراجعه کنید یا از حالت ساده استفاده کنید.', 'warning');
+                document.getElementById('createBtn').disabled = true;
+                return false;
+            }
+            document.getElementById('createBtn').disabled = false;
+            return true;
+        }
+
+        function selectPosition(position) {
+            selectedPosition = position;
+            document.querySelectorAll('.position-btn').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            event.target.classList.add('active');
+        }
+
+        function handleImageUpload(event) {
+            const file = event.target.files[0];
+            if (file) {
+                handleImageFile(file);
+            }
+        }
+
+        function handleImageFile(file) {
+            if (!file.type.startsWith('image/')) {
+                showMessage('لطفاً فقط تصویر آپلود کنید!', 'error');
+                return;
+            }
+
+            if (file.size > 10 * 1024 * 1024) {
+                showMessage('حجم تصویر نباید بیشتر از 10MB باشد!', 'error');
+                return;
+            }
+
+            const reader = new FileReader();
+            reader.onload = function(e) {
+                uploadedImage = e.target.result;
+                updateUploadLabel(file.name);
+                showMessage('تصویر با موفقیت آپلود شد!', 'success');
+            };
+            reader.readAsDataURL(file);
+        }
+
+        function updateUploadLabel(filename) {
+            const label = document.querySelector('.file-upload-label');
+            label.innerHTML = `
+                <span class="upload-icon">✅</span>
+                <span>${filename}</span>
+            `;
+        }
+
+        function updateColorPreview(color) {
+            const preview = document.getElementById('colorPreview');
+            preview.style.background = color;
+            preview.textContent = color.toUpperCase();
+
+            // Adjust text color for readability
+            const rgb = parseInt(color.slice(1), 16);
+            const r = (rgb >> 16) & 255;
+            const g = (rgb >> 8) & 255;
+            const b = rgb & 255;
+            const brightness = (r * 299 + g * 587 + b * 114) / 1000;
+            preview.style.color = brightness > 128 ? '#000' : '#fff';
+        }
+
+        function updateDefaultBackground() {
+            const bg = document.getElementById('defaultBackground').value;
+            // This would update the canvas background in real implementation
+            console.log('Background changed to:', bg);
+        }
+
+        function previewSticker() {
+            if (!uploadedImage && !document.getElementById('stickerText').value) {
+                showMessage('لطفاً حداقل تصویر یا متن وارد کنید!', 'error');
+                return;
+            }
+
+            // Show loading
+            showMessage('در حال ساخت پیش‌نمایش...', 'warning');
+
+            // Simulate preview generation (in real app, this would use Canvas API)
+            setTimeout(() => {
+                if (uploadedImage) {
+                    document.getElementById('previewPlaceholder').style.display = 'none';
+                    document.getElementById('previewImage').src = uploadedImage;
+                    document.getElementById('previewImage').style.display = 'block';
+                }
+                showMessage('پیش‌نمایش آماده شد!', 'success');
+            }, 1000);
+        }
+
+        function createSticker() {
+            if (currentMode === 'advanced' && !checkQuota()) {
+                return;
+            }
+
+            const packName = document.getElementById('packName').value;
+            const text = document.getElementById('stickerText').value;
+
+            if (!text) {
+                showMessage('لطفاً متن استیکر را وارد کنید!', 'error');
+                return;
+            }
+
+            if (packName && !validatePackName(packName)) {
+                showMessage('نام پک نامعتبر است! لطفاً قوانین را مطالعه کنید.', 'error');
+                return;
+            }
+
+            // Show loading
+            showMessage('در حال ساخت استیکر...', 'warning');
+            document.getElementById('createBtn').disabled = true;
+
+            // Simulate sticker creation (in real app, this would call API)
+            setTimeout(() => {
+                // Update quota for advanced mode
+                if (currentMode === 'advanced') {
+                    userQuota--;
+                    document.getElementById('remainingQuota').textContent = userQuota;
+                    localStorage.setItem('stickerQuota', JSON.stringify({
+                        quota: userQuota,
+                        lastReset: new Date().toISOString()
+                    }));
+                }
+
+                // Show success message
+                showMessage('استیکر با موفقیت ساخته شد! در حال آماده کردن دانلود...', 'success');
+
+                // Simulate download
+                setTimeout(() => {
+                    downloadSticker();
+                    document.getElementById('createBtn').disabled = false;
+                }, 1000);
+            }, 2000);
+        }
+
+        function validatePackName(packName) {
+            // Basic validation
+            if (packName.length < 1 || packName.length > 64) {
+                return false;
+            }
+
+            // Check allowed characters (Persian, English, numbers, underscore)
+            const validPattern = /^[\u0600-\u06FF\u0750-\u077F\u08A0-\u08FF\uFB50-\uFDFF\uFE70-\uFEFFa-zA-Z0-9_]+$/;
+            if (!validPattern.test(packName)) {
+                return false;
+            }
+
+            return true;
+        }
+
+        function downloadSticker() {
+            // Simulate download (in real app, this would download the created sticker)
+            showMessage('استیکر با فرمت WEBP آماده دانلود شد! 🎉', 'success');
+
+            // Create a sample download
+            const link = document.createElement('a');
+            link.href = uploadedImage || 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==';
+            link.download = 'sticker.webp';
+            link.click();
+        }
+
+        function showMessage(message, type) {
+            const statusDiv = document.getElementById('statusMessage');
+            statusDiv.textContent = message;
+            statusDiv.className = `status-message status-${type}`;
+            statusDiv.style.display = 'block';
+
+            // Auto-hide after 5 seconds
+            setTimeout(() => {
+                statusDiv.style.display = 'none';
+            }, 5000);
+        }
+
+        function showHelp() {
+            document.getElementById('helpModal').classList.add('show');
+        }
+
+        function closeHelp() {
+            document.getElementById('helpModal').classList.remove('show');
+        }
+
+        // Close modal when clicking outside
+        document.getElementById('helpModal').addEventListener('click', function(e) {
+            if (e.target === this) {
+                closeHelp();
+            }
+        });
+    </script>
+    <script src="js/sticker-creator.js"></script>
 </body>
 </html>

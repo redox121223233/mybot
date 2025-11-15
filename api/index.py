@@ -1,237 +1,131 @@
 #!/usr/bin/env python3
-
 """
-Enhanced Telegram Sticker Bot - Fixed Version
-Fixed NoneType error for webhook handling
+Enhanced Telegram Sticker Bot - Vercel Fixed Version with Correct Static File Serving
 """
-
 import os
 import json
 import logging
 import asyncio
-import tempfile
 import io
 import re
-import hashlib
-from datetime import datetime, timezone, timedelta
-from typing import Optional, Dict, Any
+import base64
+from typing import Dict, Any, Optional
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
-from telegram.error import TelegramError
+from flask import Flask, request, send_from_directory, jsonify
+from telegram import Update, WebAppInfo, InputSticker
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from PIL import Image, ImageDraw, ImageFont
 import arabic_reshaper
 from bidi.algorithm import get_display
 
-# Configure logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Flask app for Vercel
-app = Flask(__name__)
+# Correctly configure Flask to serve static files from the `public` directory
+# The path is relative to the `api` directory where this script is located.
+app = Flask(__name__, static_folder='../public', static_url_path='')
 
-# Bot Configuration
-BOT_USERNAME = "@matnsticker_bot"
 ADMIN_ID = 6053579919
-SUPPORT_USERNAME = "@onedaytoalive"
-ADVANCED_DAILY_LIMIT = 3
-REQUIRED_CHANNEL = "@redoxbot_sticker"
 
-# Data Storage
-USERS: Dict[int, Dict[str, Any]] = {}
-USER_LIMITS: Dict[int, Dict[str, Any]] = {}
-STICKER_PACKS: Dict[str, Dict[str, Any]] = {}
+bot_token = os.environ.get("BOT_TOKEN")
+if not bot_token:
+    logger.error("BOT_TOKEN not found in environment variables")
+application = Application.builder().token(bot_token).build()
 
-# Global bot and application variables
-bot = None
-application = None
-
-def load_data():
-    """Load data from files"""
-    global USERS, USER_LIMITS, STICKER_PACKS
+def create_sticker(text: str, image_data: Optional[bytes] = None) -> bytes:
     try:
-        if os.path.exists('users.json'):
-            with open('users.json', 'r') as f:
-                USERS = json.load(f)
-        if os.path.exists('limits.json'):
-            with open('limits.json', 'r') as f:
-                USER_LIMITS = json.load(f)
-        if os.path.exists('packs.json'):
-            with open('packs.json', 'r') as f:
-                STICKER_PACKS = json.load(f)
+        canvas = Image.new('RGBA', (512, 512), (0, 0, 0, 0))
+        if image_data:
+            img = Image.open(io.BytesIO(image_data))
+            img.thumbnail((400, 400), Image.Resampling.LANCZOS)
+            canvas.paste(img, (int((512 - img.width) / 2), int((512 - img.height) / 2)), img)
+        
+        draw = ImageDraw.Draw(canvas)
+        if re.search(r'[\u0600-\u06FF]', text):
+            text = arabic_reshaper.reshape(text)
+            text = get_display(text)
+        
+        font_path = os.path.join(os.path.dirname(__file__), '../public/fonts/Vazirmatn-Regular.ttf')
+        font = ImageFont.truetype(font_path, 60)
+        
+        bbox = draw.textbbox((0, 0), text, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+        
+        pos = ((512 - text_width) / 2, (512 - text_height) / 2)
+        draw.text((pos[0] + 2, pos[1] + 2), text, font=font, fill="#000000")
+        draw.text(pos, text, font=font, fill="#FFFFFF")
+        
+        output = io.BytesIO()
+        canvas.save(output, format='WebP')
+        output.seek(0)
+        return output.getvalue()
     except Exception as e:
-        logger.error(f"Error loading data: {e}")
-
-def save_data():
-    """Save data to files"""
-    try:
-        with open('users.json', 'w') as f:
-            json.dump(USERS, f)
-        with open('limits.json', 'w') as f:
-            json.dump(USER_LIMITS, f)
-        with open('packs.json', 'w') as f:
-            json.dump(STICKER_PACKS, f)
-    except Exception as e:
-        logger.error(f"Error saving data: {e}")
-
-def initialize_bot():
-    """Initialize bot application"""
-    global bot, application
-    
-    # Return existing bot if already initialized
-    if application is not None and bot is not None:
-        return bot
-        
-    bot_token = os.environ.get("BOT_TOKEN")
-    if not bot_token:
-        logger.error("BOT_TOKEN not found in environment variables")
-        return None
-    
-    try:
-        application = Application.builder().token(bot_token).build()
-        
-        # Add handlers
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(CommandHandler("admin", admin))
-        application.add_handler(CommandHandler("help", help_cmd))
-        application.add_handler(CallbackQueryHandler(button_callback))
-        application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
-        
-        bot = type('Bot', (), {'application': application})()
-        
-        # Set webhook
-        webhook_url = os.environ.get("VERCEL_URL")
-        if webhook_url:
-            full_url = f"https://{webhook_url}/api/webhook"
-            try:
-                asyncio.run(application.bot.set_webhook(full_url))
-                logger.info("Webhook set successfully")
-            except Exception as e:
-                logger.error(f"Failed to set webhook: {e}")
-        
-        logger.info("Bot initialized successfully")
-        return bot
-        
-    except Exception as e:
-        logger.error(f"Error initializing bot: {e}")
+        logger.error(f"Error in create_sticker: {e}")
         return None
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Start command handler"""
-    user = update.effective_user
-    await update.message.reply_text(
-        f"سلام {user.first_name}! به ربات استیکر ساز خوش آمدید.\n"
-        "برای استفاده از ربات، یک عکس برایم بفرستید."
-    )
+    keyboard = [[{"text": "ورود به مینی اپ", "web_app": {"url": "https://mybot32.vercel.app"}}]]
+    reply_markup = {"inline_keyboard": keyboard}
+    await update.message.reply_text("برای کار با ربات به مینی اپ بروید.", reply_markup=reply_markup)
 
-async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Help command handler"""
-    await update.message.reply_text(
-        "راهنمای ربات:\n"
-        "/start - شروع ربات\n"
-        "/help - نمایش راهنما\n"
-        "عکس بفرستید تا استیکر بسازم"
-    )
+application.add_handler(CommandHandler("start", start))
 
-async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Admin command handler"""
-    user = update.effective_user
-    if user.id != ADMIN_ID:
-        await update.message.reply_text("این دستور فقط برای مدیر است!")
-        return
-    
-    await update.message.reply_text("پنل مدیریت:\nربات فعال و آماده به کار است.")
-
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle photo messages"""
-    await update.message.reply_text("عکس دریافت شد. در حال پردازش...")
-
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle text messages"""
-    await update.message.reply_text("لطفا عکس بفرستید تا استیکر بسازم.")
-
-async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle button callbacks"""
-    query = update.callback_query
-    await query.answer()
-
-# Flask routes
 @app.route('/')
-def home():
-    """Home page redirect"""
-    return "Enhanced Sticker Bot is running!"
+def index():
+    return send_from_directory(app.static_folder, 'index.html')
+
+@app.route('/<path:path>')
+def serve_static(path):
+    return send_from_directory(app.static_folder, path)
 
 @app.route('/api/webhook', methods=['POST'])
 def webhook():
-    """Webhook handler for Telegram bot - FIXED VERSION"""
-    try:
-        # Initialize bot if not already done
-        current_bot = initialize_bot()
-        if current_bot is None:
-            logger.error("Bot initialization failed")
-            return "Bot initialization failed", 500
-            
-        if request.is_json:
-            update_data = request.get_json()
-            logger.info(f"Received update: {update_data}")
-            
-            # Create update object properly
-            update = Update.de_json(update_data, current_bot.application.bot)
-            
-            # Process the update
-            asyncio.run(current_bot.application.process_update(update))
-            
-            return "OK"
-        else:
-            return "Invalid request", 400
-            
-    except AttributeError as e:
-        logger.error(f"Attribute error in webhook: {e}")
-        return f"Webhook error: {str(e)}", 500
-    except Exception as e:
-        logger.error(f"Webhook error: {e}")
-        return f"Webhook error: {str(e)}", 500
+    async def handle_update():
+        await application.initialize()
+        try:
+            update = Update.de_json(request.get_json(force=True), application.bot)
+            await application.process_update(update)
+        finally:
+            await application.shutdown()
+    asyncio.run(handle_update())
+    return "OK", 200
 
-def main():
-    """Main function"""
-    # Load data
-    load_data()
-    
-    # Initialize bot
-    initialize_bot()
-    
-    # Start Flask
-    port = int(os.environ.get("PORT", 5000))
-    logger.info(f"Starting Flask server on port {port}")
-    app.run(host="0.0.0.0", port=port)
+@app.route('/api/add-sticker-to-pack', methods=['POST'])
+def add_sticker_to_pack_api():
+    async def _add_sticker():
+        await application.initialize()
+        try:
+            data = request.get_json()
+            user_id, pack_name, sticker_b64 = data.get('user_id'), data.get('pack_name'), data.get('sticker', '').split(',')[1]
+            sticker_bytes = base64.b64decode(sticker_b64)
+            if not all([user_id, pack_name, sticker_bytes]):
+                return jsonify({"error": "Missing required data"}), 400
 
-# Vercel serverless handler
-def handler(request):
-    """Vercel serverless function handler"""
-    # Load data if not already loaded
-    if not hasattr(handler, 'data_loaded'):
-        load_data()
-        handler.data_loaded = True
-    
-    # Initialize bot if not already initialized
-    if not hasattr(handler, 'bot_initialized'):
-        initialize_bot()
-        handler.bot_initialized = True
-    
-    # Handle the request
-    from flask import Flask
-    global app
-    with app.app_context():
-        if request.method == 'POST' and request.path == '/api/webhook':
-            return webhook()
-        elif request.path == '/':
-            return home()
-        else:
-            return "Not found", 404
+            bot = application.bot
+            full_pack_name = f"{pack_name}_by_{bot.username}"
 
-if __name__ == "__main__":
-    main()
+            sticker_to_add = InputSticker(sticker_bytes, ['😊'])
+
+            try:
+                await bot.get_sticker_set(full_pack_name)
+                await bot.add_sticker_to_set(user_id=user_id, name=full_pack_name, sticker=sticker_to_add)
+                pack_url = f"https://t.me/addstickers/{full_pack_name}"
+                await bot.send_message(user_id, f"✅ استیکر با موفقیت به پک شما اضافه شد:\n{pack_url}")
+            except Exception:
+                await bot.create_new_sticker_set(user_id=user_id, name=full_pack_name, title=pack_name, stickers=[sticker_to_add])
+                pack_url = f"https://t.me/addstickers/{full_pack_name}"
+                await bot.send_message(user_id, f"🎉 پک استیکر شما با موفقیت ساخته شد:\n{pack_url}")
+            return jsonify({"success": True, "message": "Sticker added successfully"}), 200
+        except Exception as e:
+            logger.error(f"Add sticker API error: {e}")
+            return jsonify({"error": "Server error"}), 500
+        finally:
+            await application.shutdown()
+    return asyncio.run(_add_sticker())
+
+@app.route('/api/log', methods=['POST'])
+def log_event():
+    data = request.get_json()
+    logger.info(f"Frontend Log: [{data.get('level', 'INFO').upper()}] {data.get('message', '')}")
+    return jsonify({"status": "logged"}), 200
