@@ -15,7 +15,7 @@ from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional
 
 from flask import Flask, request, send_from_directory, jsonify
-from telegram import Update, WebAppInfo, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, WebAppInfo, InlineKeyboardButton, InlineKeyboardMarkup, InputSticker
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from PIL import Image, ImageDraw, ImageFont
 import arabic_reshaper
@@ -368,7 +368,13 @@ def add_sticker_to_pack_api():
             try:
                 # Try to add to existing pack
                 await bot.get_sticker_set(full_pack_name)
-                await bot.add_sticker_to_set(user_id=user_id, name=full_pack_name, sticker=sticker_bytes, emojis=['😊'])
+                # Create InputSticker object for the new API format
+                input_sticker = InputSticker(
+                    sticker=sticker_bytes,
+                    emoji_list=['😊']
+                )
+                
+                await bot.add_sticker_to_set(user_id=user_id, name=full_pack_name, sticker=input_sticker)
                 pack_url = f"https://t.me/addstickers/{full_pack_name}"
                 
                 # Store in user packages
@@ -392,12 +398,17 @@ def add_sticker_to_pack_api():
                 
             except Exception as e:
                 # Create new pack
+                # Create InputSticker object for the new API format
+                input_sticker = InputSticker(
+                    sticker=sticker_bytes,
+                    emoji_list=['😊']
+                )
+                
                 await bot.create_new_sticker_set(
                     user_id=user_id, 
                     name=full_pack_name, 
                     title=pack_name, 
-                    sticker=sticker_bytes, 
-                    emojis=['😊']
+                    sticker=input_sticker
                 )
                 pack_url = f"https://t.me/addstickers/{full_pack_name}"
                 
