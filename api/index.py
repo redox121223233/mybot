@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Enhanced Telegram Sticker Bot - Vercel Fixed Version with Mini App Integration
+Enhanced Telegram Sticker Bot - Vercel Fixed Version with Mini App Integration and Proper Initialization
 """
 
 import os
@@ -28,11 +28,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Flask app for Vercel
-# Note: Vercel serves the 'public' directory at the root automatically.
-# We just need the Flask routes for the API endpoints.
-# The static_folder points to the root to serve CSS, JS, etc.
 app = Flask(__name__, static_folder='../', static_url_path='')
-
 
 # Bot Configuration
 ADMIN_ID = 6053579919
@@ -145,7 +141,6 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         reply_markup=reply_markup
     )
 
-
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "راهنمای ربات:\n"
@@ -168,24 +163,24 @@ application.add_handler(CommandHandler("help", help_cmd))
 # Flask Routes
 @app.route('/')
 def index():
-    # Vercel's default behavior serves the 'public' or root `index.html`.
-    # This route is a fallback for local testing.
-    # It needs to know the correct path relative to `api/index.py`.
     return send_from_directory('../', 'index.html')
 
 @app.route('/api/webhook', methods=['POST'])
 def webhook():
+    """Webhook handler that properly initializes and shuts down the application."""
+    async def handle_update():
+        await application.initialize()
+        try:
+            update = Update.de_json(request.get_json(force=True), application.bot)
+            await application.process_update(update)
+        finally:
+            await application.shutdown()
+
     try:
         load_data()
-
-        if request.is_json:
-            update_data = request.get_json()
-            update = Update.de_json(update_data, application.bot)
-            asyncio.run(application.process_update(update))
-            save_data()
-            return "OK", 200
-        else:
-            return "Invalid request", 400
+        asyncio.run(handle_update())
+        save_data()
+        return "OK", 200
     except Exception as e:
         logger.error(f"Webhook error: {e}")
         return "Error", 500
@@ -197,11 +192,9 @@ def create_sticker_api():
         data = request.get_json()
         text = data.get('text', '')
 
-        # Handle image data from base64
         image_data = None
         if 'image' in data and data['image']:
             import base64
-            # Strip the prefix `data:image/webp;base64,`
             image_b64 = data['image'].split(',')[1]
             image_data = base64.b64decode(image_b64)
 
