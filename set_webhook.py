@@ -16,9 +16,8 @@ def set_webhook():
         print("❌ BOT_TOKEN not found in environment variables")
         return False
     
-    # URL باید با URL واقعی Vercel شما جایگزین شود
-    # لطفاً URL خود را اینجا وارد کنید
-    webhook_url = "https://your-vercel-app.vercel.app/api/webhook"
+    # URL با URL واقعی Vercel شما تنظیم شده
+    webhook_url = "https://mybot32.vercel.app/api/webhook"
     
     api_url = f"https://api.telegram.org/bot{bot_token}/setWebhook"
     

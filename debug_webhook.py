@@ -11,9 +11,8 @@ import os
 def test_webhook_endpoint():
     """تست endpoint وبهوک"""
     
-    # URL مورد نظر برای تست (باید با URL Vercel شما جایگزین شود)
-    # لطفاً URL خود را اینجا وارد کنید
-    webhook_url = "https://your-vercel-app.vercel.app/api/webhook"
+    # URL مورد نظر برای تست (با URL صحیح شما تنظیم شده)
+    webhook_url = "https://mybot32.vercel.app/api/webhook"
     
     # ایجاد یک test payload
     test_payload = {
@@ -62,7 +61,7 @@ def test_home_endpoint():
     """تست endpoint اصلی"""
     
     # URL مورد نظر برای تست
-    home_url = "https://your-vercel-app.vercel.app/"
+    home_url = "https://mybot32.vercel.app/"
     
     try:
         print(f"🔍 Testing home endpoint: {home_url}")
