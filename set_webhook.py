@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 
 """
-Webhook Setter Script - Updated to prevent whitespace issues
+Webhook Setter Script - Hardened to remove whitespace and quotes
 """
 
 import requests
@@ -16,9 +16,9 @@ def set_webhook():
         print("❌ BOT_TOKEN not found in environment variables")
         return False
     
-    # Ensure the webhook URL from environment variable or hardcoded is stripped of whitespace
-    webhook_url = os.environ.get("VERCEL_URL", "https://mybot32.vercel.app/api/webhook").strip()
-    
+    # Get URL and clean it thoroughly: strip whitespace, then strip quotes.
+    webhook_url = os.environ.get("VERCEL_URL", "https://mybot32.vercel.app/api/webhook").strip().strip('\'"')
+
     api_url = f"https://api.telegram.org/bot{bot_token}/setWebhook"
     
     data = {
@@ -27,7 +27,7 @@ def set_webhook():
     }
     
     try:
-        print(f"🔗 Setting webhook to: {webhook_url}")
+        print(f"🔗 Setting webhook to: '{webhook_url}'") # Log with quotes to see the final URL
         print("📤 Sending request to Telegram API...")
         
         response = requests.post(api_url, json=data, timeout=30)
@@ -87,7 +87,6 @@ if __name__ == "__main__":
     print("🚀 Webhook Management Tool")
     print("=" * 50)
     
-    # Automatically set webhook upon execution, more CI/CD friendly
     print("\n1️⃣ Attempting to delete existing webhook...")
     delete_webhook()
 
