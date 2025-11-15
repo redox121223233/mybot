@@ -22,7 +22,6 @@ from telegram.error import TelegramError
 from PIL import Image, ImageDraw, ImageFont
 import arabic_reshaper
 from bidi.algorithm import get_display
-from flask import Flask, request, jsonify
 
 # Configure logging
 logging.basicConfig(
