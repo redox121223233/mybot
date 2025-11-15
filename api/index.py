@@ -83,11 +83,19 @@ application.add_handler(CommandHandler("start", start))
 
 @app.route('/')
 def index():
-    return send_from_directory(app.static_folder, 'index.html')
+    try:
+        return send_from_directory('../public', 'index.html')
+    except Exception as e:
+        logger.error(f"Error serving index.html: {e}")
+        return "Error loading mini app", 500
 
 @app.route('/<path:path>')
 def serve_static(path):
-    return send_from_directory(app.static_folder, path)
+    try:
+        return send_from_directory('../public', path)
+    except Exception as e:
+        logger.error(f"Error serving static file {path}: {e}")
+        return f"File not found: {path}", 404
 
 @app.route('/api/webhook', methods=['POST'])
 def webhook():
