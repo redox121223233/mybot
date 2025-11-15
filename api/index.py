@@ -101,10 +101,10 @@ def create_sticker(text: str, image_data: Optional[bytes] = None) -> bytes:
         if re.search(r'[\u0600-\u06FF]', text):
             text = arabic_reshaper.reshape(text)
             text = get_display(text)
-        
+
         font_path = os.path.join(os.path.dirname(__file__), '..', 'fonts', 'Vazirmatn-Regular.ttf')
         font = ImageFont.truetype(font_path, 60)
-        
+
         bbox = draw.textbbox((0, 0), text, font=font)
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
@@ -251,3 +251,20 @@ def add_sticker_to_pack_api():
             await application.shutdown()
 
     return asyncio.run(_add_sticker())
+
+@app.route('/api/log', methods=['POST'])
+def log_event():
+    """Endpoint to log frontend events."""
+    try:
+        data = request.get_json()
+        level = data.get('level', 'INFO').upper()
+        message = data.get('message', '')
+
+        if message:
+            # Log using the standard logger, Vercel will capture this
+            logger.log(logging.getLevelName(level), f"Frontend Log: {message}")
+
+        return {"status": "logged"}, 200
+    except Exception as e:
+        # Don't log errors here to avoid loops
+        return {"status": "error"}, 500

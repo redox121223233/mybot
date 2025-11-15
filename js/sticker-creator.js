@@ -1,4 +1,4 @@
-// Enhanced Sticker Creator JavaScript - Final Version
+// Enhanced Sticker Creator JavaScript - Final Version with Logging and Correct Submission Flow
 class StickerCreator {
     constructor() {
         this.canvas = document.createElement('canvas');
@@ -14,9 +14,21 @@ class StickerCreator {
         this.selectedPosition = 'center';
         this.uploadedImage = null;
 
-        this.loadUserQuota();
         this.setupEventListeners();
         this.tg.ready();
+        this.logToServer('info', 'Mini App Initialized');
+    }
+
+    async logToServer(level, message) {
+        try {
+            await fetch('/api/log', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ level, message: `[UserID: ${this.userId}] ${message}` }),
+            });
+        } catch (error) {
+            console.error("Failed to log to server:", error);
+        }
     }
 
     setupEventListeners() {
@@ -25,7 +37,10 @@ class StickerCreator {
             this.submitSticker();
         });
 
-        // Other event listeners
+        document.querySelector('.btn-secondary[onclick="previewSticker()"]').addEventListener('click', () => {
+             this.previewSticker();
+        });
+
         const fontSlider = document.getElementById('fontSize');
         fontSlider.addEventListener('input', (e) => {
             document.getElementById('fontSizeValue').textContent = e.target.value;
@@ -41,20 +56,12 @@ class StickerCreator {
 
     setupDragAndDrop() {
         const uploadArea = document.querySelector('.file-upload-label');
-        uploadArea.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            uploadArea.style.background = '#f0f0f0';
-        });
-        uploadArea.addEventListener('dragleave', (e) => {
-            e.preventDefault();
-            uploadArea.style.background = 'var(--bg-gray)';
-        });
+        uploadArea.addEventListener('dragover', (e) => { e.preventDefault(); uploadArea.style.background = '#f0f0f0'; });
+        uploadArea.addEventListener('dragleave', (e) => { e.preventDefault(); uploadArea.style.background = 'var(--bg-gray)'; });
         uploadArea.addEventListener('drop', (e) => {
             e.preventDefault();
             uploadArea.style.background = 'var(--bg-gray)';
-            if (e.dataTransfer.files.length > 0) {
-                this.handleImageFile(e.dataTransfer.files[0]);
-            }
+            if (e.dataTransfer.files.length > 0) this.handleImageFile(e.dataTransfer.files[0]);
         });
     }
 
@@ -62,18 +69,9 @@ class StickerCreator {
         this.currentMode = mode;
         document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
         document.querySelector(`.mode-btn[onclick="selectMode('${mode}')"]`).classList.add('active');
-        
-        const advancedOptions = document.getElementById('advancedOptions');
-        const quotaInfo = document.getElementById('quotaInfo');
-        
-        if (mode === 'advanced') {
-            advancedOptions.classList.add('show');
-            quotaInfo.style.display = 'block';
-            this.checkQuota();
-        } else {
-            advancedOptions.classList.remove('show');
-            quotaInfo.style.display = 'none';
-        }
+        document.getElementById('advancedOptions').classList.toggle('show', mode === 'advanced');
+        document.getElementById('quotaInfo').style.display = mode === 'advanced' ? 'block' : 'none';
+        if (mode === 'advanced') this.logToServer('info', 'Switched to Advanced Mode');
     }
 
     selectPosition(position) {
@@ -83,14 +81,13 @@ class StickerCreator {
     }
 
     handleImageUpload(event) {
-        if (event.target.files.length > 0) {
-            this.handleImageFile(event.target.files[0]);
-        }
+        if (event.target.files.length > 0) this.handleImageFile(event.target.files[0]);
     }
 
     handleImageFile(file) {
         if (!file.type.startsWith('image/')) {
             this.showMessage('لطفاً فقط تصویر آپلود کنید!', 'error');
+            this.logToServer('error', `Invalid file type uploaded: ${file.type}`);
             return;
         }
         const reader = new FileReader();
@@ -99,6 +96,7 @@ class StickerCreator {
             this.uploadedImage.onload = () => {
                 this.updateUploadLabel(file.name);
                 this.showMessage('تصویر با موفقیت آپلود شد!', 'success');
+                this.logToServer('info', `Image "${file.name}" uploaded successfully.`);
             };
             this.uploadedImage.src = e.target.result;
         };
@@ -114,17 +112,8 @@ class StickerCreator {
         preview.style.background = color;
         preview.textContent = color.toUpperCase();
         const rgb = parseInt(color.slice(1), 16);
-        const brightness = ((rgb >> 16) & 255) * 0.299 + ((rgb >> 8) & 255) * 0.587 + (rgb & 255) * 0.114;
+        const brightness = ((rgb >> 16) & 0xFF) * 0.299 + ((rgb >> 8) & 0xFF) * 0.587 + (rgb & 0xFF) * 0.114;
         preview.style.color = brightness > 128 ? '#000' : '#fff';
-    }
-
-    async loadUserQuota() {
-        // This should be handled by the backend in a real scenario
-    }
-
-    checkQuota() {
-        // Backend should handle this
-        return true;
     }
 
     async createStickerCanvas() {
@@ -150,10 +139,7 @@ class StickerCreator {
         this.ctx.font = `bold ${settings.fontSize}px 'Vazirmatn', sans-serif`;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
-        
-        // Simple positioning for demo
-        const pos = { x: 256, y: 256 };
-        
+        const pos = { x: 256, y: 256 }; // Simplified positioning
         this.ctx.strokeStyle = '#000';
         this.ctx.lineWidth = 4;
         this.ctx.strokeText(text, pos.x, pos.y);
@@ -162,6 +148,7 @@ class StickerCreator {
     }
 
     async previewSticker() {
+        this.logToServer('info', 'Preview button clicked');
         await this.createStickerCanvas();
         const previewImage = document.getElementById('previewImage');
         previewImage.src = this.canvas.toDataURL('image/webp');
@@ -171,9 +158,11 @@ class StickerCreator {
     }
 
     async submitSticker() {
+        this.logToServer('info', 'Submit button clicked');
         const packName = document.getElementById('packName').value.trim();
         if (!packName) {
             this.showMessage('نام پک استیکر اجباری است!', 'error');
+            this.logToServer('error', 'Submission failed: Pack name is required.');
             return;
         }
 
@@ -195,13 +184,17 @@ class StickerCreator {
             });
 
             if (response.ok) {
-                this.showMessage('استیکر با موفقیت به پک شما اضافه شد! پیام تایید در ربات ارسال شد.', 'success');
+                this.showMessage('استیکر با موفقیت اضافه شد! پیام تایید در تلگرام ارسال شد.', 'success');
+                this.logToServer('info', `Sticker successfully added to pack "${packName}".`);
+                this.tg.close();
             } else {
                 const error = await response.json();
                 this.showMessage(`خطا: ${error.error}`, 'error');
+                this.logToServer('error', `Server error on submission: ${error.error}`);
             }
         } catch (error) {
             this.showMessage('خطای ارتباط با سرور!', 'error');
+            this.logToServer('error', `Network error on submission: ${error.message}`);
         } finally {
             document.getElementById('createBtn').disabled = false;
         }
@@ -220,7 +213,6 @@ document.addEventListener('DOMContentLoaded', () => {
     window.creator = new StickerCreator();
 });
 
-// Make functions globally accessible for inline HTML calls
 function selectMode(mode) { window.creator.selectMode(mode); }
 function selectPosition(position) { window.creator.selectPosition(position); }
 function handleImageUpload(event) { window.creator.handleImageUpload(event); }
