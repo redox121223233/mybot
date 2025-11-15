@@ -655,11 +655,11 @@
 
                 <form id="stickerForm">
                     <div class="form-group">
-                        <label for="packName">نام پک استیکر (اختیاری)</label>
-                        <input type="text" id="packName" placeholder="مثال: استیکرهای من" maxlength="64">
-                        <small style="color: var(--text-secondary); display: block; margin-top: 5px;">
-                            اگر نمی‌خواهید پک بسازید، این بخش را خالی بگذارید
+                        <label for="packName">نام پک استیکر</label>
+                         <small style="color: var(--text-secondary); display: block; margin-top: 5px; margin-bottom: 5px;">
+                            نام پک باید منحصر به فرد باشد و فقط شامل حروف، اعداد و `_` باشد.
                         </small>
+                        <input type="text" id="packName" placeholder="مثال: استیکرهای_من" maxlength="64" required>
                     </div>
 
                     <div class="form-group">

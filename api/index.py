@@ -210,3 +210,44 @@ def create_sticker_api():
     except Exception as e:
         logger.error(f"API error: {e}")
         return {"error": "Server error"}, 500
+
+@app.route('/api/add-sticker-to-pack', methods=['POST'])
+def add_sticker_to_pack_api():
+    """API for adding a sticker to a pack from the Mini App."""
+    async def _add_sticker():
+        await application.initialize()
+        try:
+            data = request.get_json()
+            user_id = data.get('user_id')
+            pack_name = data.get('pack_name')
+            sticker_b64 = data.get('sticker').split(',')[1]
+            sticker_bytes = base64.b64decode(sticker_b64)
+
+            if not all([user_id, pack_name, sticker_bytes]):
+                return {"error": "Missing required data"}, 400
+
+            bot = application.bot
+            # Pack names must end with '_by_<bot_username>'
+            full_pack_name = f"{pack_name}_by_{bot.username}"
+
+            try:
+                # This will throw an error if the pack doesn't exist
+                await bot.get_sticker_set(full_pack_name)
+                # Pack exists, add the new sticker
+                await bot.add_sticker_to_set(user_id=user_id, name=full_pack_name, sticker=sticker_bytes, emojis=['😊'])
+                pack_url = f"https://t.me/addstickers/{full_pack_name}"
+                await bot.send_message(user_id, f"✅ استیکر با موفقیت به پک شما اضافه شد:\n{pack_url}")
+            except Exception:
+                # Pack does not exist, so create it
+                await bot.create_new_sticker_set(user_id=user_id, name=full_pack_name, title=pack_name, sticker=sticker_bytes, emojis=['😊'])
+                pack_url = f"https://t.me/addstickers/{full_pack_name}"
+                await bot.send_message(user_id, f"🎉 پک استیکر شما با موفقیت ساخته شد:\n{pack_url}")
+
+            return {"success": True, "message": "Sticker added successfully"}, 200
+        except Exception as e:
+            logger.error(f"Add sticker API error: {e}")
+            return {"error": "Server error"}, 500
+        finally:
+            await application.shutdown()
+
+    return asyncio.run(_add_sticker())
