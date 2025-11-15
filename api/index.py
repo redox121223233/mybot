@@ -532,13 +532,13 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
     
     elif data.startswith("pos_"):
-        position = data.replace("pos_", "")
-        session = get_session(user_id)
-        session["settings"]["position"] = position
+           position = data.replace("pos_", "")
+           session = get_session(user_id)
+           session["settings"]["position"] = position
         
-        await query.answer(f"موقعیت به {position} تغییر یافت")
-        # Return to advanced menu
-await button_callback(update, context)
+           await query.answer(f"موقعیت به {position} تغییر یافت")
+           # Return to advanced menu
+           await button_callback(update, context)
     
     elif data == "adv_size":
         session = get_session(user_id)
