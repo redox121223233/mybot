@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Complete test suite for the Telegram Sticker Bot
-Tests all major functionality after fixes - UPDATED FOR RESTORED FUNCTIONALITY
+Tests all major functionality after fixes - UPDATED FOR MINI APP INTEGRATION
 """
 
 import subprocess
@@ -39,20 +39,18 @@ def run_test(test_name, command, expect_fail=False):
 
 def main():
     """Run all tests"""
-    print("🚀 Full Functionality Test Suite")
+    print("🚀 Mini App Integration Test Suite")
     print("=" * 60)
     
     tests = [
         ("Python Syntax Check", "python -m py_compile api/index.py"),
         ("Vercel Config Check", "cat vercel.json"),
-        ("Flask App Instance Check", "grep -q 'app = Flask(__name__)' api/index.py"),
+        ("Flask App Instance Check", "grep -q 'app = Flask(__name__,' api/index.py"),
         ("Webhook Route Check", "grep -q \"@app.route('/api/webhook'\" api/index.py"),
-        ("Telegram Application Check", "grep -q 'Application.builder()' api/index.py"),
+        ("Mini App API Route Check", "grep -q \"@app.route('/api/create-sticker'\" api/index.py"),
+        ("Start Command Web App Check", "grep -q 'web_app' api/index.py"),
         ("Sticker Creation Function Check", "grep -q 'def create_sticker' api/index.py"),
         ("Image Library Check (Pillow)", "grep -q 'from PIL import' api/index.py"),
-        ("Arabic Reshaper Check", "grep -q 'import arabic_reshaper' api/index.py"),
-        ("Photo Handler Check", "grep -q 'handle_photo' api/index.py"),
-        ("Text Handler Check", "grep -q 'handle_text' api/index.py"),
     ]
     
     passed = 0
@@ -68,7 +66,7 @@ def main():
     print(f"❌ Failed: {total - passed}/{total}")
     
     if passed == total:
-        print("\n🎉 ALL TESTS PASSED! Bot architecture and core functionality are solid.")
+        print("\n🎉 ALL TESTS PASSED! Bot and Mini App integration appears solid.")
     else:
         print(f"\n⚠️ {total - passed} tests failed. Review the errors above.")
     

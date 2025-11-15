@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Enhanced Telegram Sticker Bot - Vercel Fixed Version with Restored Functionality
+Enhanced Telegram Sticker Bot - Vercel Fixed Version with Mini App Integration
 """
 
 import os
@@ -12,10 +12,10 @@ import re
 from typing import Dict, Any, Optional
 
 # Import Flask
-from flask import Flask, request
+from flask import Flask, request, send_from_directory
 
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, WebAppInfo
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 from PIL import Image, ImageDraw, ImageFont
 import arabic_reshaper
 from bidi.algorithm import get_display
@@ -28,7 +28,11 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Flask app for Vercel
-app = Flask(__name__)
+# Note: Vercel serves the 'public' directory at the root automatically.
+# We just need the Flask routes for the API endpoints.
+# The static_folder points to the root to serve CSS, JS, etc.
+app = Flask(__name__, static_folder='../', static_url_path='')
+
 
 # Bot Configuration
 ADMIN_ID = 6053579919
@@ -102,12 +106,13 @@ def create_sticker(text: str, image_data: Optional[bytes] = None) -> bytes:
             text = arabic_reshaper.reshape(text)
             text = get_display(text)
         
-        font = ImageFont.truetype("fonts/Vazirmatn-Regular.ttf", 60)
+        font_path = os.path.join(os.path.dirname(__file__), '..', 'fonts', 'Vazirmatn-Regular.ttf')
+        font = ImageFont.truetype(font_path, 60)
         
         bbox = draw.textbbox((0, 0), text, font=font)
         text_width = bbox[2] - bbox[0]
         text_height = bbox[3] - bbox[1]
-        
+
         x = (512 - text_width) / 2
         y = (512 - text_height) / 2
 
@@ -130,17 +135,23 @@ application = Application.builder().token(bot_token).build()
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
+    keyboard = [[
+        {"text": "ورود به مینی اپ", "web_app": {"url": "https://mybot32.vercel.app"}}
+    ]]
+    reply_markup = {"inline_keyboard": keyboard}
+
     await update.message.reply_text(
-        f"سلام {user.first_name}! به ربات استیکر ساز خوش آمدید.\n"
-        "یک عکس برایم بفرستید تا آن را به استیکر تبدیل کنم."
+        "برای کار با ربات به مینی اپ بروید.",
+        reply_markup=reply_markup
     )
+
 
 async def help_cmd(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "راهنمای ربات:\n"
         "/start - شروع ربات\n"
         "/help - نمایش راهنما\n"
-        "برای ساخت استیکر، یک عکس بفرستید و سپس متن مورد نظرتان را ارسال کنید."
+        "برای ساخت استیکر، از مینی اپ استفاده کنید."
     )
 
 async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -149,64 +160,18 @@ async def admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     await update.message.reply_text("پنل مدیریت:\nربات فعال و آماده به کار است.")
 
-async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    session = get_session(user_id)
-
-    try:
-        photo_file = await update.message.photo[-1].get_file()
-        photo_bytes = await photo_file.download_as_bytearray()
-
-        session["image"] = photo_bytes
-        session["waiting_text"] = True
-
-        await update.message.reply_text("✅ عکس دریافت شد! حالا متن خود را بنویسید.")
-    except Exception as e:
-        logger.error(f"Error handling photo: {e}")
-        await update.message.reply_text("❌ خطا در دریافت عکس.")
-
-async def handle_text(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
-    session = get_session(user_id)
-
-    if not session.get("waiting_text"):
-        await update.message.reply_text("لطفا ابتدا یک عکس بفرستید.")
-        return
-
-    text = update.message.text
-    image_data = session.get("image")
-
-    if not image_data:
-        await update.message.reply_text("خطا: عکسی یافت نشد. لطفا دوباره عکس را ارسال کنید.")
-        clear_session(user_id)
-        return
-
-    await update.message.reply_text("⏳ در حال ساخت استیکر...")
-
-    try:
-        sticker_bytes = create_sticker(text, image_data)
-
-        if sticker_bytes:
-            sticker_file = io.BytesIO(sticker_bytes)
-            await update.message.reply_sticker(sticker=sticker_file)
-        else:
-            await update.message.reply_text("❌ خطا در ساخت استیکر.")
-    except Exception as e:
-        logger.error(f"Error creating sticker: {e}")
-        await update.message.reply_text("❌ یک خطای غیرمنتظره رخ داد.")
-    finally:
-        clear_session(user_id)
-
 # Add handlers
 application.add_handler(CommandHandler("start", start))
 application.add_handler(CommandHandler("admin", admin))
 application.add_handler(CommandHandler("help", help_cmd))
-application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text))
 
+# Flask Routes
 @app.route('/')
-def home():
-    return "Sticker Bot is running!"
+def index():
+    # Vercel's default behavior serves the 'public' or root `index.html`.
+    # This route is a fallback for local testing.
+    # It needs to know the correct path relative to `api/index.py`.
+    return send_from_directory('../', 'index.html')
 
 @app.route('/api/webhook', methods=['POST'])
 def webhook():
@@ -218,9 +183,37 @@ def webhook():
             update = Update.de_json(update_data, application.bot)
             asyncio.run(application.process_update(update))
             save_data()
-            return "OK"
+            return "OK", 200
         else:
             return "Invalid request", 400
     except Exception as e:
         logger.error(f"Webhook error: {e}")
         return "Error", 500
+
+@app.route('/api/create-sticker', methods=['POST'])
+def create_sticker_api():
+    """API for website sticker creation"""
+    try:
+        data = request.get_json()
+        text = data.get('text', '')
+
+        # Handle image data from base64
+        image_data = None
+        if 'image' in data and data['image']:
+            import base64
+            # Strip the prefix `data:image/webp;base64,`
+            image_b64 = data['image'].split(',')[1]
+            image_data = base64.b64decode(image_b64)
+
+        sticker_bytes = create_sticker(text, image_data)
+
+        if sticker_bytes:
+            import base64
+            sticker_base64 = base64.b64encode(sticker_bytes).decode('utf-8')
+            return {"sticker": f"data:image/webp;base64,{sticker_base64}"}, 200
+        else:
+            return {"error": "Failed to create sticker"}, 500
+
+    except Exception as e:
+        logger.error(f"API error: {e}")
+        return {"error": "Server error"}, 500
