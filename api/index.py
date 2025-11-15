@@ -125,8 +125,18 @@ def create_sticker(text: str, image_data: Optional[bytes] = None,
         draw.text((x, y), text, font=font, fill=text_color)
 
         output = io.BytesIO()
-        canvas.save(output, format='WebP', quality=95)
+        canvas.save(output, format='WebP', quality=80, optimize=True)
         output.seek(0)
+        
+        # Check file size and compress further if needed
+        file_size = len(output.getvalue())
+        if file_size > 64 * 1024:  # If larger than 64KB
+            logger.warning(f"Sticker size {file_size} bytes, compressing further...")
+            canvas.save(output, format='WebP', quality=60, optimize=True, method=6)
+            output.seek(0)
+            file_size = len(output.getvalue())
+            logger.info(f"Compressed to {file_size} bytes")
+        
         return output.getvalue()
     except Exception as e:
         logger.error(f"Error in create_sticker: {e}")
@@ -287,7 +297,7 @@ def add_sticker_to_pack_api():
             try:
                 # Try to add to existing pack
                 await bot.get_sticker_set(full_pack_name)
-                await bot.add_sticker_to_set(user_id=user_id, name=full_pack_name, sticker=sticker_bytes, emojis=['😊'])
+                await bot.add_sticker_to_set(user_id=user_id, name=full_pack_name, stickers=[sticker_bytes], emojis=["😀"])
                 pack_url = f"https://t.me/addstickers/{full_pack_name}"
                 
                 # Store in user packages
@@ -315,7 +325,7 @@ def add_sticker_to_pack_api():
                     user_id=user_id, 
                     name=full_pack_name, 
                     title=pack_name, 
-                    sticker=sticker_bytes, 
+                    stickers=[sticker_bytes], 
                     emojis=['😊']
                 )
                 pack_url = f"https://t.me/addstickers/{full_pack_name}"
