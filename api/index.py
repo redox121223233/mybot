@@ -210,5 +210,29 @@ def main():
     logger.info(f"Starting Flask server on port {port}")
     app.run(host="0.0.0.0", port=port)
 
+# Vercel serverless handler
+def handler(request):
+    """Vercel serverless function handler"""
+    # Load data if not already loaded
+    if not hasattr(handler, 'data_loaded'):
+        load_data()
+        handler.data_loaded = True
+    
+    # Initialize bot if not already initialized
+    if not hasattr(handler, 'bot_initialized'):
+        initialize_bot()
+        handler.bot_initialized = True
+    
+    # Handle the request
+    from flask import Flask
+    global app
+    with app.app_context():
+        if request.method == 'POST' and request.path == '/api/webhook':
+            return webhook()
+        elif request.path == '/':
+            return home()
+        else:
+            return "Not found", 404
+
 if __name__ == "__main__":
     main()
