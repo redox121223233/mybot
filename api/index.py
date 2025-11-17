@@ -1,230 +1,372 @@
 #!/usr/bin/env python3
 """
-Enhanced Telegram Sticker Bot - Vercel Fixed Version with Correct Static File Serving
+Perfect Button System - Simple, Fast, Reliable
+Sticker Creator Bot with Button Interface
 """
+
 import os
 import json
 import logging
 import asyncio
+import tempfile
 import io
-import re
 import base64
-from typing import Dict, Any, Optional
+from datetime import datetime, timezone, timedelta
+from typing import Optional, Dict, Any
 
-from flask import Flask, request, send_from_directory, jsonify
-from telegram import Update, WebAppInfo, InputSticker
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, Bot, InputSticker
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
+from telegram.error import TelegramError
 from PIL import Image, ImageDraw, ImageFont
 import arabic_reshaper
 from bidi.algorithm import get_display
+from flask import Flask, request, jsonify
 
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+# Configure logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO
+)
 logger = logging.getLogger(__name__)
 
-# Correctly configure Flask to serve static files from the `public` directory
-# The path is relative to the `api` directory where this script is located.
-app = Flask(__name__, static_folder='../public', static_url_path='')
+# Flask app for Vercel
+app = Flask(__name__)
 
+# Bot Configuration
+BOT_USERNAME = "@matnsticker_bot"
+BOT_TOKEN = os.environ.get('BOT_TOKEN')
 ADMIN_ID = 6053579919
+SUPPORT_USERNAME = "@onedaytoalive"
 
-bot_token = os.environ.get("BOT_TOKEN")
-if not bot_token:
-    logger.error("BOT_TOKEN not found in environment variables")
-application = Application.builder().token(bot_token).build()
+# Initialize Application
+application = None
 
-def create_sticker(text: str, image_data: Optional[bytes] = None) -> bytes:
+async def get_application():
+    global application
+    if application is None:
+        application = Application.builder().token(BOT_TOKEN).build()
+    return application
+
+def create_default_sticker_image():
+    """Create a simple default sticker"""
+    # Create a 512x512 image with gradient background
+    img = Image.new('RGBA', (512, 512), (102, 126, 234, 255))
+    draw = ImageDraw.Draw(img)
+    
+    # Add gradient effect
+    for i in range(512):
+        color = (
+            102 + int(i * 0.1),
+            126 + int(i * 0.1),
+            234 - int(i * 0.1),
+            255
+        )
+        draw.line([(0, i), (512, i)], fill=color)
+    
+    # Add emoji text
     try:
-        canvas = Image.new('RGBA', (512, 512), (0, 0, 0, 0))
-        if image_data:
-            img = Image.open(io.BytesIO(image_data))
-            img.thumbnail((400, 400), Image.Resampling.LANCZOS)
-            canvas.paste(img, (int((512 - img.width) / 2), int((512 - img.height) / 2)), img)
-        
-        draw = ImageDraw.Draw(canvas)
-        if re.search(r'[\u0600-\u06FF]', text):
-            text = arabic_reshaper.reshape(text)
-            text = get_display(text)
-        
-        font_path = os.path.join(os.path.dirname(__file__), '../public/fonts/Vazirmatn-Regular.ttf')
-        font = ImageFont.truetype(font_path, 60)
-        
-        bbox = draw.textbbox((0, 0), text, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-        
-        pos = ((512 - text_width) / 2, (512 - text_height) / 2)
-        draw.text((pos[0] + 2, pos[1] + 2), text, font=font, fill="#000000")
-        draw.text(pos, text, font=font, fill="#FFFFFF")
-        
-        output = io.BytesIO()
-        canvas.save(output, format='WebP', quality=80, optimize=True)
-        output.seek(0)
-        
-        # Check file size and compress further if needed
-        file_size = len(output.getvalue())
-        if file_size > 64 * 1024:  # If larger than 64KB
-            logger.warning(f"Sticker size {file_size} bytes, compressing further...")
-            canvas.save(output, format='WebP', quality=60, optimize=True, method=6)
-            output.seek(0)
-            file_size = len(output.getvalue())
-            logger.info(f"Compressed to {file_size} bytes")
-        
-        return output.getvalue()
-    except Exception as e:
-        logger.error(f"Error in create_sticker: {e}")
-        return None
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", 120)
+    except:
+        font = ImageFont.load_default()
+    
+    text = "🎨"
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+    
+    x = (512 - text_width) // 2
+    y = (512 - text_height) // 2
+    
+    draw.text((x, y), text, font=font, fill=(255, 255, 255, 255))
+    
+    return img
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    keyboard = [[{"text": "ورود به مینی اپ", "web_app": {"url": "https://mybot32.vercel.app"}}]]
-    reply_markup = {"inline_keyboard": keyboard}
-    await update.message.reply_text("برای کار با ربات به مینی اپ بروید.", reply_markup=reply_markup)
-
-application.add_handler(CommandHandler("start", start))
-
-@app.route('/')
-def index():
+def create_text_sticker_image(text="عالی!", font_size=48, color="#ffffff"):
+    """Create a text-based sticker"""
+    img = Image.new('RGBA', (512, 512), (118, 75, 162, 255))
+    draw = ImageDraw.Draw(img)
+    
+    # Process Arabic text
     try:
-        return send_from_directory('../public', 'index.html')
-    except Exception as e:
-        logger.error(f"Error serving index.html: {e}")
-        return "Error loading mini app", 500
-
-@app.route('/<path:path>')
-def serve_static(path):
+        reshaped_text = arabic_reshaper.reshape(text)
+        bidi_text = get_display(reshaped_text)
+    except:
+        bidi_text = text
+    
+    # Load font
     try:
-        return send_from_directory('../public', path)
-    except Exception as e:
-        logger.error(f"Error serving static file {path}: {e}")
-        return f"File not found: {path}", 404
+        font = ImageFont.truetype("/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf", font_size)
+    except:
+        font = ImageFont.load_default()
+    
+    # Calculate text position
+    bbox = draw.textbbox((0, 0), bidi_text, font=font)
+    text_width = bbox[2] - bbox[0]
+    text_height = bbox[3] - bbox[1]
+    
+    x = (512 - text_width) // 2
+    y = (512 - text_height) // 2
+    
+    # Add shadow
+    shadow_offset = 4
+    draw.text((x + shadow_offset, y + shadow_offset), bidi_text, font=font, fill=(0, 0, 0, 200))
+    
+    # Draw main text
+    draw.text((x, y), bidi_text, font=font, fill=color)
+    
+    return img
 
+def image_to_webp_bytes(img):
+    """Convert PIL Image to WebP bytes"""
+    webp_buffer = io.BytesIO()
+    img.save(webp_buffer, format='WebP', quality=90)
+    webp_buffer.seek(0)
+    return webp_buffer.getvalue()
+
+def image_to_data_url(img):
+    """Convert PIL Image to Data URL"""
+    webp_bytes = image_to_webp_bytes(img)
+    base64_str = base64.b64encode(webp_bytes).decode('utf-8')
+    return f"data:image/webp;base64,{base64_str}"
+
+# Flask Routes
 @app.route('/api/webhook', methods=['POST'])
 def webhook():
-    async def handle_update():
-        await application.initialize()
-        try:
-            update = Update.de_json(request.get_json(force=True), application.bot)
-            await application.process_update(update)
-        finally:
-            await application.shutdown()
-    asyncio.run(handle_update())
-    return "OK", 200
-
-@app.route('/api/add-sticker-to-pack', methods=['POST'])
-def add_sticker_to_pack_api():
-    async def _add_sticker():
-        await application.initialize()
-        try:
-            data = request.get_json()
-            logger.info(f"Received request data: user_id={data.get('user_id')}, pack_name={data.get('pack_name')}")
-            
-            sticker_data = data.get('sticker', '')
-            if not sticker_data or ',' not in sticker_data:
-                return jsonify({"error": "Invalid sticker data format"}), 400
-                
-            user_id, pack_name, sticker_b64 = data.get('user_id'), data.get('pack_name'), sticker_data.split(',')[1]
-            sticker_bytes = base64.b64decode(sticker_b64)
-            
-            if not all([user_id, pack_name, sticker_bytes]):
-                return jsonify({"error": "Missing required data"}), 400
-                
-            logger.info(f"Processing sticker: user_id={user_id}, pack_name={pack_name}, size={len(sticker_bytes)} bytes")
-
-            bot = application.bot
-            full_pack_name = f"{pack_name}_by_{bot.username}"
-
-            from io import BytesIO
-            sticker_to_add = InputSticker(
-                sticker=BytesIO(sticker_bytes),
-                format="static",
-                emoji_list=["😀"]
-            )
-
-            try:
-                await bot.get_sticker_set(full_pack_name)
-                await bot.add_sticker_to_set(user_id=user_id, name=full_pack_name, sticker=sticker_to_add)
-                pack_url = f"https://t.me/addstickers/{full_pack_name}"
-                await bot.send_message(user_id, f"✅ استیکر با موفقیت به پک شما اضافه شد:\n{pack_url}")
-            except Exception:
-                await bot.create_new_sticker_set(user_id=user_id, name=full_pack_name, title=pack_name, stickers=[sticker_to_add])
-                pack_url = f"https://t.me/addstickers/{full_pack_name}"
-                await bot.send_message(user_id, f"🎉 پک استیکر شما با موفقیت ساخته شد:\n{pack_url}")
-            return jsonify({"success": True, "message": "Sticker added successfully", "pack_url": pack_url}), 200
-        except Exception as e:
-            logger.error(f"Add sticker API error: {e}")
-            return jsonify({"error": "Server error"}), 500
-        finally:
-            await application.shutdown()
-    return asyncio.run(_add_sticker())
-
-@app.route('/api/log', methods=['POST'])
-def log_event():
+    """Telegram Bot Webhook"""
     try:
-        data = request.get_json()
-        if not data:
-            return jsonify({"error": "No log data provided"}), 400
-            
-        level = data.get('level', 'INFO').upper()
-        message = data.get('message', '')
-        user_id = data.get('userId', 'unknown')
-        session_id = data.get('sessionId', 'unknown')
+        update_data = request.get_json()
+        if not update_data:
+            return jsonify({"status": "no data"}), 200
         
-        # Enhanced logging with full context
-        log_entry = f"[FRONTEND] [{level}] [User:{user_id}] [Session:{session_id}] {message}"
+        update = Update.de_json(update_data, bot)
         
-        if level == 'ERROR':
-            logger.error(log_entry)
-        elif level == 'WARN':
-            logger.warning(log_entry)
-        else:
-            logger.info(log_entry)
-            
-        return jsonify({"status": "logged", "level": level}), 200
+        async def _process_update():
+            app = await get_application()
+            await app.process_update(update)
+        
+        asyncio.run(_process_update())
+        return jsonify({"status": "ok"}), 200
+        
     except Exception as e:
-        logger.error(f"Error in log endpoint: {e}")
-        return jsonify({"error": "Failed to process log"}), 500
+        logger.error(f"Webhook error: {e}")
+        return jsonify({"status": "error", "message": str(e)}), 500
+
+@app.route('/api/create-default-sticker', methods=['POST'])
+def create_default_sticker():
+    """Create a default sticker"""
+    async def _create_sticker():
+        try:
+            app = await get_application()
+            bot = app.bot
+            
+            data = request.get_json()
+            user_id = data.get('user_id')
+            
+            if not user_id:
+                return jsonify({"error": "User ID required"}), 400
+            
+            logger.info(f"Creating default sticker for user {user_id}")
+            
+            # Create sticker image
+            sticker_img = create_default_sticker_image()
+            sticker_bytes = image_to_webp_bytes(sticker_img)
+            
+            # Create sticker pack name
+            pack_name = f"default_pack_{user_id % 10000}_by_{bot.username}"
+            pack_title = f"استیکر‌های پیش‌فرض کاربر {user_id % 10000}"
+            
+            # Create InputSticker
+            sticker_input = InputSticker(
+                sticker=io.BytesIO(sticker_bytes),
+                format="static",
+                emoji_list=["🎨"]
+            )
+            
+            try:
+                # Try to add to existing pack
+                await bot.add_sticker_to_set(
+                    user_id=user_id,
+                    name=pack_name,
+                    sticker=sticker_input
+                )
+            except:
+                # Create new pack
+                await bot.create_new_sticker_set(
+                    user_id=user_id,
+                    name=pack_name,
+                    title=pack_title,
+                    stickers=[sticker_input]
+                )
+            
+            pack_url = f"https://t.me/addstickers/{pack_name}"
+            
+            # Send success message to user
+            await bot.send_message(
+                user_id,
+                f"✅ استیکر پیش‌فرض با موفقیت ساخته شد!\n\n🔗 لینک پک استیکر:\n{pack_url}",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📦 باز کردن پک استیکر", url=pack_url)]
+                ])
+            )
+            
+            logger.info(f"Default sticker created successfully for user {user_id}")
+            
+            return jsonify({
+                "success": True,
+                "message": "Default sticker created successfully",
+                "pack_url": pack_url
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"Error creating default sticker: {e}")
+            return jsonify({"error": str(e)}), 500
+        finally:
+            if application:
+                await application.shutdown()
+    
+    return asyncio.run(_create_sticker())
+
+@app.route('/api/create-text-sticker', methods=['POST'])
+def create_text_sticker():
+    """Create a text-based sticker"""
+    async def _create_sticker():
+        try:
+            app = await get_application()
+            bot = app.bot
+            
+            data = request.get_json()
+            user_id = data.get('user_id')
+            text = data.get('text', 'عالی!')
+            font_size = data.get('font_size', 48)
+            color = data.get('color', '#ffffff')
+            
+            if not user_id:
+                return jsonify({"error": "User ID required"}), 400
+            
+            logger.info(f"Creating text sticker for user {user_id}: {text}")
+            
+            # Create sticker image
+            sticker_img = create_text_sticker_image(text, font_size, color)
+            sticker_bytes = image_to_webp_bytes(sticker_img)
+            
+            # Create sticker pack name
+            pack_name = f"text_pack_{user_id % 10000}_by_{bot.username}"
+            pack_title = f"استیکر‌های متنی کاربر {user_id % 10000}"
+            
+            # Create InputSticker
+            sticker_input = InputSticker(
+                sticker=io.BytesIO(sticker_bytes),
+                format="static",
+                emoji_list=["✨"]
+            )
+            
+            try:
+                # Try to add to existing pack
+                await bot.add_sticker_to_set(
+                    user_id=user_id,
+                    name=pack_name,
+                    sticker=sticker_input
+                )
+            except:
+                # Create new pack
+                await bot.create_new_sticker_set(
+                    user_id=user_id,
+                    name=pack_name,
+                    title=pack_title,
+                    stickers=[sticker_input]
+                )
+            
+            pack_url = f"https://t.me/addstickers/{pack_name}"
+            
+            # Send success message to user
+            await bot.send_message(
+                user_id,
+                f"✅ استیکر متنی «{text}» با موفقیت ساخته شد!\n\n🔗 لینک پک استیکر:\n{pack_url}",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📦 باز کردن پک استیکر", url=pack_url)]
+                ])
+            )
+            
+            logger.info(f"Text sticker created successfully for user {user_id}")
+            
+            return jsonify({
+                "success": True,
+                "message": "Text sticker created successfully",
+                "pack_url": pack_url
+            }), 200
+            
+        except Exception as e:
+            logger.error(f"Error creating text sticker: {e}")
+            return jsonify({"error": str(e)}), 500
+        finally:
+            if application:
+                await application.shutdown()
+    
+    return asyncio.run(_create_sticker())
 
 @app.route('/api/test', methods=['GET'])
 def test_endpoint():
-    logger.info("🧪 Test endpoint called - API is working")
-    
-    test_data = {
-        "status": "working",
-        "message": "API is working correctly",
-        "timestamp": datetime.now().isoformat(),
-        "environment": os.environ.get('VERCEL_ENV', 'development'),
-        "bot_username": BOT_USERNAME
-    }
-    
-    logger.info(f"✅ Test endpoint response: {test_data}")
-    return jsonify(test_data), 200
-
-@app.route('/api/debug-info', methods=['GET'])
-def debug_info():
-    """Debug endpoint to check system status"""
+    """Test API health"""
     try:
-        debug_data = {
-            "status": "healthy",
+        test_data = {
+            "status": "working",
+            "message": "Perfect Button System API is working",
             "timestamp": datetime.now().isoformat(),
-            "environment": {
-                "vercel_env": os.environ.get('VERCEL_ENV', 'unknown'),
-                "python_version": os.environ.get('PYTHON_VERSION', 'unknown'),
-                "region": os.environ.get('VERCEL_REGION', 'unknown')
-            },
-            "bot": {
-                "username": BOT_USERNAME,
-                "configured": bool(BOT_TOKEN)
-            },
-            "endpoints": {
-                "webhook": "/api/webhook",
-                "add_sticker": "/api/add-sticker-to-pack",
-                "log": "/api/log",
-                "test": "/api/test"
-            }
+            "bot_username": BOT_USERNAME,
+            "version": "2.0.0"
         }
         
-        logger.info("🔍 Debug info requested")
-        return jsonify(debug_data), 200
+        logger.info("🧪 Perfect Button System - Test endpoint working")
+        return jsonify(test_data), 200
         
     except Exception as e:
-        logger.error(f"Error in debug endpoint: {e}")
+        logger.error(f"Error in test endpoint: {e}")
         return jsonify({"error": str(e)}), 500
+
+# Bot Command Handlers
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /start command"""
+    keyboard = [
+        [InlineKeyboardButton("🎨 ساخت استیکر سریع", web_app=WebAppInfo(url="https://mybot32.vercel.app"))]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    
+    await update.message.reply_text(
+        "🎨 به ربات استیکر ساز خوش آمدید!\n\n"
+        "با یک کلیک استیکر خود را بسازید:\n"
+        "⚡ ساخت استیکر سریع\n"
+        "✏️ ساخت استیکر متنی\n"
+        "📸 ویرایش عکس استیکر\n\n"
+        "روی دکمه زیر کلیک کنید:",
+        reply_markup=reply_markup
+    )
+
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle /help command"""
+    help_text = """
+    🎨 **راهنمای ربات استیکر ساز**
+
+    **🚀 روش استفاده:**
+    1. روی دکمه «ساخت استیکر سریع» کلیک کنید
+    2. نوع استیکر مورد نظر را انتخاب کنید
+    3. صبر کنید تا استیکر ساخته شود
+    4. لینک پک استیکر در تلگرام برای شما ارسال می‌شود
+
+    **⚡ انواع استیکر:**
+    • استیکر سریع - طراحی پیش‌فرض زیبا
+    • استیکر متنی - متن دلخواه روی پس‌زمینه
+    • ویرایش عکس - تبدیل عکس به استیکر
+
+    **📞 پشتیبانی:**
+    @onedaytoalive
+    """
+    
+    await update.message.reply_text(help_text, parse_mode='Markdown')
+
+# Main Flask app
+if __name__ == "__main__":
+    # Get bot instance for webhook
+    bot = Bot(token=BOT_TOKEN)
+    
+    # Run Flask app
+    app.run(debug=True, host='0.0.0.0', port=8080)
