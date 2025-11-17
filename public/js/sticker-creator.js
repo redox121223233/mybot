@@ -10,6 +10,7 @@ class StickerCreator {
         this.ctx = this.canvas.getContext('2d');
 
         this.uploadedImage = null;
+        this.selectedColor = '#FFFFFF';
 
         this.setupEventListeners();
         this.tg.ready();
@@ -43,13 +44,18 @@ class StickerCreator {
             this.handleImageUpload(e);
         });
 
+        // Color picker listener
+        document.querySelectorAll('.color-option').forEach(color => {
+            color.addEventListener('click', (e) => {
+                document.querySelectorAll('.color-option').forEach(c => c.classList.remove('selected'));
+                e.target.classList.add('selected');
+                this.selectedColor = e.target.dataset.color;
+            });
+        });
+
         // Other listeners
         document.getElementById('fontSize').addEventListener('input', (e) => {
             document.getElementById('fontSizeValue').textContent = e.target.value;
-        });
-
-        document.getElementById('textColor').addEventListener('input', (e) => {
-            this.updateColorPreview(e.target.value);
         });
     }
 
@@ -90,14 +96,7 @@ class StickerCreator {
         document.querySelector('.file-upload-label span').textContent = `✅ ${filename}`;
     }
 
-    updateColorPreview(color) {
-        const preview = document.getElementById('colorPreview');
-        preview.style.background = color;
-        preview.textContent = color.toUpperCase();
-        const rgb = parseInt(color.slice(1), 16);
-        const brightness = ((rgb >> 16) & 0xFF) * 0.299 + ((rgb >> 8) & 0xFF) * 0.587 + (rgb & 0xFF) * 0.114;
-        preview.style.color = brightness > 128 ? '#000' : '#fff';
-    }
+    // Color preview handled by HTML/CSS
 
     async createStickerCanvas() {
         this.ctx.clearRect(0, 0, 512, 512);
@@ -108,7 +107,7 @@ class StickerCreator {
         }
         const text = document.getElementById('stickerText').value;
         const fontSize = document.getElementById('fontSize').value;
-        const color = document.getElementById('textColor').value;
+        const color = selectedColor || '#FFFFFF';
 
         this.ctx.font = `bold ${fontSize}px 'Vazirmatn', sans-serif`;
         this.ctx.textAlign = 'center';
@@ -135,7 +134,7 @@ class StickerCreator {
 
     async submitSticker() {
         this.logToServer('info', 'Submit button clicked');
-        const packName = document.getElementById('packName').value.trim();
+        const packName = document.getElementById('packageName').value.trim();
         if (!packName) {
             this.showMessage('نام پک استیکر اجباری است!', 'error');
             this.logToServer('error', 'Submission failed: Pack name is required.');
