@@ -8,6 +8,8 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Vazirmatn:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="css/sticker-styles.css">
+       <link rel="stylesheet" href="css/debug-panel.css">
+       <script src="https://telegram.org/js/telegram-web-app.js"></script>
     <style>
         * {
             margin: 0;
@@ -1166,5 +1168,107 @@
         });
     </script>
     <script src="js/sticker-creator.js"></script>
+<!-- Debug Panel -->
+<button id="debugToggle" onclick="toggleDebugPanel()">🔍</button>
+<div id="debugPanel">
+    <h3>🔍 Debug Console</h3>
+    <div id="debugLogs"></div>
+    <div id="debugControls">
+        <button onclick="clearDebugLogs()">Clear Logs</button>
+        <button onclick="downloadDebugLogs()">Download</button>
+        <button id="testConnection" onclick="testServerConnection()">Test Server</button>
+        <button onclick="getDebugInfo()">Debug Info</button>
+    </div>
+</div>
+
+<script src="js/debug-system.js"></script>
+<script>
+function toggleDebugPanel() {
+    const panel = document.getElementById('debugPanel');
+    panel.classList.toggle('visible');
+    trackAction('debug_panel_toggled', { visible: panel.classList.contains('visible') });
+}
+
+function clearDebugLogs() {
+    const debugLogs = document.getElementById('debugLogs');
+    debugLogs.innerHTML = '';
+    window.debugSystem.clearLogs();
+    console.log('Debug logs cleared');
+}
+
+function downloadDebugLogs() {
+    const logs = window.debugSystem.getLogs();
+    const blob = new Blob([JSON.stringify(logs, null, 2)], { type: 'application/json' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `debug-logs-${Date.now()}.json`;
+    a.click();
+    URL.revokeObjectURL(url);
+    trackAction('debug_logs_downloaded', { count: logs.length });
+}
+
+async function testServerConnection() {
+    const btn = document.getElementById('testConnection');
+    btn.textContent = 'Testing...';
+    btn.disabled = true;
+    
+    try {
+        trackAction('server_test_started');
+        console.log('🧪 Starting server connection test...');
+        
+        const response = await fetch('/api/test');
+        const result = await response.json();
+        
+        if (response.ok) {
+            console.log('✅ Server connection test passed:', result);
+            trackAction('server_test_success', result);
+            alert('✅ Server is working!\n\n' + JSON.stringify(result, null, 2));
+        } else {
+            console.error('❌ Server connection test failed:', result);
+            trackAction('server_test_failed', result);
+            alert('❌ Server test failed!\n\n' + JSON.stringify(result, null, 2));
+        }
+    } catch (error) {
+        console.error('❌ Server connection test error:', error);
+        trackError(error, { action: 'server_test' });
+        alert('❌ Connection error: ' + error.message);
+    } finally {
+        btn.textContent = 'Test Server';
+        btn.disabled = false;
+    }
+}
+
+async function getDebugInfo() {
+    try {
+        trackAction('debug_info_requested');
+        console.log('🔍 Requesting debug info...');
+        
+        const response = await fetch('/api/debug-info');
+        const result = await response.json();
+        
+        if (response.ok) {
+            console.log('✅ Debug info retrieved:', result);
+            trackAction('debug_info_success', result);
+            alert('🔍 Debug Info:\n\n' + JSON.stringify(result, null, 2));
+        } else {
+            console.error('❌ Debug info failed:', result);
+            trackAction('debug_info_failed', result);
+        }
+    } catch (error) {
+        console.error('❌ Debug info error:', error);
+        trackError(error, { action: 'debug_info' });
+        alert('❌ Error getting debug info: ' + error.message);
+    }
+}
+
+// Auto-open debug panel on first load for development
+if (window.location.hostname === 'localhost' || window.location.hostname.includes('proxy')) {
+    setTimeout(() => {
+        document.getElementById('debugPanel').classList.add('visible');
+    }, 1000);
+}
+</script>
+
 </body>
 </html>

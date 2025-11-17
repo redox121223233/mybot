@@ -100,24 +100,40 @@ class StickerCreator {
     }
 
     async createStickerCanvas() {
+        trackAction('create_sticker_canvas_start', {
+            hasImage: !!this.uploadedImage,
+            imageWidth: this.uploadedImage?.width,
+            imageHeight: this.uploadedImage?.height
+        });
+        
         this.ctx.clearRect(0, 0, 512, 512);
         
         // Add default background if no image
         if (!this.uploadedImage) {
             this.ctx.fillStyle = '#f0f0f0';
             this.ctx.fillRect(0, 0, 512, 512);
+            console.log('✅ Default background applied');
         } else {
             const img = this.uploadedImage;
             const scale = Math.min(400 / img.width, 400 / img.height);
             this.ctx.drawImage(img, (512 - img.width * scale) / 2, (512 - img.height * scale) / 2, img.width * scale, img.height * scale);
+            console.log('✅ Image drawn with scale:', scale);
         }
         
         const text = document.getElementById('stickerText').value;
         const fontSize = document.getElementById('fontSize').value;
         const color = document.getElementById('textColor').value;
         
+        trackAction('text_rendering', {
+            textLength: text?.length || 0,
+            text: text || 'empty',
+            fontSize: fontSize,
+            color: color
+        });
+        
         // Only draw text if it's not empty
         if (!text || text.trim() === '') {
+            console.log('⚠️ No text to render - skipping text drawing');
             return;
         }
 
@@ -132,14 +148,24 @@ class StickerCreator {
         this.ctx.shadowOffsetX = 3;
         this.ctx.shadowOffsetY = 3;
         
+        console.log('🎨 Drawing text:', text);
+        
+        // Add shadow for better visibility
+        this.ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+        this.ctx.shadowBlur = 6;
+        this.ctx.shadowOffsetX = 3;
+        this.ctx.shadowOffsetY = 3;
+        
         // Draw stroke outline first
         this.ctx.strokeStyle = '#000000';
         this.ctx.lineWidth = 4;
         this.ctx.strokeText(text, 256, 256);
+        console.log('✅ Text stroke drawn');
         
         // Draw fill text
         this.ctx.fillStyle = color;
         this.ctx.fillText(text, 256, 256);
+        console.log('✅ Text fill drawn with color:', color);
         
         // Reset shadow
         this.ctx.shadowColor = 'transparent';
@@ -149,62 +175,131 @@ class StickerCreator {
     }
 
     async previewSticker() {
-        this.logToServer('info', 'Preview button clicked');
-        if (!this.uploadedImage && !document.getElementById('stickerText').value) {
+        trackAction('preview_button_clicked');
+        console.log('🔍 Preview button clicked');
+        
+        const text = document.getElementById('stickerText').value;
+        const hasImage = !!this.uploadedImage;
+        
+        console.log('📊 Preview data:', {
+            hasImage: hasImage,
+            textLength: text?.length || 0,
+            text: text || 'empty'
+        });
+        
+        if (!hasImage && !text) {
+            trackAction('preview_failed_no_data');
             this.showMessage('لطفاً تصویر یا متنی برای پیش‌نمایش وارد کنید.', 'error');
+            console.error('❌ No data for preview');
             return;
         }
-        await this.createStickerCanvas();
-        document.getElementById('previewImage').src = this.canvas.toDataURL('image/webp');
-        document.getElementById('previewImage').style.display = 'block';
-        document.getElementById('previewPlaceholder').style.display = 'none';
-        this.showMessage('پیش‌نمایش آماده شد!', 'success');
+        
+        try {
+            console.log('🎨 Creating sticker canvas...');
+            await this.createStickerCanvas();
+            
+            console.log('📸 Converting canvas to data URL...');
+            const dataUrl = this.canvas.toDataURL('image/webp');
+            console.log('✅ Canvas converted, data URL length:', dataUrl.length);
+            
+            const previewImage = document.getElementById('previewImage');
+            previewImage.src = dataUrl;
+            previewImage.style.display = 'block';
+            document.getElementById('previewPlaceholder').style.display = 'none';
+            
+            this.showMessage('پیش‌نمایش آماده شد!', 'success');
+            trackAction('preview_success');
+            console.log('✅ Preview completed successfully');
+            
+        } catch (error) {
+            trackError(error, { action: 'preview' });
+            this.showMessage('خطا در ساختن پیش‌نمایش', 'error');
+            console.error('❌ Preview error:', error);
+        }
     }
 
     async submitSticker() {
-        this.logToServer('info', 'Submit button clicked');
+        trackAction('submit_button_clicked');
+        console.log('🚀 Submit button clicked');
+        
         const packName = document.getElementById('packName').value.trim();
+        
         if (!packName) {
+            trackAction('submit_failed_no_pack_name');
             this.showMessage('نام پک استیکر اجباری است!', 'error');
-            this.logToServer('error', 'Submission failed: Pack name is required.');
+            console.error('❌ No pack name provided');
             return;
         }
 
+        trackAction('submit_processing', { packName: packName });
         this.showMessage('در حال ارسال استیکر...', 'warning');
         document.getElementById('createBtn').disabled = true;
 
-        await this.createStickerCanvas();
-        const stickerData = this.canvas.toDataURL('image/webp');
-
         try {
+            console.log('🎨 Creating sticker canvas for submission...');
+            await this.createStickerCanvas();
+            
+            console.log('📸 Converting canvas to WebP...');
+            const stickerData = this.canvas.toDataURL('image/webp');
+            console.log('✅ Sticker data created, size:', Math.round(stickerData.length / 1024), 'KB');
+            
+            trackAction('sending_to_server', { 
+                packName: packName,
+                dataSize: stickerData.length 
+            });
+            
+            console.log('📡 Sending to server...');
             const response = await fetch('/api/add-sticker-to-pack', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ user_id: this.userId, pack_name: packName, sticker: stickerData }),
+                body: JSON.stringify({ 
+                    user_id: this.userId, 
+                    pack_name: packName, 
+                    sticker: stickerData 
+                }),
             });
+            
+            console.log('📊 Server response status:', response.status);
+            
             if (response.ok) {
                 const result = await response.json();
+                console.log('✅ Server response:', result);
+                
                 if (result.success) {
+                    trackAction('submit_success', { 
+                        packName: packName,
+                        packUrl: result.pack_url 
+                    });
+                    
                     this.showMessage('✅ استیکر با موفقیت ساخته شد! لینک پک در تلگرام برای شما ارسال شد.', 'success');
-                    this.logToServer('info', `Sticker pack created: ${packName}, URL: ${result.pack_url}`);
+                    console.log('🎉 Sticker pack created successfully!');
+                    
                     // Don't close immediately, let user see the message
                     setTimeout(() => {
+                        console.log('📱 Closing Telegram WebApp...');
                         this.tg.close();
                     }, 2000);
                 } else {
+                    trackAction('submit_failed_server_error', { error: result.error });
                     this.showMessage(`خطا: ${result.error}`, 'error');
-                    this.logToServer('error', `Server error: ${result.error}`);
+                    console.error('❌ Server returned error:', result.error);
                 }
             } else {
                 const error = await response.json();
+                trackAction('submit_failed_http_error', { 
+                    status: response.status, 
+                    error: error.error 
+                });
                 this.showMessage(`خطا: ${error.error}`, 'error');
-                this.logToServer('error', `Server error: ${error.error}`);
+                console.error('❌ HTTP error:', response.status, error.error);
             }
         } catch (error) {
+            trackError(error, { action: 'submit', packName: packName });
             this.showMessage('خطای ارتباط با سرور!', 'error');
-            this.logToServer('error', `Network error: ${error.message}`);
+            console.error('❌ Network error:', error);
         } finally {
             document.getElementById('createBtn').disabled = false;
+            console.log('🔄 Submit process completed');
         }
     }
 

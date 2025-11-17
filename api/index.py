@@ -158,11 +158,73 @@ def add_sticker_to_pack_api():
 
 @app.route('/api/log', methods=['POST'])
 def log_event():
-    data = request.get_json()
-    logger.info(f"Frontend Log: [{data.get('level', 'INFO').upper()}] {data.get('message', '')}")
-    return jsonify({"status": "logged"}), 200
+    try:
+        data = request.get_json()
+        if not data:
+            return jsonify({"error": "No log data provided"}), 400
+            
+        level = data.get('level', 'INFO').upper()
+        message = data.get('message', '')
+        user_id = data.get('userId', 'unknown')
+        session_id = data.get('sessionId', 'unknown')
+        
+        # Enhanced logging with full context
+        log_entry = f"[FRONTEND] [{level}] [User:{user_id}] [Session:{session_id}] {message}"
+        
+        if level == 'ERROR':
+            logger.error(log_entry)
+        elif level == 'WARN':
+            logger.warning(log_entry)
+        else:
+            logger.info(log_entry)
+            
+        return jsonify({"status": "logged", "level": level}), 200
+    except Exception as e:
+        logger.error(f"Error in log endpoint: {e}")
+        return jsonify({"error": "Failed to process log"}), 500
 
 @app.route('/api/test', methods=['GET'])
 def test_endpoint():
-    logger.info("Test endpoint called")
-    return jsonify({"status": "working", "message": "API is working correctly"}), 200
+    logger.info("🧪 Test endpoint called - API is working")
+    
+    test_data = {
+        "status": "working",
+        "message": "API is working correctly",
+        "timestamp": datetime.now().isoformat(),
+        "environment": os.environ.get('VERCEL_ENV', 'development'),
+        "bot_username": BOT_USERNAME
+    }
+    
+    logger.info(f"✅ Test endpoint response: {test_data}")
+    return jsonify(test_data), 200
+
+@app.route('/api/debug-info', methods=['GET'])
+def debug_info():
+    """Debug endpoint to check system status"""
+    try:
+        debug_data = {
+            "status": "healthy",
+            "timestamp": datetime.now().isoformat(),
+            "environment": {
+                "vercel_env": os.environ.get('VERCEL_ENV', 'unknown'),
+                "python_version": os.environ.get('PYTHON_VERSION', 'unknown'),
+                "region": os.environ.get('VERCEL_REGION', 'unknown')
+            },
+            "bot": {
+                "username": BOT_USERNAME,
+                "configured": bool(BOT_TOKEN)
+            },
+            "endpoints": {
+                "webhook": "/api/webhook",
+                "add_sticker": "/api/add-sticker-to-pack",
+                "log": "/api/log",
+                "test": "/api/test"
+            }
+        }
+        
+        logger.info("🔍 Debug info requested")
+        return jsonify(debug_data), 200
+        
+    except Exception as e:
+        logger.error(f"Error in debug endpoint: {e}")
+        return jsonify({"error": str(e)}), 500
