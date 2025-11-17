@@ -17,7 +17,7 @@ from typing import Dict, Any, Optional
 from flask import Flask, request, send_from_directory, jsonify
 from telegram import Update, WebAppInfo, InlineKeyboardButton, InlineKeyboardMarkup, InputSticker
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
-from PIL import Image, ImageDraw, ImageFont
+from PIL import Image, ImageDraw, ImageFont, ImageEnhance
 import arabic_reshaper
 from bidi.algorithm import get_display
 
@@ -35,6 +35,122 @@ MINI_APP_URL = "https://mybot32.vercel.app/miniapp"  # Current deployment URL
 # Data storage
 USER_PACKAGES: dict[int, list] = {}
 USER_LIMITS: dict[int, dict] = {}
+
+def create_text_sticker_image(text: str, text_color: str = '#FFFFFF', background_color: str = '#000000') -> Image.Image:
+    """Create a text sticker image with transparency support"""
+    # Create transparent or colored background
+    img = Image.new('RGBA', (512, 512), (0, 0, 0, 0) if background_color == 'transparent' else background_color)
+    draw = ImageDraw.Draw(img)
+    
+    try:
+        # Try to load Persian font
+        font = ImageFont.truetype("Vazirmatn-Regular.ttf", 48)
+    except:
+        try:
+            # Fallback to default font
+            font = ImageFont.load_default()
+        except:
+            font = None
+    
+    # Process Arabic/Persian text
+    reshaped_text = arabic_reshaper.reshape(text)
+    bidi_text = get_display(reshaped_text)
+    
+    # Calculate text position for center alignment
+    if font:
+        bbox = draw.textbbox((0, 0), bidi_text, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+    else:
+        text_width = len(bidi_text) * 10
+        text_height = 48
+    
+    x = (512 - text_width) // 2
+    y = (512 - text_height) // 2
+    
+    # Draw text with anti-aliasing
+    draw.text((x, y), bidi_text, fill=text_color, font=font)
+    
+    return img
+
+def create_advanced_text_sticker(text: str, text_color: str = '#FFFFFF', background_color: str = 'transparent', font_size: int = 48) -> Image.Image:
+    """Create an advanced text sticker with better transparency and rendering"""
+    # Create high-quality transparent background
+    img = Image.new('RGBA', (512, 512), (0, 0, 0, 0))
+    
+    # Add background if not transparent
+    if background_color != 'transparent':
+        if background_color.startswith('#'):
+            # Convert hex to RGB
+            bg_color = tuple(int(background_color[i:i+2], 16) for i in (1, 3, 5))
+            bg_img = Image.new('RGB', (512, 512), bg_color)
+            img = Image.new('RGBA', (512, 512))
+            img.paste(bg_img)
+        else:
+            img = Image.new('RGBA', (512, 512), background_color)
+    
+    draw = ImageDraw.Draw(img)
+    
+    try:
+        # Try multiple font options
+        font_paths = [
+            "Vazirmatn-Regular.ttf",
+            "Vazirmatn-Bold.ttf",
+            "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+            "/System/Library/Fonts/Arial.ttf"
+        ]
+        
+        font = None
+        for font_path in font_paths:
+            try:
+                font = ImageFont.truetype(font_path, font_size)
+                break
+            except:
+                continue
+        
+        if not font:
+            font = ImageFont.load_default()
+            
+    except Exception as e:
+        logger.warning(f"Font loading failed: {e}")
+        font = ImageFont.load_default()
+    
+    # Process Arabic/Persian text with proper shaping
+    try:
+        reshaped_text = arabic_reshaper.reshape(text)
+        bidi_text = get_display(reshaped_text)
+    except:
+        bidi_text = text
+    
+    # Calculate text position with better centering
+    if font and hasattr(font, 'getbbox'):
+        bbox = draw.textbbox((0, 0), bidi_text, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+    else:
+        text_width = len(bidi_text) * (font_size // 2)
+        text_height = font_size
+    
+    x = (512 - text_width) // 2
+    y = (512 - text_height) // 2
+    
+    # Add shadow for better readability
+    shadow_offset = 2
+    shadow_color = (0, 0, 0, 128) if background_color == 'transparent' else (0, 0, 0)
+    draw.text((x + shadow_offset, y + shadow_offset), bidi_text, fill=shadow_color, font=font)
+    
+    # Draw main text
+    if text_color.startswith('#'):
+        text_color_rgb = tuple(int(text_color[i:i+2], 16) for i in (1, 3, 5))
+        draw.text((x, y), bidi_text, fill=text_color_rgb, font=font)
+    else:
+        draw.text((x, y), bidi_text, fill=text_color, font=font)
+    
+    # Enhance image quality
+    enhancer = ImageEnhance.Sharpness(img)
+    img = enhancer.enhance(1.2)
+    
+    return img
 
 def get_user_packages(user_id: int) -> list:
     """Get user's sticker packages"""
@@ -462,6 +578,74 @@ def get_user_info():
     except Exception as e:
         logger.error(f"Error in user info: {e}")
         return jsonify({'error': 'Internal server error'}), 500
+
+@app.route('/api/create-default-sticker', methods=['POST'])
+def create_default_sticker():
+    """Create a default sticker with transparency fix"""
+    try:
+        data = request.get_json()
+        user_id = data.get('user_id')
+        text = data.get('text', 'استیکر پیش‌فرض')
+        color = data.get('color', '#FFFFFF')
+        background_color = data.get('background_color', '#000000')
+        
+        if not user_id:
+            return jsonify({'error': 'User ID required'}), 400
+            
+        # Create sticker with transparency fix
+        sticker_image = create_text_sticker_image(text, color, background_color)
+        
+        # Convert to base64 with proper transparency handling
+        buffer = io.BytesIO()
+        sticker_image.save(buffer, format='WEBP', quality=95, method=6)
+        sticker_base64 = base64.b64encode(buffer.getvalue()).decode()
+        sticker_data = f"data:image/webp;base64,{sticker_base64}"
+        
+        return jsonify({
+            'success': True,
+            'sticker': sticker_data,
+            'message': 'Default sticker created successfully'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error creating default sticker: {e}")
+        return jsonify({'error': 'Failed to create default sticker'}), 500
+
+@app.route('/api/create-text-sticker', methods=['POST'])
+def create_text_sticker():
+    """Create a custom text sticker with transparency support"""
+    try:
+        data = request.get_json()
+        user_id = data.get('user_id')
+        text = data.get('text', 'استیکر متنی')
+        color = data.get('color', '#FFFFFF')
+        background_color = data.get('background_color', 'transparent')
+        font_size = data.get('font_size', 48)
+        
+        if not user_id or not text:
+            return jsonify({'error': 'User ID and text required'}), 400
+            
+        # Create sticker with advanced text rendering
+        sticker_image = create_advanced_text_sticker(text, color, background_color, font_size)
+        
+        # Convert to base64 with transparency preservation
+        buffer = io.BytesIO()
+        if background_color == 'transparent':
+            sticker_image.save(buffer, format='WEBP', quality=95, method=6, lossless=False)
+        else:
+            sticker_image.save(buffer, format='WEBP', quality=95, method=6)
+        sticker_base64 = base64.b64encode(buffer.getvalue()).decode()
+        sticker_data = f"data:image/webp;base64,{sticker_base64}"
+        
+        return jsonify({
+            'success': True,
+            'sticker': sticker_data,
+            'message': 'Text sticker created successfully'
+        })
+        
+    except Exception as e:
+        logger.error(f"Error creating text sticker: {e}")
+        return jsonify({'error': 'Failed to create text sticker'}), 500
 
 @app.route('/api/log', methods=['POST'])
 def log_event():
