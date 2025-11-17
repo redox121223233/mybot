@@ -115,10 +115,19 @@ def add_sticker_to_pack_api():
         await application.initialize()
         try:
             data = request.get_json()
-            user_id, pack_name, sticker_b64 = data.get('user_id'), data.get('pack_name'), data.get('sticker', '').split(',')[1]
+            logger.info(f"Received request data: user_id={data.get('user_id')}, pack_name={data.get('pack_name')}")
+            
+            sticker_data = data.get('sticker', '')
+            if not sticker_data or ',' not in sticker_data:
+                return jsonify({"error": "Invalid sticker data format"}), 400
+                
+            user_id, pack_name, sticker_b64 = data.get('user_id'), data.get('pack_name'), sticker_data.split(',')[1]
             sticker_bytes = base64.b64decode(sticker_b64)
+            
             if not all([user_id, pack_name, sticker_bytes]):
                 return jsonify({"error": "Missing required data"}), 400
+                
+            logger.info(f"Processing sticker: user_id={user_id}, pack_name={pack_name}, size={len(sticker_bytes)} bytes")
 
             bot = application.bot
             full_pack_name = f"{pack_name}_by_{bot.username}"
@@ -139,7 +148,7 @@ def add_sticker_to_pack_api():
                 await bot.create_new_sticker_set(user_id=user_id, name=full_pack_name, title=pack_name, stickers=[sticker_to_add])
                 pack_url = f"https://t.me/addstickers/{full_pack_name}"
                 await bot.send_message(user_id, f"🎉 پک استیکر شما با موفقیت ساخته شد:\n{pack_url}")
-            return jsonify({"success": True, "message": "Sticker added successfully"}), 200
+            return jsonify({"success": True, "message": "Sticker added successfully", "pack_url": pack_url}), 200
         except Exception as e:
             logger.error(f"Add sticker API error: {e}")
             return jsonify({"error": "Server error"}), 500
@@ -152,3 +161,8 @@ def log_event():
     data = request.get_json()
     logger.info(f"Frontend Log: [{data.get('level', 'INFO').upper()}] {data.get('message', '')}")
     return jsonify({"status": "logged"}), 200
+
+@app.route('/api/test', methods=['GET'])
+def test_endpoint():
+    logger.info("Test endpoint called")
+    return jsonify({"status": "working", "message": "API is working correctly"}), 200

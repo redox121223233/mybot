@@ -101,14 +101,25 @@ class StickerCreator {
 
     async createStickerCanvas() {
         this.ctx.clearRect(0, 0, 512, 512);
-        if (this.uploadedImage) {
+        
+        // Add default background if no image
+        if (!this.uploadedImage) {
+            this.ctx.fillStyle = '#f0f0f0';
+            this.ctx.fillRect(0, 0, 512, 512);
+        } else {
             const img = this.uploadedImage;
             const scale = Math.min(400 / img.width, 400 / img.height);
             this.ctx.drawImage(img, (512 - img.width * scale) / 2, (512 - img.height * scale) / 2, img.width * scale, img.height * scale);
         }
+        
         const text = document.getElementById('stickerText').value;
         const fontSize = document.getElementById('fontSize').value;
         const color = document.getElementById('textColor').value;
+        
+        // Only draw text if it's not empty
+        if (!text || text.trim() === '') {
+            return;
+        }
 
         // Use system fonts for better compatibility
         this.ctx.font = `bold ${fontSize}px 'Arial Black', 'Arial Bold', Arial, sans-serif`;
@@ -172,9 +183,18 @@ class StickerCreator {
                 body: JSON.stringify({ user_id: this.userId, pack_name: packName, sticker: stickerData }),
             });
             if (response.ok) {
-                this.showMessage('استیکر با موفقیت اضافه شد! پیام در تلگرام ارسال شد.', 'success');
-                this.logToServer('info', `Sticker added to pack "${packName}".`);
-                this.tg.close();
+                const result = await response.json();
+                if (result.success) {
+                    this.showMessage('✅ استیکر با موفقیت ساخته شد! لینک پک در تلگرام برای شما ارسال شد.', 'success');
+                    this.logToServer('info', `Sticker pack created: ${packName}, URL: ${result.pack_url}`);
+                    // Don't close immediately, let user see the message
+                    setTimeout(() => {
+                        this.tg.close();
+                    }, 2000);
+                } else {
+                    this.showMessage(`خطا: ${result.error}`, 'error');
+                    this.logToServer('error', `Server error: ${result.error}`);
+                }
             } else {
                 const error = await response.json();
                 this.showMessage(`خطا: ${error.error}`, 'error');
