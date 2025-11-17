@@ -260,10 +260,14 @@ def webhook():
     async def handle_update():
         app_bot = await get_application()
         try:
+            await app_bot.initialize()
             update = Update.de_json(request.get_json(force=True), app_bot.bot)
             await app_bot.process_update(update)
         finally:
-            pass
+            try:
+                await app_bot.shutdown()
+            except:
+                pass
     asyncio.run(handle_update())
     return "OK", 200
 
