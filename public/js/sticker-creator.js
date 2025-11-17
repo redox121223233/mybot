@@ -110,14 +110,31 @@ class StickerCreator {
         const fontSize = document.getElementById('fontSize').value;
         const color = document.getElementById('textColor').value;
 
-        this.ctx.font = `bold ${fontSize}px 'Vazirmatn', sans-serif`;
+        // Use system fonts for better compatibility
+        this.ctx.font = `bold ${fontSize}px 'Arial Black', 'Arial Bold', Arial, sans-serif`;
         this.ctx.textAlign = 'center';
         this.ctx.textBaseline = 'middle';
-        this.ctx.strokeStyle = '#000';
+        
+        // Add shadow for better visibility
+        this.ctx.shadowColor = 'rgba(0, 0, 0, 0.8)';
+        this.ctx.shadowBlur = 6;
+        this.ctx.shadowOffsetX = 3;
+        this.ctx.shadowOffsetY = 3;
+        
+        // Draw stroke outline first
+        this.ctx.strokeStyle = '#000000';
         this.ctx.lineWidth = 4;
         this.ctx.strokeText(text, 256, 256);
+        
+        // Draw fill text
         this.ctx.fillStyle = color;
         this.ctx.fillText(text, 256, 256);
+        
+        // Reset shadow
+        this.ctx.shadowColor = 'transparent';
+        this.ctx.shadowBlur = 0;
+        this.ctx.shadowOffsetX = 0;
+        this.ctx.shadowOffsetY = 0;
     }
 
     async previewSticker() {

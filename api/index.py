@@ -123,7 +123,12 @@ def add_sticker_to_pack_api():
             bot = application.bot
             full_pack_name = f"{pack_name}_by_{bot.username}"
 
-            sticker_to_add = InputSticker(sticker=sticker_bytes, emoji_list=["😀"])
+            from io import BytesIO
+            sticker_to_add = InputSticker(
+                sticker=BytesIO(sticker_bytes),
+                format="static",
+                emoji_list=["😀"]
+            )
 
             try:
                 await bot.get_sticker_set(full_pack_name)
