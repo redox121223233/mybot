@@ -12,7 +12,7 @@ from datetime import datetime, timezone, timedelta
 
 from flask import Flask, request, send_from_directory, jsonify
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputSticker
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, ContextTypes
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance
 import arabic_reshaper
 from bidi.algorithm import get_display
@@ -214,21 +214,29 @@ def serve_static(path):
 @app.route('/api/webhook', methods=['POST'])
 def webhook():
     """Webhook handler"""
-    if BOT_TOKEN:
-        application = Application.builder().token(BOT_TOKEN).build()
-        
-        # Add handlers
-        application.add_handler(CommandHandler("start", start))
-        application.add_handler(CommandHandler("help", help_command))
-        application.add_handler(CallbackQueryHandler(button_handler))
-        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
-        
-        try:
-            update = Update.de_json(request.get_json(), application.bot)
-            asyncio.run(application.process_update(update))
-        except Exception as e:
-            logger.error(f"Error processing update: {e}")
+    async def handle_update():
+        if BOT_TOKEN:
+            application = Application.builder().token(BOT_TOKEN).build()
+            
+            # Add handlers
+            application.add_handler(CommandHandler("start", start))
+            application.add_handler(CommandHandler("help", help_command))
+            application.add_handler(CallbackQueryHandler(button_handler))
+            application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
+            
+            try:
+                await application.initialize()
+                update = Update.de_json(request.get_json(), application.bot)
+                await application.process_update(update)
+            except Exception as e:
+                logger.error(f"Error processing update: {e}")
+            finally:
+                try:
+                    await application.shutdown()
+                except:
+                    pass
     
+    asyncio.run(handle_update())
     return "OK", 200
 
 if __name__ == "__main__":
