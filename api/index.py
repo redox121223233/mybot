@@ -290,7 +290,7 @@ def setup_telegram_app():
 # Initialize the bot
 setup_telegram_app()
 
-@app.route('/', methods=['POST'])
+@app.route('/webhook', methods=['POST'])
 def webhook():
     """Webhook endpoint to process updates from Telegram."""
     if telegram_app:
