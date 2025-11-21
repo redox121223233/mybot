@@ -29,6 +29,8 @@ CHANNEL_USERNAME = "@redoxbot_sticker"
 SUPPORT_USERNAME = "@onedaytoalive"
 DAILY_LIMIT = 5
 FORBIDDEN_WORDS = ["kos", "kir", "kon", "koss", "kiri", "koon"]
+telegram_app: Optional[Application] = None
+app_initialized = False
 
 # ==================== Data Persistence & State Management ====================
 USERS_FILE, SESSIONS_FILE = "/tmp/users.json", "/tmp/sessions.json"
@@ -276,24 +278,28 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("✅ عکس پس‌زمینه تنظیم شد. حالا متن را بفرستید.")
 
 # ==================== App Setup & Webhook ====================
-async def setup_telegram_app():
-    """Builds and initializes the Telegram bot application."""
+def build_application():
+    """Builds the application and adds handlers."""
     application = Application.builder().token(BOT_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CallbackQueryHandler(button_handler))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
     application.add_handler(MessageHandler(filters.PHOTO, photo_handler))
-    await application.initialize()
     return application
 
-telegram_app = asyncio.run(setup_telegram_app())
+telegram_app = build_application()
+app_initialized = False
 
 @app.route('/webhook', methods=['POST'])
 async def webhook():
     """Webhook endpoint to process updates from Telegram."""
-    async with telegram_app:
-        update = Update.de_json(request.get_json(), telegram_app.bot)
-        await telegram_app.process_update(update)
+    global app_initialized
+    if not app_initialized:
+        await telegram_app.initialize()
+        app_initialized = True
+
+    update = Update.de_json(request.get_json(), telegram_app.bot)
+    await telegram_app.process_update(update)
     return "OK"
 
 @app.route('/health', methods=['GET'])
