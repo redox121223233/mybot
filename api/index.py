@@ -277,7 +277,7 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("✅ عکس پس‌زمینه تنظیم شد. حالا متن را بفرستید.")
 
 # ==================== App Setup & Webhook ====================
-def setup_telegram_app():
+async def setup_telegram_app():
     """Initializes the Telegram bot application and its handlers."""
     global telegram_app
     if BOT_TOKEN:
@@ -286,9 +286,11 @@ def setup_telegram_app():
         telegram_app.add_handler(CallbackQueryHandler(button_handler))
         telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
         telegram_app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
+        await telegram_app.initialize()
 
 # Initialize the bot
-setup_telegram_app()
+if BOT_TOKEN:
+    asyncio.run(setup_telegram_app())
 
 @app.route('/webhook', methods=['POST'])
 def webhook():
