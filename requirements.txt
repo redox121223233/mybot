@@ -3,3 +3,5 @@ Pillow==10.1.0
 arabic-reshaper==3.0.0
 python-bidi==0.4.2
 pydantic-core==2.14.6
+flask==3.0.0
+python-telegram-bot==20.7
