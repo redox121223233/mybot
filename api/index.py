@@ -24,13 +24,12 @@ logger = logging.getLogger(__name__)
 app = Flask(__name__)
 
 BOT_TOKEN = os.getenv('BOT_TOKEN')
-PORT = int(os.getenv('PORT', 5000))
 ADMIN_ID = 6053579919
 CHANNEL_USERNAME = "@redoxbot_sticker"
 SUPPORT_USERNAME = "@onedaytoalive"
 DAILY_LIMIT = 5
 FORBIDDEN_WORDS = ["kos", "kir", "kon", "koss", "kiri", "koon"]
-telegram_app = None
+telegram_app: Optional[Application] = None
 
 # ==================== Data Persistence & State Management ====================
 USERS_FILE, SESSIONS_FILE = "/tmp/users.json", "/tmp/sessions.json"
@@ -277,17 +276,9 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         update_sess(user_id, s)
         await update.message.reply_text("✅ عکس پس‌زمینه تنظیم شد. حالا متن را بفرستید.")
 
-# ==================== Webhook and App Setup ====================
-@app.route('/api/webhook', methods=['POST'])
-def webhook():
-    if telegram_app:
-        asyncio.run(telegram_app.process_update(Update.de_json(request.get_json(), telegram_app.bot)))
-    return "OK", 200
-
-@app.route('/health')
-def health(): return jsonify({"status": "healthy"})
-
+# ==================== App Setup & Webhook ====================
 def setup_telegram_app():
+    """Initializes the Telegram bot application and its handlers."""
     global telegram_app
     if BOT_TOKEN:
         telegram_app = Application.builder().token(BOT_TOKEN).build()
@@ -295,11 +286,19 @@ def setup_telegram_app():
         telegram_app.add_handler(CallbackQueryHandler(button_handler))
         telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
         telegram_app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
-        return telegram_app
 
-if __name__ == "__main__":
-    if not BOT_TOKEN: logger.error("BOT_TOKEN is required!"); exit(1)
-    bot_app = setup_telegram_app()
-    if (webhook_url := os.getenv('WEBHOOK_URL')) and bot_app:
-        asyncio.run(bot_app.bot.set_webhook(webhook_url, allowed_updates=["message", "callback_query"]))
-    app.run(host='0.0.0.0', port=PORT)
+# Initialize the bot
+setup_telegram_app()
+
+@app.route('/', methods=['POST'])
+def webhook():
+    """Webhook endpoint to process updates from Telegram."""
+    if telegram_app:
+        update_data = request.get_json()
+        asyncio.run(telegram_app.process_update(Update.de_json(update_data, telegram_app.bot)))
+    return "OK", 200
+
+@app.route('/health', methods=['GET'])
+def health():
+    """Health check endpoint for Vercel."""
+    return jsonify({"status": "healthy"})
