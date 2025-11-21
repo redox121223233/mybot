@@ -1,370 +1,539 @@
 #!/usr/bin/env python3
 """
-Telegram Sticker Bot - Railway/Render Compatible Version
-Optimized for non-Vercel deployment with proper webhook handling
-"""
-import os
-import json
-import logging
-import asyncio
-import io
-import base64
-from datetime import datetime, timezone, timedelta
-from typing import Dict, Any, Optional
+ربات تلگرامی استیکر ساز - نسخه نهایی با دکمه‌های شیشه‌ای
+فقط برای سرورهای عادی (Railway/Render/Heroku) - نه Vercel!
 
-from flask import Flask, request, jsonify
-from telegram import Update, WebAppInfo, InlineKeyboardButton, InlineKeyboardMarkup, InputSticker
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
-from PIL import Image, ImageDraw, ImageFont, ImageEnhance
+Vercel نمی‌تواند این ربات را اجرا کند چون این ربات سرورLESS نیست.
+برای Vercel به وب اپ نیاز دارید، اما ربات ما فقط bot عادی است.
+"""
+
+import asyncio
+import os
+import re
+from io import BytesIO
+from typing import Dict, Any, Optional, Tuple, List
+from datetime import datetime, timezone
+import subprocess
+import traceback
+
+from aiogram import Bot, Dispatcher, F, Router
+from aiogram.types import Message, CallbackQuery, BotCommand, BufferedInputFile, InputSticker
+from aiogram.utils.keyboard import InlineKeyboardBuilder
+from aiogram.client.default import DefaultBotProperties
+from aiogram.enums import ParseMode
+from aiogram.filters import CommandStart
+from aiogram.exceptions import TelegramBadRequest
+
+from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import arabic_reshaper
 from bidi.algorithm import get_display
 
-# Configure logging
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
-logger = logging.getLogger(__name__)
+# =============== پیکربندی ===============
+BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE").strip()
+if not BOT_TOKEN:
+    raise RuntimeError("BOT_TOKEN را در محیط تنظیم کنید.")
 
-# Flask App
-app = Flask(__name__)
-
-# Configuration
-BOT_TOKEN = os.getenv('BOT_TOKEN')
-PORT = int(os.getenv('PORT', 5000))
-MINI_APP_URL = os.getenv('MINI_APP_URL', 'https://your-domain.railway.app')
+CHANNEL_USERNAME = "@redoxbot_sticker"
+SUPPORT_USERNAME = "@onedaytoalive"
 ADMIN_ID = 6053579919
-ADVANCED_DAILY_LIMIT = 3
 
-# Data storage (in production, use a database)
-USER_PACKAGES: dict[int, list] = {}
-USER_LIMITS: dict[int, dict] = {}
+MAINTENANCE = False
+DAILY_LIMIT = 5
+BOT_USERNAME = ""
 
-# Global application
-telegram_app = None
+# ============ فیلتر کلمات نامناسب ============
+FORBIDDEN_WORDS = ["kos", "kir", "kon", "koss", "kiri", "koon"]
 
-def get_user_packages(user_id: int) -> list:
-    """Get user's sticker packages"""
-    if user_id not in USER_PACKAGES:
-        USER_PACKAGES[user_id] = []
-    return USER_PACKAGES[user_id]
+# ============ حافظه ساده (in-memory) ============
+USERS: Dict[int, Dict[str, Any]] = {}
+SESSIONS: Dict[int, Dict[str, Any]] = {}
+ADMIN_PENDING: Dict[int, Dict[str, Any]] = {}
 
-def get_user_limits(user_id: int) -> dict:
-    """Get user limits"""
-    if user_id not in USER_LIMITS:
-        USER_LIMITS[user_id] = {
-            "advanced_used": 0,
-            "last_reset": datetime.now(timezone.utc).isoformat()
+def _today_start_ts() -> int:
+    now = datetime.now(timezone.utc)
+    midnight = datetime(now.year, now.month, now.day, tzinfo=timezone.utc)
+    return int(midnight.timestamp())
+
+def _reset_daily_if_needed(u: Dict[str, Any]):
+    day_start = u.get("day_start")
+    today = _today_start_ts()
+    if day_start is None or day_start < today:
+        u["day_start"] = today
+        u["ai_used"] = 0
+
+def _quota_left(u: Dict[str, Any], is_admin: bool) -> int:
+    if is_admin:
+        return 999999
+    _reset_daily_if_needed(u)
+    limit = u.get("daily_limit", DAILY_LIMIT)
+    return max(0, limit - int(u.get("ai_used", 0)))
+
+def user(uid: int) -> Dict[str, Any]:
+    if uid not in USERS:
+        USERS[uid] = {
+            "ai_used": 0, 
+            "vote": None, 
+            "day_start": _today_start_ts(), 
+            "packs": [],
+            "current_pack": None
         }
-    return USER_LIMITS[user_id]
+    _reset_daily_if_needed(USERS[uid])
+    return USERS[uid]
 
-def reset_daily_limit(user_id: int):
-    """Reset daily advanced limit if needed"""
-    limits = get_user_limits(user_id)
-    last_reset = datetime.fromisoformat(limits["last_reset"])
-    if datetime.now(timezone.utc) - last_reset > timedelta(days=1):
-        limits["advanced_used"] = 0
-        limits["last_reset"] = datetime.now(timezone.utc).isoformat()
+def sess(uid: int) -> Dict[str, Any]:
+    if uid not in SESSIONS:
+        SESSIONS[uid] = {
+            "mode": "menu",
+            "ai": {},
+            "simple": {},
+            "pack_wizard": {},
+            "await_feedback": False,
+            "last_sticker": None,
+        }
+    return SESSIONS[uid]
 
-def create_text_sticker_image(text: str, text_color: str = '#FFFFFF', background_color: str = '#000000') -> Image.Image:
-    """Create a text sticker image with transparency support"""
-    img = Image.new('RGBA', (512, 512), (0, 0, 0, 0) if background_color == 'transparent' else background_color)
-    draw = ImageDraw.Draw(img)
-    
-    try:
-        font = ImageFont.truetype("Vazirmatn-Regular.ttf", 48)
-    except:
-        font = ImageFont.load_default()
-    
-    try:
-        reshaped_text = arabic_reshaper.reshape(text)
-        bidi_text = get_display(reshaped_text)
-    except:
-        bidi_text = text
-    
-    if font:
-        bbox = draw.textbbox((0, 0), bidi_text, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-    else:
-        text_width = len(bidi_text) * 10
-        text_height = 48
-    
-    x = (512 - text_width) // 2
-    y = (512 - text_height) // 2
-    
-    draw.text((x, y), bidi_text, fill=text_color, font=font)
-    return img
+def reset_mode(uid: int):
+    s = sess(uid)
+    s["mode"] = "menu"
+    s["ai"] = {}
+    s["simple"] = {}
+    s["pack_wizard"] = {}
+    s["await_feedback"] = False
+    s["last_sticker"] = None
 
-def create_advanced_text_sticker(text: str, text_color: str = '#FFFFFF', background_color: str = 'transparent', font_size: int = 48) -> Image.Image:
-    """Create an advanced text sticker with better transparency and rendering"""
-    img = Image.new('RGBA', (512, 512), (0, 0, 0, 0))
-    
-    if background_color != 'transparent':
-        if background_color.startswith('#'):
-            bg_color = tuple(int(background_color[i:i+2], 16) for i in (1, 3, 5))
-            bg_img = Image.new('RGB', (512, 512), bg_color)
-            img = Image.new('RGBA', (512, 512))
-            img.paste(bg_img)
-    
-    draw = ImageDraw.Draw(img)
-    
-    try:
-        font_paths = ["Vazirmatn-Regular.ttf", "Vazirmatn-Bold.ttf", "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf"]
-        font = None
-        for font_path in font_paths:
-            try:
-                font = ImageFont.truetype(font_path, font_size)
-                break
-            except:
-                continue
-        if not font:
-            font = ImageFont.load_default()
-    except:
-        font = ImageFont.load_default()
-    
-    try:
-        reshaped_text = arabic_reshaper.reshape(text)
-        bidi_text = get_display(reshaped_text)
-    except:
-        bidi_text = text
-    
-    if font and hasattr(font, 'getbbox'):
-        bbox = draw.textbbox((0, 0), bidi_text, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-    else:
-        text_width = len(bidi_text) * (font_size // 2)
-        text_height = font_size
-    
-    x = (512 - text_width) // 2
-    y = (512 - text_height) // 2
-    
-    shadow_offset = 2
-    shadow_color = (0, 0, 0, 128) if background_color == 'transparent' else (0, 0, 0)
-    draw.text((x + shadow_offset, y + shadow_offset), bidi_text, fill=shadow_color, font=font)
-    
-    if text_color.startswith('#'):
-        text_color_rgb = tuple(int(text_color[i:i+2], 16) for i in (1, 3, 5))
-        draw.text((x, y), bidi_text, fill=text_color_rgb, font=font)
-    else:
-        draw.text((x, y), bidi_text, fill=text_color, font=font)
-    
-    enhancer = ImageEnhance.Sharpness(img)
-    img = enhancer.enhance(1.2)
-    
-    return img
+# ============ توابع فونت ===============
+def _load_local_fonts() -> Dict[str, str]:
+    return {
+        "vazir": "Vazirmatn-Regular.ttf",
+        "sans": "DejaVuSans.ttf",
+        "roboto": "Roboto-Regular.ttf"
+    }
 
-def image_to_webp_bytes(img: Image.Image) -> bytes:
-    """Convert PIL Image to WebP bytes"""
-    buffer = io.BytesIO()
-    img.save(buffer, format='WEBP', quality=95, method=6)
-    return buffer.getvalue()
-
-# Bot Command Handlers
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /start command"""
-    keyboard = [
-        [InlineKeyboardButton("🎨 ساخت استیکر سریع", web_app=WebAppInfo(url=MINI_APP_URL))]
+def available_font_options() -> List[Tuple[str, str]]:
+    return [
+        ("vazir", "فارسی زیبا"),
+        ("sans", "ساده فانتزی"),
+        ("roboto", "روبوتو")
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
+
+def _detect_language(text: str) -> str:
+    if re.search(r'[\u0600-\u06FF]', text):
+        return "persian"
+    elif re.search(r'[\u0750-\u077F]', text):
+        return "arabic"
+    return "latin"
+
+def resolve_font_path(font_key: Optional[str], text: str = "") -> str:
+    fonts = _load_local_fonts()
     
-    await update.message.reply_text(
-        "🎨 به ربات استیکر ساز خوش آمدید!\n\n"
-        "🌟 **امکانات ویژه:**\n"
-        "⚡ ساخت استیکر سریع و آسان\n"
-        "✏️ طراحی استیکر متنی با فونت فارسی\n"
-        "🎨 انتخاب رنگ و پس‌زمینه دلخواه\n"
-        "📦 مدیریت پک استیکر شخصی\n\n"
-        "👇 برای شروع روی دکمه زیر کلیک کنید:",
-        reply_markup=reply_markup
+    if font_key and font_key in fonts:
+        return fonts[font_key]
+    
+    lang = _detect_language(text) if text else "persian"
+    if lang == "persian":
+        return fonts["vazir"]
+    return fonts["sans"]
+
+def _prepare_text(text: str) -> str:
+    text = text.strip()
+    if len(text) > 150:
+        words = text.split()
+        text = ' '.join(words[:30])
+        if len(text) < len(text.strip()):
+            text += "..."
+    return text
+
+def is_persian(text):
+    return bool(re.search(r'[\u0600-\u06FF]', text))
+
+def is_ffmpeg_installed() -> bool:
+    try:
+        subprocess.run(['ffmpeg', '-version'], capture_output=True, check=True)
+        return True
+    except (subprocess.CalledProcessError, FileNotFoundError):
+        return False
+
+async def process_video_to_webm(video_bytes: bytes) -> Optional[bytes]:
+    if not is_ffmpeg_installed():
+        return None
+    try:
+        process = subprocess.Popen(
+            ['ffmpeg', '-i', '-', '-f', 'webm', '-c:v', 'libvpx-vp9', '-b:v', '1M', '-crf', '30', '-'],
+            stdin=subprocess.PIPE,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        stdout, stderr = process.communicate(input=video_bytes)
+        if process.returncode != 0:
+            print(f"FFmpeg error: {stderr.decode()}")
+            return None
+        return stdout
+    except Exception as e:
+        print(f"Error during video processing: {e}")
+        return None
+
+async def check_channel_membership(bot: Bot, user_id: int) -> bool:
+    try:
+        member = await bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
+        return member.status in ["member", "administrator", "creator"]
+    except Exception as e:
+        print(f"Error checking channel membership: {e}")
+        return False
+
+def _parse_hex(hx: str) -> Tuple[int, int, int, int]:
+    hx = hx.lstrip('#')
+    if len(hx) == 3:
+        hx = ''.join(c*2 for c in hx)
+    try:
+        rgb = tuple(int(hx[i:i+2], 16) for i in (0, 2, 4))
+        return (*rgb, 255)
+    except:
+        return (0, 0, 0, 255)
+
+def fit_font_size(draw: ImageDraw.ImageDraw, text: str, font_path: str, base: int, max_w: int, max_h: int) -> int:
+    for size in range(base, 20, -1):
+        try:
+            font = ImageFont.truetype(font_path, size=size) if font_path else ImageFont.load_default()
+        except:
+            font = ImageFont.load_default()
+        
+        bbox = draw.textbbox((0, 0), text, font=font)
+        w = bbox[2] - bbox[0]
+        h = bbox[3] - bbox[1]
+        if w <= max_w and h <= max_h:
+            return size
+    return 25
+
+def _make_default_bg(size=(512, 512)) -> Image.Image:
+    img = Image.new('RGBA', size, (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    
+    for i in range(0, size[0], 40):
+        for j in range(0, size[1], 40):
+            if (i // 40 + j // 40) % 2 == 0:
+                draw.rectangle([(i, j), (i+39, j+39)], fill=(255, 255, 255, 20))
+    
+    return img
+
+def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: str, size_key: str,
+                 bg_mode: str = "default") -> Image.Image:
+    W, H = 512, 512
+    text = _prepare_text(text)
+    
+    if is_persian(text):
+        try:
+            reshaped_text = arabic_reshaper.reshape(text)
+            text = get_display(reshaped_text)
+        except:
+            pass
+    
+    img = _make_default_bg((W, H)) if bg_mode == "default" else Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    draw = ImageDraw.Draw(img)
+    
+    try:
+        font_path = resolve_font_path(font_key, text)
+        base_size = 70 if size_key == "large" else 55 if size_key == "medium" else 40
+        final_size = fit_font_size(draw, text, font_path, base_size, W-60, H-60)
+        font = ImageFont.truetype(font_path, size=final_size) if font_path else ImageFont.load_default()
+    except:
+        font = ImageFont.load_default()
+    
+    bbox = draw.textbbox((0, 0), text, font=font)
+    text_w = bbox[2] - bbox[0]
+    text_h = bbox[3] - bbox[1]
+    
+    if h_pos == "left":
+        x = 20
+    elif h_pos == "right":
+        x = W - text_w - 20
+    else:
+        x = (W - text_w) // 2
+    
+    if v_pos == "top":
+        y = 20
+    elif v_pos == "bottom":
+        y = H - text_h - 20
+    else:
+        y = (H - text_h) // 2
+    
+    color = _parse_hex(color_hex)
+    draw.text((x, y), text, fill=color, font=font)
+    return img
+
+# ============ منوی اصلی با دکمه‌های شیشه‌ای ============
+def main_menu_kb(is_admin: bool = False):
+    builder = InlineKeyboardBuilder()
+    
+    # ردیف اول - دکمه‌های اصلی شیشه‌ای
+    builder.row(
+        InlineKeyboardButton(text="🎨 ساخت استیکر سریع", callback_data="simple_mode"),
+        InlineKeyboardButton(text="✨ استیکر پیشرفته", callback_data="ai_mode")
     )
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /help command"""
-    help_text = """
-🎨 **ربات استیکر ساز حرفه‌ای**
-
-**🚀 امکانات:**
-• 🎯 ساخت استیکر متن فارسی با فونت‌های متنوع
-• 🌈 انتخاب رنگ و پس‌زمینه دلخواه  
-• 📸 تبدیل عکس به استیکر
-• 📦 مدیریت پک استیکر شخصی
-• ⚡ عملکرد سریع و رابط کاربری آسان
-
-**📱 دستورات:**
-/start - شروع و ساخت استیکر
-/help - مشاهده این راهنما
-/my_packs - پک‌های استیکر شما
-
-🔗 [وب‌اپ ربات](URL)
-
-❓ نیاز به راهنمایی؟ پشتیبانی در دسترس است!
-    """
-    await update.message.reply_text(help_text, parse_mode='Markdown')
-
-async def my_packs(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Show user's sticker packs"""
-    user_id = update.effective_user.id
-    packages = get_user_packages(user_id)
     
-    if not packages:
-        await update.message.reply_text("🎨 شما هنوز پک استیکری نساخته‌اید!\n\nبرای ساخت اولین استیکر، روی دکمه 🎨 ساخت استیکر سریع کلیک کنید.")
+    # ردیف دوم - مدیریت
+    builder.row(
+        InlineKeyboardButton(text="📦 مدیریت پک‌ها", callback_data="pack_manage"),
+        InlineKeyboardButton(text="⚙️ تنظیمات", callback_data="settings")
+    )
+    
+    # ردیف سوم - اطلاعاتی
+    builder.row(
+        InlineKeyboardButton(text="📊 آمار کاربری", callback_data="user_stats"),
+        InlineKeyboardButton(text="❓ راهنما", callback_data="help_menu")
+    )
+    
+    # ردیف چهارم - لینک‌ها
+    builder.row(
+        InlineKeyboardButton(text="🌐 کانال", url=f"https://t.me/{CHANNEL_USERNAME.lstrip('@')}"),
+        InlineKeyboardButton(text="💬 پشتیبانی", url=f"https://t.me/{SUPPORT_USERNAME.lstrip('@')}")
+    )
+    
+    if is_admin:
+        builder.row(InlineKeyboardButton(text="🔧 پنل ادمین", callback_data="admin_panel"))
+    
+    return builder.as_markup()
+
+# ============ ربات ===============
+router = Router()
+
+@router.message(CommandStart())
+async def start_handler(message: Message):
+    uid = message.from_user.id
+    reset_mode(uid)
+    
+    welcome_text = f"""
+✨ **به ربات استیکر ساز خوش آمدید!** ✨
+
+🎯 یک ربات حرفه‌ای برای ساخت استیکرهای شخصی با کیفیت بالا
+
+🔥 **ویژگی‌های اصلی:**
+• 🎨 ساخت استیکر متن (فارسی و انگلیسی)
+• 🎬 تبدیل ویدیو به استیکر متحرک
+• 📦 مدیریت پک‌های استیکر
+• 🌟 کیفیت عالی و سرعت بالا
+
+📝 **لطفاً یکی از گزینه‌های زیر را انتخاب کنید:**
+    """
+    
+    is_admin = (uid == ADMIN_ID)
+    await message.answer(welcome_text, reply_markup=main_menu_kb(is_admin))
+
+@router.callback_query(F.data == "simple_mode")
+async def simple_mode_handler(callback: CallbackQuery):
+    uid = callback.from_user.id
+    sess(uid)["mode"] = "simple"
+    
+    text = """
+🎨 **ساخت استیکر سریع**
+
+لطفاً متن مورد نظر خود را بنویسید یا عکس/ویدیو بفرستید:
+
+⚡ نکات:
+• متن: حداکثر 150 کاراکتر
+• عکس: تبدیل به استیکر با متن
+• ویدیو: تبدیل به استیکر متحرک
+• پشتیبانی از فارسی و انگلیسی
+    """
+    
+    await callback.message.edit_text(text, reply_markup=back_to_menu_kb(uid == ADMIN_ID))
+    await callback.answer()
+
+def back_to_menu_kb(is_admin: bool = False):
+    builder = InlineKeyboardBuilder()
+    builder.row(InlineKeyboardButton(text="🔙 بازگشت به منو", callback_data="back_to_menu"))
+    if is_admin:
+        builder.row(InlineKeyboardButton(text="🔧 پنل ادمین", callback_data="admin_panel"))
+    return builder.as_markup()
+
+@router.callback_query(F.data == "ai_mode")
+async def ai_mode_handler(callback: CallbackQuery):
+    uid = callback.from_user.id
+    u = user(uid)
+    left = _quota_left(u, uid == ADMIN_ID)
+    
+    if left <= 0 and uid != ADMIN_ID:
+        await callback.message.edit_text(
+            "❌ سهمیه شما امروز تمام شده است!\n\n"
+            "برای استفاده بیشتر به کانال ما بپیوندید:\n"
+            f"📺 {CHANNEL_USERNAME}",
+            reply_markup=back_to_menu_kb(False)
+        )
+        await callback.answer()
         return
     
-    text = "📦 **پک‌های استیکر شما:**\n\n"
-    keyboard = []
+    sess(uid)["mode"] = "ai"
+    sess(uid)["ai"] = {}
     
-    for pkg in packages:
-        text += f"🎨 {pkg['name']}\n"
-        text += f"📊 تعداد استیکر: {len(pkg.get('stickers', []))}\n"
-        text += f"📅 ساخته شده: {pkg.get('created_at', 'N/A')}\n\n"
-        
-        if 'url' in pkg:
-            keyboard.append([InlineKeyboardButton(
-                f"🔗 {pkg['name']}", 
-                url=pkg['url']
-            )])
+    text = f"""
+✨ **استیکر پیشرفته**
+
+🎯 سهمیه باقی‌مانده: {left} استیکر
+
+لطفاً نوع استیکر را انتخاب کنید:
+    """
     
-    keyboard.append([InlineKeyboardButton(
-        "🎨 ساخت استیکر جدید", 
-        web_app=WebAppInfo(url=MINI_APP_URL)
-    )])
+    builder = InlineKeyboardBuilder()
+    builder.row(
+        InlineKeyboardButton(text="📝 متن پیشرفته", callback_data="ai:text"),
+        InlineKeyboardButton(text="🎬 ویدیو به استیکر", callback_data="ai:video")
+    )
+    builder.row(InlineKeyboardButton(text="🔙 بازگشت", callback_data="back_to_menu"))
     
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+    await callback.message.edit_text(text, reply_markup=builder.as_markup())
+    await callback.answer()
 
-# Flask Routes
-@app.route('/')
-def home():
-    """Home route with mini app"""
-    return '''
-    <!DOCTYPE html>
-    <html lang="fa" dir="rtl">
-    <head>
-        <meta charset="UTF-8">
-        <meta name="viewport" content="width=device-width, initial-scale=1.0">
-        <title>ربات استیکر ساز</title>
-        <style>
-            body { font-family: Arial, sans-serif; background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); min-height: 100vh; display: flex; align-items: center; justify-content: center; margin: 0; }
-            .container { background: white; border-radius: 20px; padding: 40px; box-shadow: 0 20px 60px rgba(0,0,0,0.3); text-align: center; max-width: 400px; }
-            .emoji { font-size: 60px; margin-bottom: 20px; }
-            h1 { color: #333; margin-bottom: 20px; }
-            p { color: #666; margin-bottom: 30px; line-height: 1.6; }
-            .btn { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; border: none; padding: 15px 30px; border-radius: 25px; font-size: 16px; cursor: pointer; text-decoration: none; display: inline-block; transition: transform 0.2s; }
-            .btn:hover { transform: scale(1.05); }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="emoji">🎨</div>
-            <h1>ربات استیکر ساز</h1>
-            <p>با این ربات حرفه‌ای، به سادگی استیکرهای دلخواه خود را بسازید!</p>
-            <a href="https://t.me/your_bot_username" class="btn">🚀 شروع کنید</a>
-        </div>
-    </body>
-    </html>
-    '''
+@router.callback_query(F.data == "back_to_menu")
+async def back_to_menu_handler(callback: CallbackQuery):
+    uid = callback.from_user.id
+    reset_mode(uid)
+    
+    text = """
+🏠 **منوی اصلی**
 
-@app.route('/api/create-default-sticker', methods=['POST'])
-def create_default_sticker():
-    """Create a default sticker"""
-    try:
-        data = request.get_json()
-        text = data.get('text', 'استیکر پیش‌فرض')
-        color = data.get('color', '#FFFFFF')
-        background_color = data.get('background_color', '#000000')
-        
-        sticker_image = create_text_sticker_image(text, color, background_color)
-        
-        buffer = io.BytesIO()
-        sticker_image.save(buffer, format='WEBP', quality=95, method=6)
-        sticker_base64 = base64.b64encode(buffer.getvalue()).decode()
-        sticker_data = f"data:image/webp;base64,{sticker_base64}"
-        
-        return jsonify({
-            'success': True,
-            'sticker': sticker_data,
-            'message': 'Default sticker created successfully'
-        })
-        
-    except Exception as e:
-        logger.error(f"Error creating default sticker: {e}")
-        return jsonify({'error': 'Failed to create default sticker'}), 500
+لطفاً خدمات مورد نظر را انتخاب کنید:
+    """
+    
+    is_admin = (uid == ADMIN_ID)
+    await callback.message.edit_text(text, reply_markup=main_menu_kb(is_admin))
+    await callback.answer()
 
-@app.route('/api/create-text-sticker', methods=['POST'])
-def create_text_sticker():
-    """Create a custom text sticker"""
-    try:
-        data = request.get_json()
-        text = data.get('text', 'استیکر متنی')
-        color = data.get('color', '#FFFFFF')
-        background_color = data.get('background_color', 'transparent')
-        font_size = data.get('font_size', 48)
+@router.callback_query(F.data.startswith("ai:"))
+async def ai_mode_callback(callback: CallbackQuery):
+    uid = callback.from_user.id
+    action = callback.data.split(":")[1]
+    s = sess(uid)
+    
+    if action == "text":
+        s["ai"]["sticker_type"] = "image"
+        await callback.message.edit_text(
+            "✨ **متن پیشرفته**\n\n"
+            "لطفاً متن خود را بنویسید (تا 150 کاراکتر):",
+            reply_markup=back_to_menu_kb(uid == ADMIN_ID)
+        )
+    elif action == "video":
+        s["ai"]["sticker_type"] = "video"
+        await callback.message.edit_text(
+            "🎬 **ویدیو به استیکر**\n\n"
+            "لطفاً ویدیوی خود را بفرستید:\n"
+            "• حداکثر حجم: 50MB\n"
+            "• فرمت‌های: MP4, AVI, MOV",
+            reply_markup=back_to_menu_kb(uid == ADMIN_ID)
+        )
+    
+    await callback.answer()
+
+@router.message()
+async def message_handler(message: Message):
+    uid = message.from_user.id
+    is_admin = (uid == ADMIN_ID)
+    s = sess(uid)
+    
+    if MAINTENANCE and not is_admin:
+        await message.answer("🔧 ربات در حال تعمیر است. لطفاً بعداً تلاش کنید.")
+        return
+    
+    if message.photo and s.get("mode") == "simple":
+        await message.answer("📷 عکس دریافت شد. لطفاً متن استیکر را بفرستید:")
+        return
+    
+    if message.video and s.get("mode") == "ai" and s["ai"].get("sticker_type") == "video":
+        await message.answer("🎬 در حال پردازش ویدیو...")
+        file = await message.bot.download(message.video.file_id)
+        webm_bytes = await process_video_to_webm(file.read())
         
-        if not text:
-            return jsonify({'error': 'Text required'}), 400
+        if webm_bytes:
+            sess(uid)["last_sticker"] = webm_bytes
+            await message.answer_sticker(BufferedInputFile(webm_bytes, "sticker.webm"))
+            await message.answer("✅ استیکر ویدیویی شما با موفقیت ساخته شد!", reply_markup=back_to_menu_kb(is_admin))
             
-        sticker_image = create_advanced_text_sticker(text, color, background_color, font_size)
-        
-        buffer = io.BytesIO()
-        if background_color == 'transparent':
-            sticker_image.save(buffer, format='WEBP', quality=95, method=6, lossless=False)
+            u = user(uid)
+            if not is_admin:
+                u["ai_used"] += 1
         else:
-            sticker_image.save(buffer, format='WEBP', quality=95, method=6)
-        sticker_base64 = base64.b64encode(buffer.getvalue()).decode()
-        sticker_data = f"data:image/webp;base64,{sticker_base64}"
-        
-        return jsonify({
-            'success': True,
-            'sticker': sticker_data,
-            'message': 'Text sticker created successfully'
-        })
-        
-    except Exception as e:
-        logger.error(f"Error creating text sticker: {e}")
-        return jsonify({'error': 'Failed to create text sticker'}), 500
+            await message.answer("❌ پردازش ویدیو با خطا مواجه شد.", reply_markup=back_to_menu_kb(is_admin))
+        return
+    
+    mode = s.get("mode", "menu")
+    
+    if mode == "simple":
+        if message.text:
+            s["simple"]["text"] = message.text.strip()
+            await message.answer("🎨 در حال ساخت استیکر شما...")
+            
+            try:
+                img = render_image(
+                    text=message.text,
+                    v_pos="center",
+                    h_pos="center", 
+                    font_key="vazir",
+                    color_hex="#FFFFFF",
+                    size_key="large",
+                    bg_mode="default"
+                )
+                
+                bio = BytesIO()
+                bio.name = 'sticker.png'
+                img.save(bio, 'PNG')
+                bio.seek(0)
+                
+                await message.answer_sticker(BufferedInputFile(bio.read(), 'sticker.webp'))
+                await message.answer("✅ استیکر شما با موفقیت ساخته شد!", reply_markup=back_to_menu_kb(is_admin))
+                
+            except Exception as e:
+                await message.answer(f"❌ خطا در ساخت استیکر: {str(e)}", reply_markup=back_to_menu_kb(is_admin))
+    
+    elif mode == "ai":
+        if message.text and s["ai"].get("sticker_type") == "image":
+            u = user(uid)
+            left = _quota_left(u, is_admin)
+            if left <= 0 and not is_admin:
+                await message.answer("❌ سهمیه شما تمام شد!", reply_markup=back_to_menu_kb(is_admin))
+                return
+            
+            s["ai"]["text"] = message.text.strip()
+            await message.answer("🎨 در حال ساخت استیکر پیشرفته...")
+            
+            try:
+                img = render_image(
+                    text=message.text,
+                    v_pos="center",
+                    h_pos="center", 
+                    font_key="vazir",
+                    color_hex="#FF6B6B",
+                    size_key="large",
+                    bg_mode="transparent"
+                )
+                
+                bio = BytesIO()
+                bio.name = 'sticker.png'
+                img.save(bio, 'PNG')
+                bio.seek(0)
+                
+                await message.answer_sticker(BufferedInputFile(bio.read(), 'sticker.webp'))
+                await message.answer("✅ استیکر پیشرفته شما با موفقیت ساخته شد!", reply_markup=back_to_menu_kb(is_admin))
+                
+                if not is_admin:
+                    u["ai_used"] += 1
+                
+            except Exception as e:
+                await message.answer(f"❌ خطا در ساخت استیکر: {str(e)}", reply_markup=back_to_menu_kb(is_admin))
+    
+    else:
+        is_admin = (uid == ADMIN_ID)
+        await message.answer("🏠 از منوی اصلی انتخاب کنید:", reply_markup=main_menu_kb(is_admin))
 
-@app.route('/api/webhook', methods=['POST'])
-def webhook():
-    """Telegram webhook handler"""
-    if telegram_app:
-        update = Update.de_json(request.get_json(), telegram_app.bot)
-        asyncio.run(telegram_app.process_update(update))
-    return "OK", 200
+async def main():
+    global BOT_USERNAME
 
-@app.route('/health')
-def health():
-    """Health check endpoint"""
-    return jsonify({"status": "healthy", "timestamp": datetime.now().isoformat()}), 200
+    dp = Dispatcher()
+    dp.include_router(router)
+    bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
 
-def setup_telegram_app():
-    """Setup telegram application"""
-    global telegram_app
-    if BOT_TOKEN:
-        telegram_app = Application.builder().token(BOT_TOKEN).build()
-        
-        # Add handlers
-        telegram_app.add_handler(CommandHandler("start", start))
-        telegram_app.add_handler(CommandHandler("help", help_command))
-        telegram_app.add_handler(CommandHandler("my_packs", my_packs))
-        
-        return telegram_app
-    return None
+    bot_info = await bot.get_me()
+    BOT_USERNAME = bot_info.username
+    print(f"ربات با نام کاربری @{BOT_USERNAME} شروع به کار کرد")
+
+    await dp.start_polling(bot)
 
 if __name__ == "__main__":
-    if not BOT_TOKEN:
-        logger.error("BOT_TOKEN is required!")
-        exit(1)
-    
-    # Setup Telegram app
-    bot_app = setup_telegram_app()
-    
-    # Set webhook if running in production
-    webhook_url = os.getenv('WEBHOOK_URL')
-    if webhook_url and bot_app:
-        logger.info(f"Setting webhook to: {webhook_url}")
-        asyncio.run(bot_app.bot.set_webhook(webhook_url))
-    
-    # Run Flask app
-    app.run(host='0.0.0.0', port=PORT)
+    asyncio.run(main())
