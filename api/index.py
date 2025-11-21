@@ -293,11 +293,11 @@ if BOT_TOKEN:
     asyncio.run(setup_telegram_app())
 
 @app.route('/webhook', methods=['POST'])
-def webhook():
+async def webhook():
     """Webhook endpoint to process updates from Telegram."""
     if telegram_app:
         update_data = request.get_json()
-        asyncio.run(telegram_app.process_update(Update.de_json(update_data, telegram_app.bot)))
+        await telegram_app.process_update(Update.de_json(update_data, telegram_app.bot))
     return "OK", 200
 
 @app.route('/health', methods=['GET'])
