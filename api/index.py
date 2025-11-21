@@ -1,308 +1,250 @@
-#!/usr/bin/env python3
-"""
-Telegram Sticker Bot - Vercel Edition
-"""
-import os
+import asyncio
 import json
 import logging
-import asyncio
-import io
-from datetime import datetime, timezone
-from typing import Dict, Any, Optional, Tuple
-
-from flask import Flask, request, jsonify
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputSticker
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
-from telegram.error import BadRequest
+import os
+from telegram import Update, Bot
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext, ConversationHandler, CallbackQueryHandler
+from flask import Flask, request as flask_request
 from PIL import Image, ImageDraw, ImageFont
 import arabic_reshaper
 from bidi.algorithm import get_display
 
-# ==================== Basic Configuration ====================
-logging.basicConfig(level=logging.INFO)
+# Enable logging
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO
+)
 logger = logging.getLogger(__name__)
+
+# Bot initialization flag
+bot_initialized = False
+
+# Stages for sticker creation
+PHOTO, TEXT, CONFIRM = range(3)
+# States for main menu
+MENU_STATE = 'MENU'
+# Admin user ID
+ADMIN_ID = 5935332189
+# Path for font file
+FONT_FILE = os.path.join(os.path.dirname(__file__), 'Vazirmatn-Regular.ttf')
+
+# Data storage paths in Vercel's writable directory
+USERS_FILE = '/tmp/users.json'
+SESSIONS_FILE = '/tmp/sessions.json'
+
+def load_data(file_path):
+    """Loads data from a JSON file."""
+    try:
+        if os.path.exists(file_path):
+            with open(file_path, 'r') as f:
+                return json.load(f)
+    except (json.JSONDecodeError, FileNotFoundError):
+        return {}
+    return {}
+
+def save_data(data, file_path):
+    """Saves data to a JSON file."""
+    try:
+        with open(file_path, 'w') as f:
+            json.dump(data, f, indent=4)
+    except Exception as e:
+        logger.error(f"Error saving data to {file_path}: {e}")
+
+# Load initial data
+users = load_data(USERS_FILE)
+sessions = load_data(SESSIONS_FILE)
+logger.info(f"Initial users loaded: {list(users.keys())}")
+
+def save_all_data():
+    """Saves both users and sessions data."""
+    save_data(users, USERS_FILE)
+    save_data(sessions, SESSIONS_FILE)
+
+async def start(update: Update, context: CallbackContext) -> int:
+    """Sends a welcome message and directs the user to the main menu."""
+    user = update.effective_user
+    user_id = str(user.id)
+    logger.info(f"User {user.id} ({user.first_name}) started the bot.")
+
+    if user_id not in users:
+        try:
+            # Note: Replace '@YOUR_CHANNEL_ID' with your actual channel ID
+            chat_member = await context.bot.get_chat_member(chat_id='@YOUR_CHANNEL_ID', user_id=user.id)
+            if chat_member.status in ['member', 'administrator', 'creator']:
+                users[user_id] = {'subscribed': True, 'name': user.first_name}
+                save_all_data()
+            else:
+                await update.message.reply_text("Please join our channel to use the bot.")
+                return ConversationHandler.END
+        except Exception as e:
+            logger.error(f"Could not check channel subscription for {user_id}: {e}")
+            await update.message.reply_text("Welcome! We couldn't verify your channel subscription, but you can proceed.")
+
+    sessions[user_id] = {}
+    save_all_data()
+    await update.message.reply_text("Welcome to the sticker bot! Please send a photo to start.")
+    return PHOTO
+
+async def photo_handler(update: Update, context: CallbackContext) -> int:
+    """Stores the photo and asks for the text."""
+    user_id = str(update.effective_user.id)
+    photo_file = await update.message.photo[-1].get_file()
+    photo_path = f'/tmp/user_photo_{user_id}.jpg'
+    await photo_file.download_to_drive(photo_path)
+
+    sessions[user_id]['photo'] = photo_path
+    save_all_data()
+
+    await update.message.reply_text("Great! Now, please send the text you want to add to the sticker.")
+    return TEXT
+
+async def text_handler(update: Update, context: CallbackContext) -> int:
+    """Stores the text and shows a confirmation."""
+    user_id = str(update.effective_user.id)
+    text = update.message.text
+    sessions[user_id]['text'] = text
+    save_all_data()
+
+    await update.message.reply_text(f"Your text is: '{text}'. Is this correct? (yes/no)")
+    return CONFIRM
+
+async def confirm_handler(update: Update, context: CallbackContext) -> int:
+    """Processes the confirmation and creates the sticker."""
+    user_id = str(update.effective_user.id)
+    user_response = update.message.text.lower()
+
+    if user_response == 'yes':
+        try:
+            photo_path = sessions[user_id]['photo']
+            text = sessions[user_id]['text']
+
+            # Create the sticker
+            reshaped_text = arabic_reshaper.reshape(text)
+            bidi_text = get_display(reshaped_text)
+
+            image = Image.open(photo_path).convert("RGBA")
+            txt_layer = Image.new("RGBA", image.size, (255, 255, 255, 0))
+            draw = ImageDraw.Draw(txt_layer)
+            
+            try:
+                font = ImageFont.truetype(FONT_FILE, 40)
+            except IOError:
+                logger.error(f"Font file not found at {FONT_FILE}. Using default font.")
+                font = ImageFont.load_default()
+
+            draw.text((10, 10), bidi_text, font=font, fill=(0, 0, 0, 255))
+            out = Image.alpha_composite(image, txt_layer)
+
+            sticker_path = f'/tmp/sticker_{user_id}.webp'
+            out.save(sticker_path, 'WEBP')
+
+            # Send the sticker
+            with open(sticker_path, 'rb') as sticker_file:
+                await update.message.reply_sticker(sticker=sticker_file)
+
+            await update.message.reply_text("Here is your sticker! Send another photo to create a new one.")
+
+            # Clean up session
+            if os.path.exists(photo_path):
+                os.remove(photo_path)
+            if os.path.exists(sticker_path):
+                os.remove(sticker_path)
+            del sessions[user_id]
+            save_all_data()
+
+            return PHOTO
+
+        except Exception as e:
+            logger.error(f"Error creating sticker for user {user_id}: {e}")
+            await update.message.reply_text("Sorry, something went wrong. Please try again from the beginning by sending a photo.")
+            return PHOTO
+
+    else:
+        await update.message.reply_text("Okay, let's try again. Please send the text.")
+        return TEXT
+
+
+async def cancel(update: Update, context: CallbackContext) -> int:
+    """Cancels and ends the conversation."""
+    user = update.effective_user
+    user_id = str(user.id)
+    logger.info(f"User {user.first_name} canceled the conversation.")
+
+    # Clean up user's session data
+    if user_id in sessions:
+        if 'photo' in sessions[user_id] and os.path.exists(sessions[user_id]['photo']):
+            os.remove(sessions[user_id]['photo'])
+        del sessions[user_id]
+        save_all_data()
+
+    await update.message.reply_text(
+        'Sticker creation canceled. Send a photo anytime to start over.'
+    )
+    return ConversationHandler.END
+
+async def post_init(application: Application):
+    """Sets the webhook after the application is initialized."""
+    webhook_url = f"https://{os.environ.get('VERCEL_URL')}/api/index"
+    await application.bot.set_webhook(url=webhook_url, allowed_updates=Update.ALL_TYPES)
+    logger.info(f"Webhook set to {webhook_url}")
+
+# --- Flask App ---
 app = Flask(__name__)
 
-BOT_TOKEN = os.getenv('BOT_TOKEN')
-ADMIN_ID = 6053579919
-CHANNEL_USERNAME = "@redoxbot_sticker"
-SUPPORT_USERNAME = "@onedaytoalive"
-DAILY_LIMIT = 5
-FORBIDDEN_WORDS = ["kos", "kir", "kon", "koss", "kiri", "koon"]
-telegram_app: Optional[Application] = None
-app_initialized = False
+# --- Telegram Bot Application Setup ---
+# We build the application instance once when the module is loaded.
+telegram_app = (
+    Application.builder()
+    .token(os.environ.get("TELEGRAM_TOKEN"))
+    .post_init(post_init)
+    .build()
+)
 
-# ==================== Data Persistence & State Management ====================
-USERS_FILE, SESSIONS_FILE = "/tmp/users.json", "/tmp/sessions.json"
+# Add conversation handler with the states
+conv_handler = ConversationHandler(
+    entry_points=[CommandHandler('start', start), MessageHandler(filters.PHOTO, photo_handler)],
+    states={
+        PHOTO: [MessageHandler(filters.PHOTO, photo_handler)],
+        TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, text_handler)],
+        CONFIRM: [MessageHandler(filters.Regex('^(?i)(yes|no)$'), confirm_handler)],
+    },
+    fallbacks=[CommandHandler('cancel', cancel)],
+)
+telegram_app.add_handler(conv_handler)
 
-def _load_data(filename: str) -> Dict:
-    try:
-        with open(filename, 'r') as f: return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        with open(filename, 'w') as f: json.dump({}, f)
-        return {}
 
-def _save_data(filename: str, data: Dict):
-    with open(filename, 'w') as f: json.dump(data, f, indent=2)
-
-def _today_start_ts() -> int:
-    now = datetime.now(timezone.utc)
-    return int(datetime(now.year, now.month, now.day, tzinfo=timezone.utc).timestamp())
-
-def user(uid: int, full_data=False):
-    users = _load_data(USERS_FILE)
-    uid_str = str(uid)
-    if uid_str not in users:
-        users[uid_str] = {"ai_used": 0, "daily_limit": DAILY_LIMIT, "day_start": _today_start_ts(), "packs": [], "current_pack": None}
-    if users[uid_str].get("day_start", 0) < _today_start_ts():
-        users[uid_str]["day_start"] = _today_start_ts()
-        users[uid_str]["ai_used"] = 0
-    _save_data(USERS_FILE, users)
-    return users if full_data else users[uid_str]
-
-def sess(uid: int):
-    return _load_data(SESSIONS_FILE).get(str(uid), {"mode": "menu", "data": {}})
-
-def update_sess(uid: int, session_data: Dict):
-    sessions = _load_data(SESSIONS_FILE)
-    sessions[str(uid)] = session_data
-    _save_data(SESSIONS_FILE, sessions)
-
-def reset_mode(uid: int):
-    update_sess(uid, {"mode": "menu", "data": {}})
-
-# ==================== Keyboard Layouts ====================
-def main_menu_kb(is_admin: bool = False):
-    keyboard = [[InlineKeyboardButton("استیکر ساده", callback_data="menu:simple"), InlineKeyboardButton("استیکر پیشرفته", callback_data="menu:ai")],
-                [InlineKeyboardButton("سهمیه امروز", callback_data="menu:quota"), InlineKeyboardButton("راهنما", callback_data="menu:help")],
-                [InlineKeyboardButton("پشتیبانی", url=f"https://t.me/{SUPPORT_USERNAME.replace('@', '')}")]]
-    if is_admin: keyboard.append([InlineKeyboardButton("پنل ادمین", callback_data="menu:admin")])
-    return InlineKeyboardMarkup(keyboard)
-
-def back_to_menu_kb(is_admin: bool = False):
-    keyboard = [[InlineKeyboardButton("بازگشت به منو", callback_data="menu:home")]]
-    if is_admin: keyboard[0].append(InlineKeyboardButton("پنل ادمین", callback_data="menu:admin"))
-    return InlineKeyboardMarkup(keyboard)
-
-def simple_bg_kb():
-    return InlineKeyboardMarkup([[InlineKeyboardButton("شفاف", callback_data="simple:bg:transparent"), InlineKeyboardButton("ارسال عکس", callback_data="simple:bg:photo_prompt")]])
-
-def after_preview_kb(prefix: str):
-    return InlineKeyboardMarkup([[InlineKeyboardButton("✅ تایید", callback_data=f"{prefix}:confirm"), InlineKeyboardButton("✏️ ویرایش", callback_data=f"{prefix}:edit")],
-                                 [InlineKeyboardButton("بازگشت", callback_data="menu:home")]])
-
-def pack_selection_kb(uid: int):
-    keyboard, user_data = [], user(uid)
-    packs = user_data.get("packs", [])
-    current_pack_name = user_data.get("current_pack")
-    current_pack = next((p for p in packs if p["short_name"] == current_pack_name), None)
-    if current_pack: keyboard.append([InlineKeyboardButton(f"📦 {current_pack['name']} (فعلی)", callback_data=f"pack:select:{current_pack['short_name']}")])
-    for p in packs:
-        if not current_pack or p['short_name'] != current_pack['short_name']:
-            keyboard.append([InlineKeyboardButton(f"📦 {p['name']}", callback_data=f"pack:select:{p['short_name']}")])
-    keyboard.append([InlineKeyboardButton("➕ ساخت پک جدید", callback_data="pack:new")])
-    return InlineKeyboardMarkup(keyboard)
-
-def ai_vpos_kb():
-    return InlineKeyboardMarkup([[InlineKeyboardButton(t, callback_data=f"ai:vpos:{v}") for t, v in [("🔺 بالا","top"),("↔️ وسط","center"),("🔻 پایین","bottom")]]])
-
-def ai_hpos_kb():
-    return InlineKeyboardMarkup([[InlineKeyboardButton(t, callback_data=f"ai:hpos:{v}") for t, v in [(" راست","right"),("وسط","center"),("چپ ","left")]]])
-
-def color_palette_kb(prefix: str):
-    colors = [("⚪️","#FFFFFF"),("⚫️","#000000"),("🔴","#F43F5E"),("🔵","#3B82F6"),("🟢","#22C55E"),("🟡","#EAB308"),("🟣","#8B5CF6"),("🟠","#F97316")]
-    keyboard = [InlineKeyboardButton(t, callback_data=f"{prefix}:color:{h}") for t,h in colors]
-    return InlineKeyboardMarkup([keyboard[i:i+4] for i in range(0, len(keyboard), 4)])
-
-# ==================== Sticker Rendering Logic ====================
-def _prepare_text(text: str) -> str:
-    try: return get_display(arabic_reshaper.reshape(text))
-    except: return text
-
-def _parse_hex(hx: str) -> Tuple[int, int, int, int]:
-    hx = (hx or "#ffffff").lstrip("#")
-    return tuple(int(hx[i:i+2], 16) for i in (0, 2, 4)) + (255,)
-
-def fit_font_size(draw, text, font_path, base_size, max_w, max_h):
-    size = base_size
-    while size > 12:
-        try:
-            font = ImageFont.truetype(font_path, size=size)
-            bbox = draw.textbbox((0,0), text, font)
-            if (bbox[2]-bbox[0]) <= max_w and (bbox[3]-bbox[1]) <= max_h: return size
-        except IOError: return 32
-        size -= 2
-    return size
-
-def render_image(data: Dict) -> bytes:
-    W, H = (512, 512)
-    bg_photo_hex = data.get("bg_photo")
-    bg_photo = bytes.fromhex(bg_photo_hex) if bg_photo_hex else None
-    img = Image.open(io.BytesIO(bg_photo)).convert("RGBA").resize((W,H)) if bg_photo else Image.new("RGBA",(W,H),(0,0,0,0))
-    draw = ImageDraw.Draw(img)
-    
-    font_path, txt = "Vazirmatn-Regular.ttf", _prepare_text(data["text"])
-    size_key = data.get("size", "medium")
-    size_map = {"small":64,"medium":96,"large":128}
-    size = fit_font_size(draw, txt, font_path, size_map[size_key], W-80, H-80)
-    font = ImageFont.truetype(font_path, size=size)
-    
-    bbox = draw.textbbox((0,0), txt, font)
-    v_pos = data.get("v_pos", "center")
-    h_pos = data.get("h_pos", "center")
-    y = 40 if v_pos=="top" else H-40-(bbox[3]-bbox[1]) if v_pos=="bottom" else (H-(bbox[3]-bbox[1]))/2
-    anchor, x = "mm", W/2
-    if h_pos == "left": anchor, x = "lm", 40
-    elif h_pos == "right": anchor, x = "rm", W-40
-    
-    color = data.get("color", "#FFFFFF")
-    draw.text((x,y), txt, font=font, fill=_parse_hex(color), anchor=anchor, stroke_width=2, stroke_fill=(0,0,0,180))
-    buf = io.BytesIO()
-    img.save(buf, format="WEBP")
-    return buf.getvalue()
-
-# ==================== Bot Handlers ====================
-async def require_channel_membership(update: Update, context: ContextTypes.DEFAULT_TYPE) -> bool:
-    user_id = update.effective_user.id
-    try:
-        member = await context.bot.get_chat_member(CHANNEL_USERNAME, user_id)
-        if member.status in ['member', 'administrator', 'creator']: return True
-    except BadRequest: pass
-    
-    kb = [[InlineKeyboardButton("عضویت در کانال", url=f"https://t.me/{CHANNEL_USERNAME.lstrip('@')}")], [InlineKeyboardButton("✅ بررسی عضویت", callback_data="check_membership")]]
-    text = "👋 سلام! برای استفاده از ربات، لطفاً ابتدا در کانال ما عضو شوید و سپس روی «بررسی عضویت» کلیک کنید."
-    if update.callback_query: await update.callback_query.edit_message_text(text, reply_markup=InlineKeyboardMarkup(kb))
-    else: await update.message.reply_text(text, reply_markup=InlineKeyboardMarkup(kb))
-    return False
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if await require_channel_membership(update, context):
-        reset_mode(update.effective_user.id)
-        await update.message.reply_text("سلام! به ربات استیکرساز خوش آمدید:", reply_markup=main_menu_kb(update.effective_user.id == ADMIN_ID))
-
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query, user_id = update.callback_query, update.effective_user.id
-    await query.answer()
-    if query.data == "check_membership":
-        if await require_channel_membership(update, context):
-            await query.edit_message_text("✅ عضویت شما تایید شد!", reply_markup=main_menu_kb(user_id == ADMIN_ID))
-        else:
-            await query.answer("❗️ هنوز در کانال عضو نشده‌اید.", show_alert=True)
-        return
-
-    if not await require_channel_membership(update, context): return
-
-    parts, s = query.data.split(":"), sess(user_id)
-    mode, action = parts[0], parts[1]
-
-    if mode == "menu":
-        if action == "home": reset_mode(user_id); await query.edit_message_text("🏠 منوی اصلی:", reply_markup=main_menu_kb(user_id == ADMIN_ID))
-        elif action in ["simple", "ai"]:
-            s.update({"mode": action, "data": {"text": "", "v_pos": "center", "h_pos": "center", "color": "#FFFFFF", "size": "medium", "bg_photo": None}})
-            update_sess(user_id, s)
-            if not user(user_id)["packs"]:
-                s["pack_wizard_mode"] = "awaiting_name"; update_sess(user_id, s)
-                await query.edit_message_text("ابتدا باید یک پک بسازید. نام انگلیسی پک را بفرستید:", reply_markup=back_to_menu_kb(user_id == ADMIN_ID))
-            else: await query.edit_message_text("استیکر را به کدام پک اضافه می‌کنید؟", reply_markup=pack_selection_kb(user_id))
-
-    elif mode == "pack":
-        if action == "new":
-            s["pack_wizard_mode"] = "awaiting_name"; update_sess(user_id, s)
-            await query.edit_message_text("نام انگلیسی پک را بفرستید (فقط حروف، تا ۲۰ کاراکтер):", reply_markup=back_to_menu_kb(user_id == ADMIN_ID))
-        elif action == "select":
-            users = user(user_id, True)
-            users[str(user_id)]["current_pack"] = parts[2]
-            _save_data(USERS_FILE, users)
-            await query.edit_message_text(f"پک انتخاب شد. حالا متن استیکر را بفرستید.")
-
-    elif mode in ["simple", "ai"]:
-        s["data"][action] = parts[2]
-        update_sess(user_id, s)
-        next_steps = {"ai:vpos": ("موقعیت افقی:", ai_hpos_kb()), "ai:hpos": ("رنگ متن:", color_palette_kb("ai")),
-                      "ai:color": ("اندازه فونت:", InlineKeyboardMarkup([[InlineKeyboardButton(l, callback_data=f"ai:size:{v}") for l,v in [("کوچک","small"),("متوسط","medium"),("بزرگ","large")]]]))}
-        if f"{mode}:{action}" in next_steps:
-            await query.edit_message_text(*next_steps[f"{mode}:{action}"])
-        elif action == "confirm":
-             try:
-                sticker_bytes = render_image(s['data'])
-                current_pack = user(user_id)["current_pack"]
-                await context.bot.add_sticker_to_set(user_id=user_id, name=current_pack, sticker=InputSticker(sticker_bytes, ["😊"]))
-                await query.edit_message_text(f"✅ استیکر به پک اضافه شد!\nhttps://t.me/addstickers/{current_pack}", reply_markup=main_menu_kb(user_id==ADMIN_ID))
-                reset_mode(user_id)
-             except Exception as e:
-                await query.edit_message_text(f"⚠️ خطا در افزودن استیکر: {e}", reply_markup=back_to_menu_kb(user_id==ADMIN_ID))
-        elif action == "edit":
-            text = "متن را ارسال کنید:" if s["mode"] == "simple" else "موقعیت عمودی:"
-            kb = None if s["mode"] == "simple" else ai_vpos_kb()
-            await query.edit_message_text(text, reply_markup=kb)
-
-async def message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id, text = update.effective_user.id, update.message.text
-    s = sess(user_id)
-
-    if s.get("pack_wizard_mode") == "awaiting_name":
-        pack_name = text.strip()
-        if any(w in pack_name.lower() for w in FORBIDDEN_WORDS) or not pack_name.isalpha() or len(pack_name) > 20:
-            await update.message.reply_text("نام نامعتبر است. لطفاً دوباره تلاش کنید.", reply_markup=back_to_menu_kb(user_id==ADMIN_ID))
-            return
-
-        bot_username = (await context.bot.get_me()).username
-        pack_short_name = f"{pack_name}_by_{bot_username}"
-
-        try:
-            dummy_sticker = render_image({"text":"سلام!", "v_pos":"center", "h_pos":"center", "color":"#FFFFFF", "size":"medium"})
-            await context.bot.create_new_sticker_set(user_id, pack_short_name, f"{pack_name} by @{bot_username}", [InputSticker(dummy_sticker, ["👋"])], "static")
-            
-            users = user(user_id, True)
-            user_data = users[str(user_id)]
-            user_data["packs"].append({"name": pack_name, "short_name": pack_short_name})
-            user_data["current_pack"] = pack_short_name
-            _save_data(USERS_FILE, users)
-            
-            s.pop("pack_wizard_mode"); update_sess(user_id, s)
-            await update.message.reply_text(f"✅ پک «{pack_name}» ساخته شد. حالا متن استیکر را بفرستید.")
-        except Exception as e:
-            await update.message.reply_text(f"⚠️ خطا در ساخت پک: {e}", reply_markup=back_to_menu_kb(user_id==ADMIN_ID))
-    
-    elif s.get("mode") in ["simple", "ai"]:
-        s["data"]["text"] = text
-        update_sess(user_id, s)
-        await update.message.reply_photo(render_image(s["data"]), caption="پیش‌نمایش استیکر:", reply_markup=after_preview_kb(s["mode"]))
-
-async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id, s = update.effective_user.id, sess(user_id)
-    if s.get("mode") in ["simple", "ai"]:
-        file = await context.bot.get_file(update.message.photo[-1].file_id)
-        s["data"]["bg_photo"] = (await file.download_as_bytearray()).hex()
-        update_sess(user_id, s)
-        await update.message.reply_text("✅ عکس پس‌زمینه تنظیم شد. حالا متن را بفرستید.")
-
-# ==================== App Setup & Webhook ====================
-def build_application():
-    """Builds the application and adds handlers."""
-    application = Application.builder().token(BOT_TOKEN).build()
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(button_handler))
-    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
-    application.add_handler(MessageHandler(filters.PHOTO, photo_handler))
-    return application
-
-telegram_app = build_application()
-app_initialized = False
-
-@app.route('/webhook', methods=['POST'])
+@app.route('/api/index', methods=['POST'])
 async def webhook():
-    """Webhook endpoint to process updates from Telegram."""
-    global app_initialized
-    if not app_initialized:
+    """Webhook endpoint to process Telegram updates."""
+    global bot_initialized
+    if not bot_initialized:
+        logger.info("First request received. Initializing bot application...")
         await telegram_app.initialize()
-        app_initialized = True
+        bot_initialized = True
+        logger.info("Bot application initialized.")
 
-    update = Update.de_json(request.get_json(), telegram_app.bot)
-    await telegram_app.process_update(update)
-    return "OK"
+    try:
+        req_json = flask_request.get_json(force=True)
+        update = Update.de_json(req_json, telegram_app.bot)
+        await telegram_app.process_update(update)
+        return 'ok'
+    except Exception as e:
+        logger.error(f"Error processing update in webhook: {e}")
+        return 'error', 500
 
-@app.route('/health', methods=['GET'])
-def health():
-    """Health check endpoint for Vercel."""
-    return jsonify({"status": "healthy"})
+@app.route('/api/set_webhook', methods=['GET'])
+async def set_webhook_route():
+    """Manual webhook set endpoint for verification."""
+    global bot_initialized
+    if not bot_initialized:
+       logger.info("Manual webhook set request. Initializing bot application...")
+       await telegram_app.initialize()
+       bot_initialized = True
+       logger.info("Bot application initialized.")
+
+    webhook_info = await telegram_app.bot.get_webhook_info()
+    return f"Webhook is set to: {webhook_info.url}"
+
+if __name__ == "__main__":
+    # This block is for local development, not for Vercel
+    logger.info("Starting bot in polling mode for local development...")
+    telegram_app.run_polling()
