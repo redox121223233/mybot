@@ -30,6 +30,7 @@ SUPPORT_USERNAME = "@onedaytoalive"
 DAILY_LIMIT = 5
 FORBIDDEN_WORDS = ["kos", "kir", "kon", "koss", "kiri", "koon"]
 telegram_app: Optional[Application] = None
+app_initialized = False
 
 # ==================== Data Persistence & State Management ====================
 USERS_FILE, SESSIONS_FILE = "/tmp/users.json", "/tmp/sessions.json"
@@ -277,25 +278,28 @@ async def photo_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("✅ عکس پس‌زمینه تنظیم شد. حالا متن را بفرستید.")
 
 # ==================== App Setup & Webhook ====================
-async def setup_telegram_app():
-    """Initializes the Telegram bot application and its handlers."""
+def setup_telegram_app():
+    """Builds the Telegram bot application instance."""
     global telegram_app
     if BOT_TOKEN:
-        telegram_app = Application.builder().token(BOT_TOKEN).build()
-        telegram_app.add_handler(CommandHandler("start", start))
-        telegram_app.add_handler(CallbackQueryHandler(button_handler))
-        telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
-        telegram_app.add_handler(MessageHandler(filters.PHOTO, photo_handler))
-        await telegram_app.initialize()
+        application = Application.builder().token(BOT_TOKEN).build()
+        application.add_handler(CommandHandler("start", start))
+        application.add_handler(CallbackQueryHandler(button_handler))
+        application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, message_handler))
+        application.add_handler(MessageHandler(filters.PHOTO, photo_handler))
+        telegram_app = application
 
-# Initialize the bot
-if BOT_TOKEN:
-    asyncio.run(setup_telegram_app())
+setup_telegram_app()
 
 @app.route('/webhook', methods=['POST'])
 async def webhook():
     """Webhook endpoint to process updates from Telegram."""
+    global app_initialized
     if telegram_app:
+        if not app_initialized:
+            await telegram_app.initialize()
+            app_initialized = True
+
         update_data = request.get_json()
         await telegram_app.process_update(Update.de_json(update_data, telegram_app.bot))
     return "OK", 200
