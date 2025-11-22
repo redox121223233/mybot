@@ -1,247 +1,321 @@
-#!/usr/bin/env python3
-"""
-Hybrid Solution: Vercel Static + Bot Commands
-Keep Vercel for static hosting, add bot buttons for functionality
-"""
-import os
 import logging
-import asyncio
-import io
-import base64
-from datetime import datetime, timezone, timedelta
+import os
+import re
+from io import BytesIO
+from datetime import datetime, timezone
 
-from flask import Flask, request, send_from_directory, jsonify
+from flask import Flask, request as flask_request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputSticker
-from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
-from PIL import Image, ImageDraw, ImageFont, ImageEnhance
+from telegram.ext import (
+    Application, CommandHandler, MessageHandler, filters, CallbackContext,
+    ConversationHandler, CallbackQueryHandler
+)
+from telegram.error import BadRequest
+from telegram.request import Request
+
+from PIL import Image, ImageDraw, ImageFont
 import arabic_reshaper
 from bidi.algorithm import get_display
 
-logging.basicConfig(
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
-)
+# ================================== Logging ===================================
+logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = Flask(__name__, static_folder='public', static_url_path='')
+# ================================ Configuration ===============================
+ADMIN_ID = int(os.environ.get("ADMIN_ID", "5935332189"))
+CHANNEL_ID = os.environ.get("CHANNEL_ID", "@redoxbot_sticker")
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+DAILY_LIMIT = 5
 
-BOT_TOKEN = os.getenv('BOT_TOKEN')
-ADMIN_ID = 6053579919
+# =========================== In-Memory Storage ==============================
+# WARNING: This data will be lost on server restart or redeployment.
+user_data_in_memory = {}
 
-# In-memory storage (use database in production)
-USER_DATA = {}
+def get_user(uid: int) -> dict:
+    if uid not in user_data_in_memory:
+        user_data_in_memory[uid] = {
+            "packs": [],
+            "daily_limit": DAILY_LIMIT,
+            "ai_used": 0,
+            "day_start": 0
+        }
 
-def create_quick_sticker(text="استیکر سریع", color="#FFFFFF"):
-    """Create quick sticker"""
-    img = Image.new('RGBA', (512, 512), (118, 75, 162, 255))
+    user = user_data_in_memory[uid]
+    now = datetime.now(timezone.utc)
+    midnight = int(datetime(now.year, now.month, now.day, tzinfo=timezone.utc).timestamp())
+
+    if user.get("day_start", 0) < midnight:
+        user["day_start"] = midnight
+        user["ai_used"] = 0
+
+    return user
+
+# ================================== Bot State =================================
+bot_initialized = False
+BOT_USERNAME = ""
+
+# ================================== File Paths ================================
+FONT_FILE = os.path.join(os.path.dirname(__file__), 'Vazirmatn-Regular.ttf')
+
+# =============================== Render Functions =============================
+def _prepare_text(text: str) -> str:
+    return get_display(arabic_reshaper.reshape(text))
+
+def fit_font_size(draw, text, font_path, base, max_w, max_h):
+    size = base
+    while size > 12:
+        try: font = ImageFont.truetype(font_path, size=size)
+        except IOError: return 12
+        bbox = draw.textbbox((0, 0), text, font=font)
+        if (bbox[2] - bbox[0]) <= max_w and (bbox[3] - bbox[1]) <= max_h: return size
+        size -= 2
+    return size
+
+def render_image(text, v_pos, h_pos, color_hex, size_key):
+    W, H = 512, 512
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
     draw = ImageDraw.Draw(img)
-    
-    try:
-        reshaped_text = arabic_reshaper.reshape(text)
-        bidi_text = get_display(reshaped_text)
-    except:
-        bidi_text = text
-    
-    try:
-        font = ImageFont.truetype("Vazirmatn-Regular.ttf", 60)
-    except:
-        font = ImageFont.load_default()
-    
-    if font:
-        bbox = draw.textbbox((0, 0), bidi_text, font=font)
-        text_width = bbox[2] - bbox[0]
-        text_height = bbox[3] - bbox[1]
-    else:
-        text_width = len(bidi_text) * 15
-        text_height = 60
-    
-    x = (512 - text_width) // 2
-    y = (512 - text_height) // 2
-    
-    draw.text((x, y), bidi_text, fill=color, font=font)
-    return img
 
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Enhanced start with bot buttons"""
-    user_id = update.effective_user.id
-    
+    color = tuple(int(color_hex.lstrip('#')[i:i+2], 16) for i in (0, 2, 4)) + (255,)
+    padding, size_map = 40, {"small": 64, "medium": 96, "large": 128}
+    box_w, box_h = W - 2 * padding, H - 2 * padding
+
+    txt = _prepare_text(text)
+    font_size = fit_font_size(draw, txt, FONT_FILE, size_map.get(size_key, 96), box_w, box_h)
+    font = ImageFont.truetype(FONT_FILE, size=font_size)
+
+    bbox = draw.textbbox((0, 0), txt, font=font)
+    tw, th = bbox[2] - bbox[0], bbox[3] - bbox[1]
+
+    y = (H - th) / 2
+    if v_pos == "top": y = padding
+    if v_pos == "bottom": y = H - padding - th
+    x = (W - tw) / 2
+    if h_pos == "left": x = padding
+    if h_pos == "right": x = W - padding - tw
+
+    draw.text((x, y), txt, font=font, fill=color, stroke_width=2, stroke_fill=(0,0,0,220))
+
+    buf = BytesIO()
+    img.save(buf, format="WEBP")
+    return buf.getvalue()
+
+# ======================== Conversation States =======================
+(MENU, PACK_NAME, PACK_TITLE, STICKER_TEXT, STICKER_VPOS, STICKER_HPOS,
+ STICKER_COLOR, STICKER_SIZE, ADMIN_PANEL, ADMIN_BROADCAST) = range(10)
+
+# ============================ Keyboards ==============================
+def main_menu_kb(is_admin: bool):
     keyboard = [
-        [
-            InlineKeyboardButton("⚡ استیکر سریع", callback_data="quick_sticker"),
-            InlineKeyboardButton("✏️ استیکر متنی", callback_data="text_sticker")
-        ],
-        [
-            InlineKeyboardButton("🎨 ویژگی‌های پیشرفته", url="https://mybot32.vercel.app"),
-            InlineKeyboardButton("📚 راهنما", callback_data="help")
-        ],
-        [
-            InlineKeyboardButton("📦 پک‌های من", callback_data="my_packs")
-        ]
+        [InlineKeyboardButton("ساخت استیکر", callback_data="create_sticker")],
+        [InlineKeyboardButton("سهمیه روزانه", callback_data="quota")],
     ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    
-    welcome_text = """
-🎨 **به ربات استیکر ساز خوش آمدید!**
+    if is_admin:
+        keyboard.append([InlineKeyboardButton("پنل ادمین", callback_data="admin_panel")])
+    return InlineKeyboardMarkup(keyboard)
 
-🚀 **دو راه برای ساخت استیکر دارید:**
+# ============================= Helpers ===============================
+async def check_membership(update, context):
+    try:
+        member = await context.bot.get_chat_member(CHANNEL_ID, update.effective_user.id)
+        if member.status in ['member', 'administrator', 'creator']: return True
+    except Exception as e:
+        logger.error(f"Membership check failed: {e}")
+    url = f"https://t.me/{CHANNEL_ID.replace('@', '')}"
+    await update.effective_message.reply_text("برای استفاده از ربات، لطفا در کانال عضو شوید.",
+        reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("عضویت", url=url)]]))
+    return False
 
-**۱. سریع و آسان (دکمه‌های زیر):**
-⚡ استیکرهای آماده و سریع
-✏️ استیکر متنی دلخواه
+# ============================= Core Logic =================================
+async def start(update, context):
+    if not await check_membership(update, context): return ConversationHandler.END
+    is_admin = update.effective_user.id == ADMIN_ID
+    get_user(update.effective_user.id) # Register user in memory
+    await update.message.reply_text("سلام! به ربات استیکرساز خوش آمدید.", reply_markup=main_menu_kb(is_admin))
+    return MENU
 
-**۲. پیشرفته و حرفه‌ای:**
-🎨 وب‌اپ با امکانات کامل
-
-👇 یکی را انتخاب کنید:
-    """
-    
-    await update.message.reply_text(welcome_text, reply_markup=reply_markup, parse_mode='Markdown')
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Help command"""
-    help_text = """
-🎯 **راهنمای کامل ربات استیکر ساز**
-
-**⚡ ساخت سریع:**
-- استیکر سریع: طراحی فوری
-- استیکر متنی: متن دلخواه شما
-
-**🎨 وب‌اپ پیشرفته:**
-- طراحی کامل و حرفه‌ای
-- پیش‌نمایش زنده
-- امکانات نامحدود
-
-**📱 دستورات:**
-/start - شروع و منوی اصلی
-/help - این راهنما
-/my_packs - پک‌های شما
-
-❓ هر سوالی دارید بپرسید!
-    """
-    await update.message.reply_text(help_text, parse_mode='Markdown')
-
-async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle button clicks"""
+async def main_menu_handler(update, context):
     query = update.callback_query
     await query.answer()
-    
-    user_id = update.effective_user.id
-    data = query.data
-    
-    if data == "quick_sticker":
-        # Create quick sticker
-        texts = ["عالیه!", "سپاسگزارم", "عالی بود", "دمت گرم", "خفن❤️"]
-        import random
-        text = random.choice(texts)
-        
-        sticker_img = create_quick_sticker(text)
-        buffer = io.BytesIO()
-        sticker_img.save(buffer, format='WEBP')
-        sticker_bytes = buffer.getvalue()
-        
-        # Send sticker directly
-        await context.bot.send_sticker(
-            chat_id=user_id,
-            sticker=sticker_bytes
-        )
-        
-        await query.edit_message_text(
-            f"✅ استیکر سریع ساخته شد!\n\n"
-            f"متن: {text}\n\n"
-            f"برای ساخت استیکر دیگر دوباره /start را بزنید."
-        )
-    
-    elif data == "text_sticker":
-        # Ask for text
-        await query.edit_message_text(
-            "✏️ **لطفاً متن مورد نظر خود را ارسال کنید:**\n\n"
-            "متن شما به استیکر تبدیل خواهد شد!\n\n"
-            "مثال: سلام دنیا 🌍",
-            parse_mode='Markdown'
-        )
-        # Store state for next message
-        USER_DATA[user_id] = {"waiting_for_text": True}
-    
-    elif data == "help":
-        await help_command(update, context)
-    
-    elif data == "my_packs":
-        await query.edit_message_text(
-            "📦 **پک‌های استیکر شما:**\n\n"
-            "در حال حاضر پکی ندارید.\n\n"
-            "با ساخت اولین استیکر، پک شما ساخته می‌شود! 🎨",
-            parse_mode='Markdown'
-        )
+    is_admin = query.from_user.id == ADMIN_ID
+    await query.edit_message_text("منوی اصلی:", reply_markup=main_menu_kb(is_admin))
+    context.user_data.clear()
+    return MENU
 
-async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle text messages for custom sticker creation"""
-    user_id = update.effective_user.id
-    text = update.message.text
-    
-    # Check if user is waiting to provide text for sticker
-    if user_id in USER_DATA and USER_DATA[user_id].get("waiting_for_text"):
-        # Create custom text sticker
-        sticker_img = create_quick_sticker(text, "#FFFFFF")
-        buffer = io.BytesIO()
-        sticker_img.save(buffer, format='WEBP')
-        sticker_bytes = buffer.getvalue()
-        
-        await context.bot.send_sticker(
-            chat_id=user_id,
-            sticker=sticker_bytes
+async def quota_handler(update, context):
+    query = update.callback_query
+    await query.answer()
+    user = get_user(query.from_user.id)
+    await query.message.reply_text(f"سهمیه شما: {user['daily_limit'] - user['ai_used']}/{user['daily_limit']}")
+    return MENU
+
+async def create_sticker_handler(update, context):
+    query = update.callback_query
+    await query.answer()
+    user = get_user(query.from_user.id)
+    if query.from_user.id != ADMIN_ID and user['ai_used'] >= user['daily_limit']:
+        await query.edit_message_text("سهمیه شما تمام شده است.")
+        return MENU
+
+    await query.edit_message_text("نام انگلیسی برای پک استیکر وارد کنید.")
+    return PACK_NAME
+
+async def get_pack_name_handler(update, context):
+    pack_name = update.message.text.strip()
+    if not re.match("^[a-z0-9_]{1,50}$", pack_name):
+        await update.message.reply_text("نام نامعتبر است.")
+        return PACK_NAME
+
+    global BOT_USERNAME
+    if not BOT_USERNAME: BOT_USERNAME = (await context.bot.get_me()).username
+
+    context.user_data['pack_name'] = f"{pack_name}_by_{BOT_USERNAME}"
+    await update.message.reply_text("یک عنوان برای پک انتخاب کنید.")
+    return PACK_TITLE
+
+async def get_pack_title_handler(update, context):
+    pack_title = update.message.text.strip()
+    pack_name = context.user_data['pack_name']
+
+    try:
+        await context.bot.create_new_sticker_set(
+            user_id=update.effective_user.id, name=pack_name, title=pack_title,
+            stickers=[InputSticker(sticker=render_image("اولین", "center", "center", "#FFFFFF", "medium"), emoji_list=["🎉"])],
+            sticker_format='static'
         )
-        
-        await update.message.reply_text(
-            f"✅ استیکر متنی شما ساخته شد!\n\n"
-            f"متن: {text}\n\n"
-            f"برای ساخت استیکر دیگر /start را بزنید. 🎨"
+        pack_link = f"https://t.me/addstickers/{pack_name}"
+        await update.message.reply_text(f"پک '{pack_title}' ساخته شد!\n\nمهم: لینک را ذخیره کنید چون ربات حافظه دائمی ندارد:\n{pack_link}")
+        await update.message.reply_text("متن استیکر بعدی را بفرستید.")
+        return STICKER_TEXT
+    except BadRequest as e:
+        await update.message.reply_text(f"خطا: {e.message}. نام دیگری انتخاب کنید.")
+        return PACK_NAME
+
+async def get_sticker_text_handler(update, context):
+    context.user_data['text'] = update.message.text
+    keyboard = [[InlineKeyboardButton(t, callback_data=f"vpos_{v}") for t,v in [("بالا","top"),("وسط","center"),("پایین","bottom")]]]
+    await update.message.reply_text("موقعیت عمودی:", reply_markup=InlineKeyboardMarkup(keyboard))
+    return STICKER_VPOS
+
+async def get_sticker_vpos_handler(update, context):
+    query = update.callback_query
+    await query.answer()
+    context.user_data['v_pos'] = query.data.split('_')[1]
+    keyboard = [[InlineKeyboardButton(t, callback_data=f"hpos_{v}") for t,v in [("چپ","left"),("وسط","center"),("راست","right")]]]
+    await query.edit_message_text("موقعیت افقی:", reply_markup=InlineKeyboardMarkup(keyboard))
+    return STICKER_HPOS
+
+async def get_sticker_hpos_handler(update, context):
+    query = update.callback_query
+    await query.answer()
+    context.user_data['h_pos'] = query.data.split('_')[1]
+    keyboard = [[InlineKeyboardButton(c, callback_data=f"color_{h}") for c,h in [("⬜️","#FFFFFF"),("⬛️","#000000"),("🟥","#F43F5E"),("🟦","#3B82F6")]]]
+    await query.edit_message_text("رنگ:", reply_markup=InlineKeyboardMarkup(keyboard))
+    return STICKER_COLOR
+
+async def get_sticker_color_handler(update, context):
+    query = update.callback_query
+    await query.answer()
+    context.user_data['color'] = query.data.split('_')[1]
+    keyboard = [[InlineKeyboardButton(t, callback_data=f"size_{v}") for t,v in [("کوچک","small"),("متوسط","medium"),("بزرگ","large")]]]
+    await query.edit_message_text("اندازه:", reply_markup=InlineKeyboardMarkup(keyboard))
+    return STICKER_SIZE
+
+async def get_sticker_size_and_create_handler(update, context):
+    query = update.callback_query
+    await query.answer()
+    context.user_data['size'] = query.data.split('_')[1]
+    ud = context.user_data
+
+    try:
+        sticker_bytes = render_image(ud['text'], ud['v_pos'], ud['h_pos'], ud['color'], ud['size'])
+        await context.bot.add_sticker_to_set(
+            user_id=query.from_user.id, name=ud['pack_name'],
+            sticker=InputSticker(sticker=sticker_bytes, emoji_list=["😎"])
         )
-        
-        # Clear state
-        del USER_DATA[user_id]
+        await query.edit_message_text("استیکر اضافه شد! متن بعدی را بفرستید یا با /cancel لغو کنید.")
+        if query.from_user.id != ADMIN_ID:
+            get_user(query.from_user.id)['ai_used'] += 1
+        return STICKER_TEXT
+    except Exception as e:
+        await query.edit_message_text(f"خطا در افزودن استیکر: {e}. با /start مجددا تلاش کنید.")
+        return ConversationHandler.END
 
-# Flask routes for Vercel
-@app.route('/')
-def home():
-    """Serve mini app"""
-    return send_from_directory(app.static_folder, 'index.html')
+async def admin_panel_handler(update, context):
+    query = update.callback_query
+    await query.answer()
+    keyboard = [[InlineKeyboardButton("ارسال پیام همگانی", callback_data="admin_broadcast")],
+                [InlineKeyboardButton("بازگشت", callback_data="main_menu")]]
+    await query.edit_message_text("پنل ادمین:", reply_markup=InlineKeyboardMarkup(keyboard))
+    return ADMIN_PANEL
 
-@app.route('/<path:path>')
-def serve_static(path):
-    """Serve static files"""
-    return send_from_directory(app.static_folder, path)
+async def admin_broadcast_prompt_handler(update, context):
+    query = update.callback_query
+    await query.answer()
+    await query.edit_message_text("پیام برای ارسال به همه کاربران را بفرستید.")
+    return ADMIN_BROADCAST
 
-@app.route('/api/webhook', methods=['POST'])
-def webhook():
-    """Webhook handler"""
-    async def handle_update():
-        if BOT_TOKEN:
-            application = Application.builder().token(BOT_TOKEN).build()
-            
-            # Add handlers
-            application.add_handler(CommandHandler("start", start))
-            application.add_handler(CommandHandler("help", help_command))
-            application.add_handler(CallbackQueryHandler(button_handler))
-            application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
-            
-            try:
-                await application.initialize()
-                update = Update.de_json(request.get_json(), application.bot)
-                await application.process_update(update)
-            except Exception as e:
-                logger.error(f"Error processing update: {e}")
-            finally:
-                try:
-                    await application.shutdown()
-                except:
-                    pass
-    
-    asyncio.run(handle_update())
-    return "OK", 200
+async def admin_broadcast_send_handler(update, context):
+    sent_count = 0
+    for uid in user_data_in_memory.keys():
+        try:
+            await context.bot.copy_message(uid, update.message.chat.id, update.message.id)
+            sent_count += 1
+        except Exception as e:
+            logger.warning(f"Broadcast failed for {uid}: {e}")
+    await update.message.reply_text(f"پیام به {sent_count} کاربر ارسال شد.", reply_markup=main_menu_kb(True))
+    return MENU
 
-if __name__ == "__main__":
-    if not BOT_TOKEN:
-        logger.error("BOT_TOKEN is required!")
-        exit(1)
-    
-    app.run(host='0.0.0.0', port=int(os.getenv('PORT', 5000)))
+async def cancel_handler(update, context):
+    await update.message.reply_text("عملیات لغو شد.", reply_markup=main_menu_kb(update.effective_user.id == ADMIN_ID))
+    context.user_data.clear()
+    return ConversationHandler.END
+
+# ================================ Webhook Setup ===============================
+async def post_init(application: Application):
+    if 'VERCEL_URL' in os.environ:
+        webhook_url = f"https://{os.environ['VERCEL_URL']}/webhook"
+        await application.bot.set_webhook(webhook_url)
+        logger.info(f"Webhook set to {webhook_url}")
+
+app = Flask(__name__)
+
+# Configure custom request object with increased timeouts
+request = Request(connect_timeout=30.0, read_timeout=30.0)
+telegram_app = Application.builder().token(BOT_TOKEN).post_init(post_init).request(request).build()
+
+conv_handler = ConversationHandler(
+    entry_points=[CommandHandler('start', start)],
+    states={
+        MENU: [
+            CallbackQueryHandler(main_menu_handler, pattern='^main_menu$'),
+            CallbackQueryHandler(quota_handler, pattern='^quota$'),
+            CallbackQueryHandler(create_sticker_handler, pattern='^create_sticker$'),
+            CallbackQueryHandler(admin_panel_handler, pattern='^admin_panel$'),
+        ],
+        PACK_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_pack_name_handler)],
+        PACK_TITLE: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_pack_title_handler)],
+        STICKER_TEXT: [MessageHandler(filters.TEXT & ~filters.COMMAND, get_sticker_text_handler)],
+        STICKER_VPOS: [CallbackQueryHandler(get_sticker_vpos_handler, pattern='^vpos_')],
+        STICKER_HPOS: [CallbackQueryHandler(get_sticker_hpos_handler, pattern='^hpos_')],
+        STICKER_COLOR: [CallbackQueryHandler(get_sticker_color_handler, pattern='^color_')],
+        STICKER_SIZE: [CallbackQueryHandler(get_sticker_size_and_create_handler, pattern='^size_')],
+        ADMIN_PANEL: [
+            CallbackQueryHandler(main_menu_handler, pattern='^main_menu$'),
+            CallbackQueryHandler(admin_broadcast_prompt_handler, pattern='^admin_broadcast$')
+        ],
+        ADMIN_BROADCAST: [MessageHandler(filters.ALL & ~filters.COMMAND, admin_broadcast_send_handler)],
+    },
+    fallbacks=[CommandHandler('cancel', cancel_handler)],
+    per_message=False
+)
+telegram_app.add_handler(conv_handler)
+
+@app.route('/webhook', methods=['POST'])
+async def webhook():
+    global bot_initialized
+    if not bot_initialized:
+        await telegram_app.initialize()
+        bot_initialized = True
+    await telegram_app.process_update(Update.de_json(flask_request.get_json(force=True), telegram_app.bot))
+    return 'ok'
