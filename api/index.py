@@ -273,7 +273,9 @@ async def cancel_handler(update, context):
 # ================================ Webhook Setup ===============================
 async def post_init(application: Application):
     if 'VERCEL_URL' in os.environ:
-        await application.bot.set_webhook(f"https://{os.environ['VERCEL_URL']}/api/index")
+        webhook_url = f"https://{os.environ['VERCEL_URL']}/webhook"
+        await application.bot.set_webhook(webhook_url)
+        logger.info(f"Webhook set to {webhook_url}")
 
 app = Flask(__name__)
 telegram_app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
@@ -305,7 +307,7 @@ conv_handler = ConversationHandler(
 )
 telegram_app.add_handler(conv_handler)
 
-@app.route('/api/index', methods=['POST'])
+@app.route('/webhook', methods=['POST'])
 async def webhook():
     global bot_initialized
     if not bot_initialized:
