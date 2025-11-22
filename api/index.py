@@ -11,7 +11,7 @@ from telegram.ext import (
     ConversationHandler, CallbackQueryHandler
 )
 from telegram.error import BadRequest
-import httpx
+from telegram.request import Request
 
 from PIL import Image, ImageDraw, ImageFont
 import arabic_reshaper
@@ -280,12 +280,9 @@ async def post_init(application: Application):
 
 app = Flask(__name__)
 
-# Configure custom httpx client with increased timeouts and connection limits
-httpx_client = httpx.AsyncClient(
-    timeout=httpx.Timeout(30.0),
-    limits=httpx.Limits(max_connections=100, max_keepalive_connections=20)
-)
-telegram_app = Application.builder().token(BOT_TOKEN).post_init(post_init).httpx_client(httpx_client).build()
+# Configure custom request object with increased timeouts
+request = Request(connect_timeout=30.0, read_timeout=30.0)
+telegram_app = Application.builder().token(BOT_TOKEN).post_init(post_init).request(request).build()
 
 conv_handler = ConversationHandler(
     entry_points=[CommandHandler('start', start)],
