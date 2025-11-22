@@ -1340,16 +1340,48 @@ dp.include_router(router)
 async def on_startup():
     global BOT_USERNAME
     try:
-        # تنظیم webhook
-        webhook_url = os.getenv("VERCEL_URL") 
-        if webhook_url:
-            webhook_url = f"https://{webhook_url}/api/webhook"
-            await bot.set_webhook(url=webhook_url)
-            print(f"Webhook set to: {webhook_url}")
-        
         bot_info = await bot.get_me()
         BOT_USERNAME = bot_info.username
         print(f"ربات با نام کاربری @{BOT_USERNAME} شروع به کار کرد")
+        
+        # تنظیم webhook با مدیریت خطا و چک وضعیت فعلی
+        webhook_url = os.getenv("VERCEL_URL") 
+        if webhook_url:
+            webhook_url = f"https://{webhook_url}/api/webhook"
+            
+            # چک کردن وضعیت فعلی webhook
+            try:
+                current_webhook = await bot.get_webhook_info()
+                if current_webhook.url == webhook_url:
+                    print(f"Webhook already correctly set to: {webhook_url}")
+                else:
+                    print(f"Current webhook: {current_webhook.url}, setting new webhook...")
+                    max_retries = 3
+                    for attempt in range(max_retries):
+                        try:
+                            await bot.set_webhook(url=webhook_url)
+                            print(f"Webhook set to: {webhook_url}")
+                            break
+                        except Exception as webhook_error:
+                            if "Flood control" in str(webhook_error) or "Too Many Requests" in str(webhook_error):
+                                wait_time = 2 ** attempt + 1  # exponential backoff + 1
+                                print(f"Flood control detected, waiting {wait_time} seconds...")
+                                await asyncio.sleep(wait_time)
+                                if attempt == max_retries - 1:
+                                    print("Max retries reached, webhook setting failed")
+                                    print("Bot will still work but webhook might not be updated")
+                            else:
+                                raise webhook_error
+            except Exception as webhook_check_error:
+                print(f"Could not check webhook status: {webhook_check_error}")
+                # تلاش برای تنظیم webhook بدون چک
+                try:
+                    await bot.set_webhook(url=webhook_url)
+                    print(f"Webhook set to: {webhook_url}")
+                except Exception as direct_set_error:
+                    print(f"Could not set webhook: {direct_set_error}")
+                    print("Bot will still work - make sure webhook is manually set if needed")
+        
     except Exception as e:
         print(f"Error in startup: {e}")
         traceback.print_exc()
@@ -1379,7 +1411,7 @@ async def bot_webhook(request: Request):
 
 @app.get("/")
 async def root():
-    return {"status": "bot is running"}
+    return {"status": "bot is running", "bot_username": BOT_USERNAME if BOT_USERNAME else "loading..."}
 
 # برای اجرا در محیط توسعه محلی
 if __name__ == "__main__":
