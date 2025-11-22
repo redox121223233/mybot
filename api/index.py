@@ -11,7 +11,7 @@ from telegram.ext import (
     ConversationHandler, CallbackQueryHandler
 )
 from telegram.error import BadRequest
-from telegram.request import Request
+# Request is no longer needed in newer versions of python-telegram-bot
 
 from PIL import Image, ImageDraw, ImageFont
 import arabic_reshaper
@@ -280,9 +280,8 @@ async def post_init(application: Application):
 
 app = Flask(__name__)
 
-# Configure custom request object with increased timeouts
-request = Request(connect_timeout=30.0, read_timeout=30.0)
-telegram_app = Application.builder().token(BOT_TOKEN).post_init(post_init).request(request).build()
+# Configure application (Request is no longer needed in newer versions)
+telegram_app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
 
 conv_handler = ConversationHandler(
     entry_points=[CommandHandler('start', start)],
