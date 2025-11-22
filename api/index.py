@@ -1,46 +1,13 @@
 """
 تلگرام ربات استیکر ساز - نسخه سازگار با Vercel
-با استفاده از webhook به جای polling برای محیط Serverless
+FastAPI API endpoint برای ربات
 """
 
 import asyncio
 import os
-import re
-from io import BytesIO
-from typing import Dict, Any, Optional, Tuple, List
-from datetime import datetime, timezone
-import subprocess
-import pydantic_core  # برای مدیریت خطای اعتبارسنجی
-import traceback  # برای نمایش خطاهای دقیق
-import json
-
-from aiogram import Bot, Dispatcher, F, Router
-from aiogram.types import Message, CallbackQuery, BotCommand, BufferedInputFile, InputSticker, Update
-from aiogram.utils.keyboard import InlineKeyboardBuilder
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
-from aiogram.filters import CommandStart
-from aiogram.exceptions import TelegramBadRequest
-from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
-
-from PIL import Image, ImageDraw, ImageFont, ImageFilter
-import arabic_reshaper
-from bidi.algorithm import get_display
-
+import traceback
 from fastapi import FastAPI, Request, Response
-
-# =============== پیکربندی ===============
-BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE").strip()
-if not BOT_TOKEN:
-    raise RuntimeError("BOT_TOKEN را در محیط تنظیم کنید.")
-
-CHANNEL_USERNAME = "@redoxbot_sticker"
-SUPPORT_USERNAME = "@onedaytoalive"
-ADMIN_ID = 6053579919
-
-MAINTENANCE = False
-DAILY_LIMIT = 5
-BOT_USERNAME = ""
+from main import bot, dp, BOT_USERNAME
 
 # ============ فیلتر کلمات نامناسب ============
 FORBIDDEN_WORDS = ["kos", "kir", "kon", "koss", "kiri", "koon"]
@@ -1332,10 +1299,6 @@ async def on_message(message: Message, bot: Bot):
 # ================ راه‌اندازی FastAPI برای Vercel ================
 app = FastAPI()
 
-bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
-dp = Dispatcher()
-dp.include_router(router)
-
 @app.on_event("startup")
 async def on_startup():
     global BOT_USERNAME
@@ -1412,6 +1375,27 @@ async def bot_webhook(request: Request):
 @app.get("/")
 async def root():
     return {"status": "bot is running", "bot_username": BOT_USERNAME if BOT_USERNAME else "loading..."}
+
+@app.post("/webhook")
+async def bot_webhook(request: Request):
+    """Handle incoming webhook updates from Telegram"""
+    try:
+        # دریافت update از تلگرام
+        import json
+        update_data = await request.json()
+        
+        # پردازش update در aiogram
+        from aiogram.types import Update
+        update = Update.model_validate(update_data, context={"bot": bot})
+        
+        # اجرای update در dispatcher
+        await dp.feed_webhook_update(bot, update)
+        
+        return Response(status_code=200, content="OK")
+    except Exception as e:
+        print(f"Webhook error: {e}")
+        traceback.print_exc()
+        return Response(status_code=500, content="Error")
 
 # برای اجرا در محیط توسعه محلی
 if __name__ == "__main__":
