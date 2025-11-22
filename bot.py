@@ -1,18 +1,20 @@
 #!/usr/bin/env python3
 """
-Telegram Sticker Bot - Railway/Render Compatible Version
-Optimized for non-Vercel deployment with proper webhook handling
+Telegram Sticker Bot - Unified Version
+Complete bot functionality in a single file
 """
+
 import os
 import json
 import logging
 import asyncio
 import io
 import base64
+import random
 from datetime import datetime, timezone, timedelta
 from typing import Dict, Any, Optional
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_from_directory
 from telegram import Update, WebAppInfo, InlineKeyboardButton, InlineKeyboardMarkup, InputSticker
 from telegram.ext import Application, CommandHandler, CallbackQueryHandler, MessageHandler, filters, ContextTypes
 from PIL import Image, ImageDraw, ImageFont, ImageEnhance
@@ -39,6 +41,7 @@ ADVANCED_DAILY_LIMIT = 3
 # Data storage (in production, use a database)
 USER_PACKAGES: dict[int, list] = {}
 USER_LIMITS: dict[int, dict] = {}
+USER_DATA: dict[int, dict] = {}
 
 # Global application
 telegram_app = None
@@ -155,6 +158,36 @@ def create_advanced_text_sticker(text: str, text_color: str = '#FFFFFF', backgro
     
     return img
 
+def create_quick_sticker(text="استیکر سریع", color="#FFFFFF") -> Image.Image:
+    """Create quick sticker"""
+    img = Image.new('RGBA', (512, 512), (118, 75, 162, 255))
+    draw = ImageDraw.Draw(img)
+    
+    try:
+        reshaped_text = arabic_reshaper.reshape(text)
+        bidi_text = get_display(reshaped_text)
+    except:
+        bidi_text = text
+    
+    try:
+        font = ImageFont.truetype("Vazirmatn-Regular.ttf", 60)
+    except:
+        font = ImageFont.load_default()
+    
+    if font:
+        bbox = draw.textbbox((0, 0), bidi_text, font=font)
+        text_width = bbox[2] - bbox[0]
+        text_height = bbox[3] - bbox[1]
+    else:
+        text_width = len(bidi_text) * 15
+        text_height = 60
+    
+    x = (512 - text_width) // 2
+    y = (512 - text_height) // 2
+    
+    draw.text((x, y), bidi_text, fill=color, font=font)
+    return img
+
 def image_to_webp_bytes(img: Image.Image) -> bytes:
     """Convert PIL Image to WebP bytes"""
     buffer = io.BytesIO()
@@ -163,43 +196,61 @@ def image_to_webp_bytes(img: Image.Image) -> bytes:
 
 # Bot Command Handlers
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle /start command"""
+    """Handle /start command with enhanced menu"""
+    user_id = update.effective_user.id
+    
     keyboard = [
-        [InlineKeyboardButton("🎨 ساخت استیکر سریع", web_app=WebAppInfo(url=MINI_APP_URL))]
+        [
+            InlineKeyboardButton("⚡ استیکر سریع", callback_data="quick_sticker"),
+            InlineKeyboardButton("✏️ استیکر متنی", callback_data="text_sticker")
+        ],
+        [
+            InlineKeyboardButton("🎨 ویژگی‌های پیشرفته", web_app=WebAppInfo(url=MINI_APP_URL)),
+            InlineKeyboardButton("📚 راهنما", callback_data="help")
+        ],
+        [
+            InlineKeyboardButton("📦 پک‌های من", callback_data="my_packs")
+        ]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     
-    await update.message.reply_text(
-        "🎨 به ربات استیکر ساز خوش آمدید!\n\n"
-        "🌟 **امکانات ویژه:**\n"
-        "⚡ ساخت استیکر سریع و آسان\n"
-        "✏️ طراحی استیکر متنی با فونت فارسی\n"
-        "🎨 انتخاب رنگ و پس‌زمینه دلخواه\n"
-        "📦 مدیریت پک استیکر شخصی\n\n"
-        "👇 برای شروع روی دکمه زیر کلیک کنید:",
-        reply_markup=reply_markup
-    )
+    welcome_text = """
+🎨 **به ربات استیکر ساز خوش آمدید!**
+
+🚀 **دو راه برای ساخت استیکر دارید:**
+
+**۱. سریع و آسان (دکمه‌های زیر):**
+⚡ استیکرهای آماده و سریع
+✏️ استیکر متنی دلخواه
+
+**۲. پیشرفته و حرفه‌ای:**
+🎨 وب‌اپ با امکانات کامل
+
+👇 یکی را انتخاب کنید:
+    """
+    
+    await update.message.reply_text(welcome_text, reply_markup=reply_markup, parse_mode='Markdown')
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle /help command"""
     help_text = """
-🎨 **ربات استیکر ساز حرفه‌ای**
+🎯 **راهنمای کامل ربات استیکر ساز**
 
-**🚀 امکانات:**
-• 🎯 ساخت استیکر متن فارسی با فونت‌های متنوع
-• 🌈 انتخاب رنگ و پس‌زمینه دلخواه  
-• 📸 تبدیل عکس به استیکر
-• 📦 مدیریت پک استیکر شخصی
-• ⚡ عملکرد سریع و رابط کاربری آسان
+**⚡ ساخت سریع:**
+- استیکر سریع: طراحی فوری
+- استیکر متنی: متن دلخواه شما
+
+**🎨 وب‌اپ پیشرفته:**
+- طراحی کامل و حرفه‌ای
+- پیش‌نمایش زنده
+- امکانات نامحدود
 
 **📱 دستورات:**
-/start - شروع و ساخت استیکر
-/help - مشاهده این راهنما
-/my_packs - پک‌های استیکر شما
+/start - شروع و منوی اصلی
+/help - این راهنما
+/my_packs - پک‌های شما
 
-🔗 [وب‌اپ ربات](URL)
-
-❓ نیاز به راهنمایی؟ پشتیبانی در دسترس است!
+❓ هر سوالی دارید بپرسید!
     """
     await update.message.reply_text(help_text, parse_mode='Markdown')
 
@@ -233,6 +284,85 @@ async def my_packs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text(text, reply_markup=reply_markup, parse_mode='Markdown')
+
+async def button_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle button clicks"""
+    query = update.callback_query
+    await query.answer()
+    
+    user_id = update.effective_user.id
+    data = query.data
+    
+    if data == "quick_sticker":
+        # Create quick sticker
+        texts = ["عالیه!", "سپاسگزارم", "عالی بود", "دمت گرم", "خفن❤️"]
+        text = random.choice(texts)
+        
+        sticker_img = create_quick_sticker(text)
+        buffer = io.BytesIO()
+        sticker_img.save(buffer, format='WEBP')
+        sticker_bytes = buffer.getvalue()
+        
+        # Send sticker directly
+        await context.bot.send_sticker(
+            chat_id=user_id,
+            sticker=sticker_bytes
+        )
+        
+        await query.edit_message_text(
+            f"✅ استیکر سریع ساخته شد!\n\n"
+            f"متن: {text}\n\n"
+            f"برای ساخت استیکر دیگر دوباره /start را بزنید."
+        )
+    
+    elif data == "text_sticker":
+        # Ask for text
+        await query.edit_message_text(
+            "✏️ **لطفاً متن مورد نظر خود را ارسال کنید:**\n\n"
+            "متن شما به استیکر تبدیل خواهد شد!\n\n"
+            "مثال: سلام دنیا 🌍",
+            parse_mode='Markdown'
+        )
+        # Store state for next message
+        USER_DATA[user_id] = {"waiting_for_text": True}
+    
+    elif data == "help":
+        await help_command(update, context)
+    
+    elif data == "my_packs":
+        await query.edit_message_text(
+            "📦 **پک‌های استیکر شما:**\n\n"
+            "در حال حاضر پکی ندارید.\n\n"
+            "با ساخت اولین استیکر، پک شما ساخته می‌شود! 🎨",
+            parse_mode='Markdown'
+        )
+
+async def text_message_handler(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle text messages for custom sticker creation"""
+    user_id = update.effective_user.id
+    text = update.message.text
+    
+    # Check if user is waiting to provide text for sticker
+    if user_id in USER_DATA and USER_DATA[user_id].get("waiting_for_text"):
+        # Create custom text sticker
+        sticker_img = create_quick_sticker(text, "#FFFFFF")
+        buffer = io.BytesIO()
+        sticker_img.save(buffer, format='WEBP')
+        sticker_bytes = buffer.getvalue()
+        
+        await context.bot.send_sticker(
+            chat_id=user_id,
+            sticker=sticker_bytes
+        )
+        
+        await update.message.reply_text(
+            f"✅ استیکر متنی شما ساخته شد!\n\n"
+            f"متن: {text}\n\n"
+            f"برای ساخت استیکر دیگر /start را بزنید. 🎨"
+        )
+        
+        # Clear state
+        del USER_DATA[user_id]
 
 # Flask Routes
 @app.route('/')
@@ -348,6 +478,8 @@ def setup_telegram_app():
         telegram_app.add_handler(CommandHandler("start", start))
         telegram_app.add_handler(CommandHandler("help", help_command))
         telegram_app.add_handler(CommandHandler("my_packs", my_packs))
+        telegram_app.add_handler(CallbackQueryHandler(button_handler))
+        telegram_app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, text_message_handler))
         
         return telegram_app
     return None
