@@ -6,6 +6,7 @@ from datetime import datetime, timezone
 
 from flask import Flask, request as flask_request
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputSticker
+from telegram.request import Request
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, filters, CallbackContext,
     ConversationHandler, CallbackQueryHandler
@@ -278,7 +279,10 @@ async def post_init(application: Application):
         logger.info(f"Webhook set to {webhook_url}")
 
 app = Flask(__name__)
-telegram_app = Application.builder().token(BOT_TOKEN).post_init(post_init).build()
+
+# Increase the pool timeout to handle potential delays in Vercel's network
+request = Request(pool_timeout=30.0)
+telegram_app = Application.builder().token(BOT_TOKEN).post_init(post_init).request(request).build()
 
 conv_handler = ConversationHandler(
     entry_points=[CommandHandler('start', start)],
