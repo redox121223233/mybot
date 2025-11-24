@@ -1,1 +1,1 @@
-# Vercel compatible Telegram Bot API
+# API module for Vercel deployment
