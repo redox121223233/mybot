@@ -3,14 +3,19 @@ Vercel serverless function for Telegram bot webhook
 """
 import asyncio
 import os
+import sys
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import JSONResponse
-import sys
 
-# Add parent directory to path to import bot.py
+# Add parent directory to path to import bot modules
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from bot import main, router, BOT_TOKEN
+# Import from bot_core
+from bot_core.config import BOT_TOKEN
+from bot_core.bot_logic import router
+from bot_core.start_handler import on_start
+from bot_core.handlers import on_message
+from bot_core import handlers  # This will register all handlers
 
 app = FastAPI()
 
@@ -33,7 +38,7 @@ async def startup_event():
         # Create dispatcher
         dp = Dispatcher()
         
-        # Include router from bot.py
+        # Include router from bot_logic (which contains all handlers)
         dp.include_router(router)
         
         # Get bot info
