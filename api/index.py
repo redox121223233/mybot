@@ -1,10 +1,7 @@
-"""
-Vercel serverless function for Telegram bot webhook
-"""
+from http.server import BaseHTTPRequestHandler
+import json
 import asyncio
 import os
-import json
-from typing import Dict, Any
 import sys
 
 # Add parent directory to path to import bot.py
@@ -16,12 +13,74 @@ from bot import main, router, BOT_TOKEN
 bot = None
 dp = None
 
-async def initialize_bot():
-    """Initialize bot and dispatcher"""
-    global bot, dp
-    if bot is None or dp is None:
+class handler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        """Handle GET requests"""
+        if self.path == '/api/health':
+            response_data = {"status": "healthy", "bot_initialized": bot is not None}
+        else:
+            response_data = {"message": "Telegram Bot API Server", "status": "running"}
+        
+        self.send_response(200)
+        self.send_header('Content-type', 'application/json')
+        self.end_headers()
+        self.wfile.write(json.dumps(response_data).encode('utf-8'))
+        return
+
+    def do_POST(self):
+        """Handle POST requests - Telegram webhooks"""
+        global bot, dp
+        
+        if self.path != '/api/webhook':
+            self.send_response(404)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": "Not found"}).encode('utf-8'))
+            return
+
         try:
-            from aiogram import Bot, Dispatcher, F
+            # Read the request body
+            content_length = int(self.headers['Content-Length'])
+            post_data = self.rfile.read(content_length)
+            update_data = json.loads(post_data.decode('utf-8'))
+            
+            # Initialize bot if not already done
+            if bot is None or dp is None:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    self._initialize_bot(loop)
+                finally:
+                    loop.close()
+            
+            # Process the update
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                loop.run_until_complete(self._process_update(update_data))
+            finally:
+                loop.close()
+            
+            # Send success response
+            self.send_response(200)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"status": "ok"}).encode('utf-8'))
+            
+        except Exception as e:
+            print(f"Error processing webhook: {e}")
+            self.send_response(500)
+            self.send_header('Content-type', 'application/json')
+            self.end_headers()
+            self.wfile.write(json.dumps({"error": str(e)}).encode('utf-8'))
+        
+        return
+
+    def _initialize_bot(self, loop):
+        """Initialize bot and dispatcher"""
+        global bot, dp
+        try:
+            from aiogram import Bot, Dispatcher
             from aiogram.client.default import DefaultBotProperties
             from aiogram.enums import ParseMode
             
@@ -35,147 +94,28 @@ async def initialize_bot():
             dp.include_router(router)
             
             # Get bot info
-            bot_info = await bot.get_me()
+            bot_info = loop.run_until_complete(bot.get_me())
             print(f"Bot initialized: @{bot_info.username}")
             
             # Set webhook
             webhook_url = f"https://{os.environ.get('VERCEL_URL', 'localhost:3000')}/api/webhook"
-            await bot.set_webhook(webhook_url)
+            loop.run_until_complete(bot.set_webhook(webhook_url))
             print(f"Webhook set to: {webhook_url}")
             
         except Exception as e:
             print(f"Error during initialization: {e}")
             raise
 
-async def handler(request):
-    """Main handler for Vercel serverless functions"""
-    global bot, dp
-    
-    try:
-        # Parse request
-        method = request.method
-        url_path = request.url.path if hasattr(request, 'url') else request.path
+    async def _process_update(self, update_data):
+        """Process Telegram update"""
+        global bot, dp
         
-        # Initialize bot if not done yet
-        await initialize_bot()
+        if not bot or not dp:
+            raise Exception("Bot not initialized")
         
-        if method == "POST" and url_path == "/api/webhook":
-            # Handle webhook
-            try:
-                # Get update data
-                if hasattr(request, 'json'):
-                    update_data = await request.json()
-                else:
-                    body = request.body.read().decode('utf-8')
-                    update_data = json.loads(body)
-                
-                # Create update object and feed to dispatcher
-                from aiogram.types import Update
-                update = Update.model_validate(update_data)
-                
-                # Process update
-                await dp.feed_update(bot=bot, update=update)
-                
-                return {
-                    "statusCode": 200,
-                    "body": json.dumps({"status": "ok"}),
-                    "headers": {"Content-Type": "application/json"}
-                }
-                
-            except Exception as e:
-                print(f"Error processing webhook: {e}")
-                return {
-                    "statusCode": 500,
-                    "body": json.dumps({"error": str(e)}),
-                    "headers": {"Content-Type": "application/json"}
-                }
+        # Create update object and feed to dispatcher
+        from aiogram.types import Update
+        update = Update.model_validate(update_data)
         
-        elif method == "GET" and url_path == "/api/health":
-            # Health check
-            return {
-                "statusCode": 200,
-                "body": json.dumps({
-                    "status": "healthy", 
-                    "bot_initialized": bot is not None
-                }),
-                "headers": {"Content-Type": "application/json"}
-            }
-        
-        elif method == "GET" and url_path == "/":
-            # Root endpoint
-            return {
-                "statusCode": 200,
-                "body": json.dumps({
-                    "message": "Telegram Bot API Server", 
-                    "status": "running"
-                }),
-                "headers": {"Content-Type": "application/json"}
-            }
-        
-        else:
-            return {
-                "statusCode": 404,
-                "body": json.dumps({"error": "Not found"}),
-                "headers": {"Content-Type": "application/json"}
-            }
-            
-    except Exception as e:
-        print(f"Handler error: {e}")
-        return {
-            "statusCode": 500,
-            "body": json.dumps({"error": "Internal server error"}),
-            "headers": {"Content-Type": "application/json"}
-        }
-
-# Vercel serverless function entry point
-async def main_handler(request):
-    """Main entry point for Vercel"""
-    return await handler(request)
-
-# Export the handler
-def handler_v2(event):
-    """Vercel V2 function handler"""
-    import asyncio
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
-    try:
-        # Create mock request object from event
-        class MockRequest:
-            def __init__(self, event):
-                self.method = event.get('httpMethod', 'GET')
-                self.path = event.get('path', '/')
-                self.body = event.get('body', '')
-                self.headers = event.get('headers', {})
-                
-                # Parse URL
-                if 'pathParameters' in event:
-                    self.path = '/' + event['pathParameters'].get('proxy', '')
-                
-                self.url = MockURL(self.path)
-            
-            async def json(self):
-                if self.body:
-                    return json.loads(self.body)
-                return {}
-        
-        class MockURL:
-            def __init__(self, path):
-                self.path = path
-        
-        # Process the request
-        mock_request = MockRequest(event)
-        result = loop.run_until_complete(handler(mock_request))
-        
-        # Convert to Vercel response format
-        return {
-            'statusCode': result['statusCode'],
-            'body': result['body'],
-            'headers': result.get('headers', {})
-        }
-        
-    finally:
-        loop.close()
-
-# For Vercel compatibility
-handler = handler_v2
+        # Process update
+        await dp.feed_update(bot=bot, update=update)
