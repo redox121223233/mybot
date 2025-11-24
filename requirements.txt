@@ -1,5 +1,7 @@
-python-telegram-bot==20.6
-Pillow==10.0.1
-Flask==2.3.3
-arabic-reshaper==3.0.0
-python-bidi==0.4.2
+aiogram>=3.0.0
+fastapi>=0.104.0
+uvicorn>=0.24.0
+Pillow>=10.0.0
+arabic-reshaper>=3.0.0
+python-bidi>=0.4.2
+pydantic-core>=2.0.0
