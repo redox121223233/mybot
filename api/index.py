@@ -1,4 +1,3 @@
-from http.server import BaseHTTPRequestHandler
 import json
 import os
 import sys
@@ -15,66 +14,86 @@ except ImportError as e:
     bot = None
     dp = None
 
-class handler(BaseHTTPRequestHandler):
-    def do_POST(self):
-        """Handle Telegram webhook updates"""
-        if self.path != '/api/webhook':
-            self.send_response(404)
-            self.end_headers()
-            return
-        
-        try:
-            # Read the request body
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
-            
-            # Parse the update
-            update = json.loads(post_data.decode('utf-8'))
-            
-            if bot and dp:
-                # Process the update asynchronously
-                asyncio.run(self.process_update(update))
-                self.send_response(200)
-                self.send_header('Content-type', 'application/json')
-                self.end_headers()
-                self.wfile.write(json.dumps({"status": "ok"}).encode())
-            else:
-                self.send_response(500)
-                self.end_headers()
+async def process_update(update):
+    """Process Telegram update"""
+    try:
+        # Initialize bot if not already initialized
+        if bot is not None:
+            # Feed the update to dispatcher
+            await dp.feed_update(bot, update)
+    except Exception as e:
+        print(f"Error in dispatcher: {e}")
+
+def handler(request):
+    """Vercel serverless function handler"""
+    try:
+        # Parse request
+        if request.method == 'POST':
+            if request.url.endswith('/webhook'):
+                # Handle webhook
+                body = json.loads(request.body)
                 
-        except Exception as e:
-            print(f"Error processing webhook: {e}")
-            self.send_response(500)
-            self.end_headers()
-    
-    def do_GET(self):
-        """Handle health checks and setup webhook"""
-        if self.path == '/api/health':
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({"status": "healthy"}).encode())
-        elif self.path == '/api':
-            self.send_response(200)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({
-                "message": "Telegram Bot API is running",
-                "endpoints": {
-                    "webhook": "/api/webhook",
-                    "health": "/api/health"
+                if bot and dp:
+                    # Process the update asynchronously
+                    loop = asyncio.new_event_loop()
+                    asyncio.set_event_loop(loop)
+                    loop.run_until_complete(process_update(body))
+                    loop.close()
+                    
+                    return {
+                        'statusCode': 200,
+                        'headers': {'Content-Type': 'application/json'},
+                        'body': json.dumps({"status": "ok"})
+                    }
+                else:
+                    return {
+                        'statusCode': 500,
+                        'body': json.dumps({"error": "Bot not initialized"})
+                    }
+            else:
+                return {
+                    'statusCode': 404,
+                    'body': json.dumps({"error": "Not found"})
                 }
-            }).encode())
+        elif request.method == 'GET':
+            if request.url.endswith('/health'):
+                return {
+                    'statusCode': 200,
+                    'headers': {'Content-Type': 'application/json'},
+                    'body': json.dumps({"status": "healthy"})
+                }
+            elif request.url.endswith('/api'):
+                return {
+                    'statusCode': 200,
+                    'headers': {'Content-Type': 'application/json'},
+                    'body': json.dumps({
+                        "message": "Telegram Bot API is running",
+                        "endpoints": {
+                            "webhook": "/api/webhook",
+                            "health": "/api/health"
+                        }
+                    })
+                }
+            else:
+                return {
+                    'statusCode': 404,
+                    'body': json.dumps({"error": "Not found"})
+                }
         else:
-            self.send_response(404)
-            self.end_headers()
-    
-    async def process_update(self, update):
-        """Process Telegram update"""
-        try:
-            # Initialize bot if not already initialized
-            if bot is not None:
-                # Feed the update to dispatcher
-                await dp.feed_update(bot, update)
-        except Exception as e:
-            print(f"Error in dispatcher: {e}")
+            return {
+                'statusCode': 405,
+                'body': json.dumps({"error": "Method not allowed"})
+            }
+    except Exception as e:
+        print(f"Error in handler: {e}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps({"error": "Internal server error"})
+        }
+
+# For Vercel compatibility
+def main(request):
+    return handler(request)
+
+# Export the handler
+__all__ = ['handler', 'main']
