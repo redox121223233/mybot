@@ -10,7 +10,7 @@ from telegram.ext import (
     ConversationHandler, CallbackQueryHandler, ApplicationBuilder
 )
 from telegram.error import BadRequest
-from telegram.request import Request
+from telegram.request import Request as TelegramRequest
 
 from PIL import Image, ImageDraw, ImageFont
 import arabic_reshaper
@@ -263,7 +263,7 @@ async def cancel_handler(update: Update, context: CallbackContext):
 
 def build_application():
     # Configure custom request object with increased timeouts
-    request = Request(connect_timeout=30.0, read_timeout=30.0)
+    request = TelegramRequest(connect_timeout=30.0, read_timeout=30.0)
     application = ApplicationBuilder().token(BOT_TOKEN).request(request).build()
 
     conv_handler = ConversationHandler(
