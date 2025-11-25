@@ -6,30 +6,28 @@ import os
 from bot import build_application
 
 # This file is the entry point for Vercel.
-# It imports the bot application and handles webhook requests.
 
 app = Flask(__name__)
 application = build_application()
 
-async def post_init():
-    if 'VERCEL_URL' in os.environ:
-        webhook_url = f"https://{os.environ['VERCEL_URL']}/api/index"
-        await application.bot.set_webhook(url=webhook_url)
-
-async def main():
+async def main(data):
+    """Processes the incoming update."""
     if not hasattr(main, 'initialized'):
+        # Initialize the bot once, on the first request
         await application.initialize()
-        await post_init()
         main.initialized = True
 
-    update = Update.de_json(flask_request.get_json(force=True), application.bot)
+    update = Update.de_json(data, application.bot)
     await application.process_update(update)
 
 @app.route('/api/index', methods=['POST'])
 def webhook():
-    asyncio.run(main())
+    """Webhook endpoint to receive updates from Telegram."""
+    data = flask_request.get_json(force=True)
+    asyncio.run(main(data))
     return 'ok'
 
 @app.route('/')
 def index():
+    """A simple endpoint to confirm the server is running."""
     return 'Hello, World!'
