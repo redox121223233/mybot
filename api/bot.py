@@ -1360,7 +1360,25 @@ async def on_message(message: Message, bot: Bot):
         is_admin = (uid == ADMIN_ID)
         await message.answer("از منوی زیر انتخاب کن:", reply_markup=main_menu_kb(is_admin))
 
+# Global variables for Vercel
+bot = None
+dp = None
+
+async def init_bot():
+    """Initialize bot for Vercel deployment"""
+    global bot, dp, BOT_USERNAME
+    
+    if bot is None:
+        dp = Dispatcher()
+        dp.include_router(router)
+        bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
+        
+        bot_info = await bot.get_me()
+        BOT_USERNAME = bot_info.username
+        print(f"ربات با نام کاربری @{BOT_USERNAME} آماده به کار شد")
+
 async def main():
+    """Main function for local development"""
     global BOT_USERNAME
 
     dp = Dispatcher()
