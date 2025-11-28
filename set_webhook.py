@@ -1,97 +1,39 @@
-#!/usr/bin/env python3
-
-"""
-Webhook Setter Script - Hardened to remove whitespace and quotes
-"""
-
-import requests
-import json
 import os
+import httpx
+
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+# IMPORTANT: Make sure this URL is correct and the deployment is active.
+WEBHOOK_URL = "https://mybot32.vercel.app/api/index"
 
 def set_webhook():
-    """Set the webhook for the bot, ensuring URL is clean."""
-    
-    bot_token = os.environ.get("BOT_TOKEN")
-    if not bot_token:
-        print("❌ BOT_TOKEN not found in environment variables")
-        return False
-    
-    # Get URL and clean it thoroughly: strip whitespace, then strip quotes.
-    webhook_url = os.environ.get("VERCEL_URL", "https://mybot32.vercel.app/api/webhook").strip().strip('\'"')
+    """
+    Sets the webhook for the Telegram bot.
+    """
+    if not BOT_TOKEN:
+        print("Error: BOT_TOKEN environment variable not set!")
+        return
 
-    api_url = f"https://api.telegram.org/bot{bot_token}/setWebhook"
-    
-    data = {
-        "url": webhook_url,
-        "drop_pending_updates": True
-    }
-    
-    try:
-        print(f"🔗 Setting webhook to: '{webhook_url}'") # Log with quotes to see the final URL
-        print("📤 Sending request to Telegram API...")
-        
-        response = requests.post(api_url, json=data, timeout=30)
-        result = response.json()
-        
-        print(f"📊 Status Code: {response.status_code}")
-        print(f"📋 Response: {json.dumps(result, indent=2, ensure_ascii=False)}")
-        
-        if result.get("ok"):
-            print("✅ Webhook set successfully!")
-            return True
-        else:
-            print(f"❌ Failed to set webhook: {result.get('description', 'Unknown error')}")
-            return False
-            
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Request error: {e}")
-        return False
+    api_url = f"https://api.telegram.org/bot{BOT_TOKEN}/setWebhook"
+    params = {"url": WEBHOOK_URL}
 
-def get_webhook_info():
-    """Get current webhook info."""
-    bot_token = os.environ.get("BOT_TOKEN")
-    if not bot_token:
-        print("❌ BOT_TOKEN not found")
-        return False
-    
-    api_url = f"https://api.telegram.org/bot{bot_token}/getWebhookInfo"
-    
     try:
-        response = requests.get(api_url, timeout=30)
-        result = response.json()
-        print(f"📋 Info: {json.dumps(result, indent=2, ensure_ascii=False)}")
-        return result.get("ok", False)
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Request error: {e}")
-        return False
+        with httpx.Client() as client:
+            response = client.post(api_url, params=params)
+            response.raise_for_status()  # Raise an exception for bad status codes
+            result = response.json()
+            if result.get("ok"):
+                print(f"Webhook set successfully to {WEBHOOK_URL}")
+                print(f"Response: {result.get('description')}")
+            else:
+                print("Failed to set webhook.")
+                print(f"Error code: {result.get('error_code')}")
+                print(f"Description: {result.get('description')}")
 
-def delete_webhook():
-    """Delete the current webhook."""
-    bot_token = os.environ.get("BOT_TOKEN")
-    if not bot_token:
-        print("❌ BOT_TOKEN not found")
-        return False
-    
-    api_url = f"https://api.telegram.org/bot{bot_token}/deleteWebhook"
-    
-    try:
-        response = requests.post(api_url, timeout=30)
-        result = response.json()
-        print(f"🗑️ Deletion status: {json.dumps(result, indent=2, ensure_ascii=False)}")
-        return result.get("ok", False)
-    except requests.exceptions.RequestException as e:
-        print(f"❌ Request error: {e}")
-        return False
+    except httpx.RequestError as e:
+        print(f"An error occurred while requesting {e.request.url!r}.")
+        print(str(e))
+    except Exception as e:
+        print(f"An unexpected error occurred: {e}")
 
 if __name__ == "__main__":
-    print("🚀 Webhook Management Tool")
-    print("=" * 50)
-    
-    print("\n1️⃣ Attempting to delete existing webhook...")
-    delete_webhook()
-
-    print("\n2️⃣ Attempting to set new webhook...")
     set_webhook()
-
-    print("\n3️⃣ Verifying current webhook info...")
-    get_webhook_info()
