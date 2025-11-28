@@ -46,7 +46,22 @@ def get_user(uid: int) -> dict:
 BOT_USERNAME = ""
 
 # ================================== File Paths ================================
-FONT_FILE = os.path.join(os.path.dirname(__file__), 'fonts', 'Vazirmatn-Regular.ttf')
+# Try to find the font file in multiple locations
+FONT_FILE = None
+font_locations = [
+    os.path.join(os.path.dirname(__file__), 'fonts', 'Vazirmatn-Regular.ttf'),
+    os.path.join(os.path.dirname(__file__), '..', 'api', 'Vazirmatn-Regular.ttf'),
+    os.path.join(os.path.dirname(__file__), 'api', 'Vazirmatn-Regular.ttf'),
+    '/tmp/Vazirmatn-Regular.ttf'  # Vercel tmp directory
+]
+
+for location in font_locations:
+    if os.path.exists(location):
+        FONT_FILE = location
+        break
+
+if not FONT_FILE:
+    logger.warning("Font file not found in any location, will use default font")
 
 # =============================== Render Functions =============================
 def _prepare_text(text: str) -> str:
