@@ -431,7 +431,7 @@ async def create_image_sticker(image_bytes: bytes) -> BufferedInputFile:
 bot = None
 dp = None
 
-async def create_bot():
+def create_bot():
     """Create bot instance with optimized settings"""
     global bot, dp
     
@@ -468,8 +468,6 @@ async def create_bot():
 
 # Initialize function
 async def init():
-    """Initialize the bot"""
-    return await create_bot()
     """Initialize the bot"""
     return await create_bot()
 
