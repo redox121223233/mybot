@@ -1,3 +1,4 @@
+# Vercel-compatible bot handlers
 """
 Bot handlers for all message and callback interactions
 """
@@ -6,6 +7,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.exceptions import TelegramBadRequest
 import asyncio
+from html import escape  # Import the escape function
 
 from .bot_logic import (
     router, USERS, SESSIONS, ADMIN_PENDING, BOT_USERNAME,
@@ -494,23 +496,11 @@ async def on_rate_yes(cb: CallbackQuery, bot: Bot):
     pack_title = s.get("current_pack_title")
 
     if not sticker_bytes or not pack_short_name:
-        print(f"DEBUG: Missing data. Sticker bytes: {bool(sticker_bytes)}, Pack short name: {bool(pack_short_name)}")
         await cb.message.answer("خطایی در پیدا کردن پک یا استیکر رخ داد. لطفا دوباره تلاش کنید.", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
         await cb.answer()
         return
 
-    print(f"DEBUG: Attempting to add sticker to pack '{pack_short_name}' for user {cb.from_user.id}")
-    print(f"DEBUG: Sticker size: {len(sticker_bytes)} bytes")
-    
-    try:
-        with open(f"debug_sticker_{cb.from_user.id}.webp", "wb") as f:
-            f.write(sticker_bytes)
-        print(f"DEBUG: Saved sticker to debug_sticker_{cb.from_user.id}.webp for manual inspection.")
-    except Exception as e:
-        print(f"DEBUG: Could not save debug file: {e}")
-
     if len(sticker_bytes) > 64 * 1024:
-        print("DEBUG: Sticker is too large!")
         await cb.message.answer("فایل استیکر خیلی بزرگ است. لطفا با متن کوتاه‌تر یا ساده‌تر دوباره تلاش کنید.", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
         await cb.answer()
         return
@@ -521,25 +511,23 @@ async def on_rate_yes(cb: CallbackQuery, bot: Bot):
     try:
         sticker_to_add = InputSticker(
             sticker=BufferedInputFile(sticker_bytes, filename="sticker.webp"),
-            emoji_list=["😄"]
+            emoji_list=["😄"],
+            format="static"
         )
-        response = await cb.bot.add_sticker_to_set(
+        await cb.bot.add_sticker_to_set(
             user_id=cb.from_user.id,
             name=pack_short_name,
             sticker=sticker_to_add
         )
-        print(f"DEBUG: API response from add_sticker_to_set: {response}")
         
         pack_link = f"https://t.me/addstickers/{pack_short_name}"
         await cb.message.answer(f"استیکر با موفقیت به پک «{pack_title}» افزوده شد.\n\n{pack_link}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
         
     except TelegramBadRequest as e:
-        print(f"DEBUG: TelegramBadRequest on add_sticker_to_set: {e.message}")
-        await cb.message.answer(f"خطا در افزودن استیکر به پک: {e.message}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+        await cb.message.answer(f"خطا در افزودن استیکر به پک: {escape(e.message)}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
     except Exception as e:
-        print(f"DEBUG: Unexpected error on add_sticker_to_set: {e}")
         traceback.print_exc()
-        await cb.message.answer(f"خطای غیرمنتظره‌ای رخ داد. لطفا به ادمین اطلاع دهید.\nخطا: {str(e)}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
+        await cb.message.answer(f"خطای غیرمنتظره‌ای رخ داد. لطفا به ادمین اطلاع دهید.\nخطا: {escape(str(e))}", reply_markup=back_to_menu_kb(cb.from_user.id == ADMIN_ID))
 
     await cb.answer()
 
@@ -633,7 +621,7 @@ async def on_message(message: Message, bot: Bot):
                 await message.bot.copy_message(chat_id=target_uid, from_chat_id=message.chat.id, message_id=message.message_id)
                 await message.answer(f"پیام به کاربر {target_uid} ارسال شد.")
             except Exception as e:
-                await message.answer(f"خطا در ارسال پیام: {e}")
+                await message.answer(f"خطا در ارسال پیام: {escape(str(e))}")
             return
 
         if action == "quota_get_user":
@@ -701,8 +689,6 @@ async def on_message(message: Message, bot: Bot):
         short_name = f"{pack_name}_by_{BOT_USERNAME}"
         mode = pack_wizard.get("mode")
 
-        print(f"DEBUG: pack_name='{pack_name}', BOT_USERNAME='{BOT_USERNAME}', short_name='{short_name}'")
-
         if len(short_name) > 64:
             await message.answer(
                 f"نام پک خیلی طولانی است. با افزودن '_by_{BOT_USERNAME}' به {len(short_name)} کاراکتر می‌رسد.\n"
@@ -724,7 +710,8 @@ async def on_message(message: Message, bot: Bot):
                 dummy_img = render_image("First", "center", "center", "Default", "#FFFFFF", "medium", as_webp=True)
                 sticker_to_add = InputSticker(
                     sticker=BufferedInputFile(dummy_img, filename="sticker.webp"),
-                    emoji_list=["🎉"]
+                    emoji_list=["🎉"],
+                    format="static"
                 )
                 try:
                     await message.bot.create_new_sticker_set(
@@ -732,8 +719,7 @@ async def on_message(message: Message, bot: Bot):
                         name=short_name,
                         title=pack_name,
                         stickers=[sticker_to_add],
-                        sticker_type='regular',
-                        sticker_format='static'
+                        sticker_type='regular'
                     )
                 except pydantic_core.ValidationError as e:
                     if "result.is_animated" in str(e) and "result.is_video" in str(e):
@@ -764,7 +750,7 @@ async def on_message(message: Message, bot: Bot):
             error_msg = e.message.lower()
             if "invalid sticker set name" in error_msg or "bad request" in error_msg:
                 await message.answer(
-                    f"نام پک نامعتبر است. خطا: {e.message}\n\n"
+                    f"نام پک نامعتبر است. خطا: {escape(e.message)}\n\n"
                     "لطفا یک نام دیگر انتخاب کنید که:\n"
                     "• فقط شامل حروف انگلیسی کوچک، عدد و زیرخط باشد\n"
                     "• با حرف شروع شود\n"
@@ -772,9 +758,9 @@ async def on_message(message: Message, bot: Bot):
                     reply_markup=back_to_menu_kb(is_admin)
                 )
             else:
-                await message.answer(f"خطا در ساخت پک: {e.message}", reply_markup=back_to_menu_kb(is_admin))
+                await message.answer(f"خطا در ساخت پک: {escape(e.message)}", reply_markup=back_to_menu_kb(is_admin))
         except Exception as e:
-            await message.answer(f"خطای غیرمنتظره: {str(e)}", reply_markup=back_to_menu_kb(is_admin))
+            await message.answer(f"خطای غیرمنتظره: {escape(str(e))}", reply_markup=back_to_menu_kb(is_admin))
             return
 
     if message.photo:
