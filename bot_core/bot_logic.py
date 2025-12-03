@@ -1,3 +1,4 @@
+# Vercel-compatible core bot logic
 """
 Core bot logic extracted from bot.py
 """
