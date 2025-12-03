@@ -1,35 +1,37 @@
 """
-Configuration settings for the bot
+Bot configuration settings.
+Values are read from environment variables.
 """
 import os
+from dotenv import load_dotenv
 
-# Configuration
-BOT_TOKEN = os.getenv("BOT_TOKEN", "YOUR_BOT_TOKEN_HERE").strip()
+# Load environment variables from .env file for local development
+load_dotenv()
+
+# --- Telegram Bot ---
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 if not BOT_TOKEN:
-    raise RuntimeError("BOT_TOKEN را در محیط تنظیم کنید.")
+    raise ValueError("BOT_TOKEN environment variable not set!")
 
-CHANNEL_USERNAME = "@redoxbot_sticker"
-SUPPORT_USERNAME = "@onedaytoalive"
-ADMIN_ID = 6053579919
+BOT_USERNAME = ""  # Will be fetched automatically
 
+# --- Channel & Support ---
+CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME", "@redoxbot_sticker")
+SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "@onedaytoalive")
+
+# --- Admin ---
+ADMIN_ID = int(os.getenv("ADMIN_ID", "6053579919"))
+
+# --- Bot Settings ---
 MAINTENANCE = False
-DAILY_LIMIT = 5
-BOT_USERNAME = ""
+DAILY_LIMIT = int(os.getenv("DAILY_LIMIT", "5"))
 
-# Forbidden words filter
-FORBIDDEN_WORDS = ["kos", "kir", "kon", "koss", "kiri", "koon"]
-
-# Color palette
+# --- Sticker Settings ---
+FORBIDDEN_WORDS = ["sticker", "anim", "video"]
 DEFAULT_PALETTE = [
-    ("سفید", "#FFFFFF"), ("مشکی", "#000000"), ("قرمز", "#F43F5E"), ("آبی", "#3B82F6"),
-    ("سبز", "#22C55E"), ("زرد", "#EAB308"), ("بنفش", "#8B5CF6"), ("نارنجی", "#F97316"),
+    ("سفید", "#FFFFFF"), ("مشکی", "#000000"), ("قرمز", "#FF0000"), ("سبز", "#00FF00"),
+    ("آبی", "#0000FF"), ("زرد", "#FFFF00"), ("صورتی", "#FFC0CB"), ("نارنجی", "#FFA500")
 ]
-
 NAME_TO_HEX = {name: hx for name, hx in DEFAULT_PALETTE}
-POS_WORDS = {"بالا": "top", "وسط": "center", "میانه": "center", "پایین": "bottom"}
-SIZE_WORDS = {"ریز": "small", "متوسط": "medium", "بزرگ": "large", "درشت": "large"}
-
-# Position and size mappings
-NAME_TO_HEX = {name: hx for name, hx in DEFAULT_PALETTE}
-POS_WORDS = {"بالا": "top", "وسط": "center", "میانه": "center", "پایین": "bottom"}
-SIZE_WORDS = {"ریز": "small", "متوسط": "medium", "بزرگ": "large", "درشت": "large"}
+POS_WORDS = ["بالا", "وسط", "پایین", "چپ", "راست"]
+SIZE_WORDS = ["کوچک", "متوسط", "بزرگ"]
