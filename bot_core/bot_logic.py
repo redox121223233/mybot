@@ -1,3 +1,4 @@
+# Vercel-compatible core bot logic
 """
 Core bot logic extracted from bot.py
 """
@@ -150,51 +151,20 @@ def get_current_pack(uid: int) -> Optional[Dict[str, str]]:
 
 # ============ فونت‌ها ============
 FONT_DIR = os.path.join(os.path.dirname(__file__), "fonts")
-LOCAL_FONT_FILES = {
-    "Vazirmatn": ["Vazirmatn-Regular.ttf", "Vazirmatn-Medium.ttf"],
-    "NotoNaskh": ["NotoNaskhArabic-Regular.ttf", "NotoNaskhArabic-Medium.ttf"],
-    "Sahel": ["Sahel.ttf", "Sahel-Bold.ttf"],
-    "IRANSans": ["IRANSans.ttf", "IRANSansX-Regular.ttf"],
-    "Roboto": ["Roboto-Regular.ttf", "Roboto-Medium.ttf"],
-    "Default": ["Vazirmatn-Regular.ttf", "Roboto-Regular.ttf"],
+AVAILABLE_FONTS = {
+    "Vazirmatn": "Vazirmatn-Regular.ttf",
+    "Sahel": "Sahel.ttf",
+    "Tanha": "Tanha.ttf",
+    "Samim": "Samim.ttf",
+    "IRANSans": "IRANSans.ttf",
+    "Roboto": "Roboto-Regular.ttf",
+    "Default": "Vazirmatn-Regular.ttf",
 }
 
-PERSIAN_FONTS = ["Vazirmatn", "NotoNaskh", "Sahel", "IRANSans"]
-ENGLISH_FONTS = ["Roboto"]
-
-def _load_local_fonts() -> Dict[str, str]:
-    found: Dict[str, str] = {}
-    if os.path.isdir(FONT_DIR):
-        for logical, names in LOCAL_FONT_FILES.items():
-            for name in names:
-                p = os.path.join(FONT_DIR, name)
-                if os.path.isfile(p):
-                    found[logical] = p
-                    break
-    return found
-
-_LOCAL_FONTS = _load_local_fonts()
-
-def available_font_options() -> List[Tuple[str, str]]:
-    keys = list(_LOCAL_FONTS.keys())
-    return [(k, k) for k in keys[:8]] if keys else [("Default", "Default")]
-
-def _detect_language(text: str) -> str:
-    if not text:
-        return "english"
-    persian_pattern = re.compile(r'[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]')
-    return "persian" if persian_pattern.search(text) else "english"
-
-def resolve_font_path(font_key: Optional[str], text: str = "") -> str:
-    if font_key and font_key in _LOCAL_FONTS:
-        return _LOCAL_FONTS[font_key]
-    if text:
-        lang = _detect_language(text)
-        font_list = PERSIAN_FONTS if lang == "persian" else ENGLISH_FONTS
-        for font_name in font_list:
-            if font_name in _LOCAL_FONTS:
-                return _LOCAL_FONTS[font_name]
-    return next(iter(_LOCAL_FONTS.values()), "")
+def resolve_font_path(font_key: Optional[str]) -> str:
+    """Resolves the font key to a full font path."""
+    filename = AVAILABLE_FONTS.get(font_key, AVAILABLE_FONTS["Default"])
+    return os.path.join(FONT_DIR, filename)
 
 # ============ رندر تصویر/استیکر ============
 CANVAS = (512, 512)
@@ -205,12 +175,6 @@ def _prepare_text(text: str) -> str:
     reshaped_text = arabic_reshaper.reshape(text)
     bidi_text = get_display(reshaped_text)
     return bidi_text
-
-def is_persian(text):
-    if not text:
-        return False
-    persian_pattern = re.compile(r'[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]')
-    return bool(persian_pattern.search(text))
 
 def _parse_hex(hx: str) -> Tuple[int, int, int, int]:
     hx = (hx or "#ffffff").strip().lstrip("#")
@@ -226,7 +190,7 @@ def fit_font_size(draw: ImageDraw.ImageDraw, text: str, font_path: str, base: in
     size = base
     while size > 12:
         try:
-            font = ImageFont.truetype(font_path, size=size) if font_path else ImageFont.load_default()
+            font = ImageFont.truetype(font_path, size=size)
         except Exception:
             font = ImageFont.load_default()
         bbox = draw.textbbox((0, 0), text, font=font)
@@ -251,7 +215,7 @@ def _make_default_bg(size=(512, 512)) -> Image.Image:
     return img.filter(ImageFilter.GaussianBlur(0.5))
 
 def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: str, size_key: str,
-                bg_mode: str = "transparent", bg_photo: Optional[bytes] = None, as_webp: bool = False) -> bytes:
+                bg_mode: str = "transparent", bg_photo: Optional[bytes] = None, as_webp: bool = False, bold: bool = False) -> bytes:
     W, H = CANVAS
     if bg_photo:
         try:
@@ -268,12 +232,12 @@ def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: st
     size_map = {"small": 64, "medium": 96, "large": 128}
     base_size = size_map.get(size_key, 96)
 
-    font_path = resolve_font_path(font_key, text)
+    font_path = resolve_font_path(font_key)
     txt = _prepare_text(text)
     final_size = fit_font_size(draw, txt, font_path, base_size, box_w, box_h)
 
     try:
-        font = ImageFont.truetype(font_path, size=final_size) if font_path else ImageFont.load_default()
+        font = ImageFont.truetype(font_path, size=final_size)
     except Exception:
         font = ImageFont.load_default()
 
@@ -295,20 +259,20 @@ def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: st
     else:
         x = W / 2
 
+    stroke_width = 3 if bold else 2
     draw.text(
         (x, y),
         txt,
         font=font,
         fill=color,
         anchor="mm" if h_pos == "center" else "lm",
-        stroke_width=2,
+        stroke_width=stroke_width,
         stroke_fill=(0, 0, 0, 220)
     )
 
     buf = BytesIO()
     img.save(buf, format="WEBP" if as_webp else "PNG")
     return buf.getvalue()
-
 # ============ FFmpeg ============
 def is_ffmpeg_installed() -> bool:
     try:
@@ -446,6 +410,14 @@ def ai_image_source_kb():
     kb.adjust(2)
     return kb.as_markup()
 
+def ai_font_kb():
+    """Creates a keyboard for font selection."""
+    kb = InlineKeyboardBuilder()
+    for name in AVAILABLE_FONTS:
+        kb.button(text=name, callback_data=f"ai:font:{name}")
+    kb.adjust(3)
+    return kb.as_markup()
+
 def ai_vpos_kb():
     kb = InlineKeyboardBuilder()
     kb.button(text="بالا", callback_data="ai:vpos:top")
@@ -504,7 +476,7 @@ __all__ = [
     'render_image', 'check_channel_membership', 'require_channel_membership',
     'main_menu_kb', 'back_to_menu_kb', 'simple_bg_kb', 'after_preview_kb', 'rate_kb',
     'pack_selection_kb', 'add_to_pack_kb', 'ai_type_kb', 'ai_image_source_kb',
-    'ai_vpos_kb', 'ai_hpos_kb', 'admin_panel_kb',
+    'ai_font_kb', 'ai_vpos_kb', 'ai_hpos_kb', 'admin_panel_kb',
     'check_pack_exists', 'is_valid_pack_name', 'process_video_to_webm',
     'is_ffmpeg_installed'
 ]
