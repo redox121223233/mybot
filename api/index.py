@@ -24,7 +24,12 @@ async def init_bot_once():
             bot_initialized = True
             logger.info("Bot initialized successfully")
         except Exception as e:
-            logger.error(f"Bot initialization failed: {e}")
+            error_str = str(e).lower()
+            if "flood control" in error_str or "too many requests" in error_str:
+                logger.info("Bot initialization hit flood control - will work normally")
+                bot_initialized = True  # Still mark as initialized since bot works
+            else:
+                logger.error(f"Bot initialization failed: {e}")
     return bot_initialized
 
 async def handle_webhook(body):
