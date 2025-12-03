@@ -1,3 +1,4 @@
+# Vercel-compatible core bot logic
 """
 Core bot logic extracted from bot.py
 """
@@ -206,12 +207,6 @@ def _prepare_text(text: str) -> str:
     bidi_text = get_display(reshaped_text)
     return bidi_text
 
-def is_persian(text):
-    if not text:
-        return False
-    persian_pattern = re.compile(r'[\u0600-\u06ff\u0750-\u077f\u08a0-\u08ff]')
-    return bool(persian_pattern.search(text))
-
 def _parse_hex(hx: str) -> Tuple[int, int, int, int]:
     hx = (hx or "#ffffff").strip().lstrip("#")
     if len(hx) == 3:
@@ -226,7 +221,7 @@ def fit_font_size(draw: ImageDraw.ImageDraw, text: str, font_path: str, base: in
     size = base
     while size > 12:
         try:
-            font = ImageFont.truetype(font_path, size=size) if font_path else ImageFont.load_default()
+            font = ImageFont.truetype(font_path, size=size)
         except Exception:
             font = ImageFont.load_default()
         bbox = draw.textbbox((0, 0), text, font=font)
@@ -308,7 +303,6 @@ def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: st
     buf = BytesIO()
     img.save(buf, format="WEBP" if as_webp else "PNG")
     return buf.getvalue()
-
 # ============ FFmpeg ============
 def is_ffmpeg_installed() -> bool:
     try:
@@ -446,6 +440,15 @@ def ai_image_source_kb():
     kb.adjust(2)
     return kb.as_markup()
 
+def ai_font_kb():
+    """Creates a keyboard for font selection."""
+    kb = InlineKeyboardBuilder()
+    # Use the new function to get available fonts
+    for name, key in available_font_options():
+        kb.button(text=name, callback_data=f"ai:font:{key}")
+    kb.adjust(3)
+    return kb.as_markup()
+
 def ai_vpos_kb():
     kb = InlineKeyboardBuilder()
     kb.button(text="بالا", callback_data="ai:vpos:top")
@@ -504,7 +507,7 @@ __all__ = [
     'render_image', 'check_channel_membership', 'require_channel_membership',
     'main_menu_kb', 'back_to_menu_kb', 'simple_bg_kb', 'after_preview_kb', 'rate_kb',
     'pack_selection_kb', 'add_to_pack_kb', 'ai_type_kb', 'ai_image_source_kb',
-    'ai_vpos_kb', 'ai_hpos_kb', 'admin_panel_kb',
+    'ai_font_kb', 'ai_vpos_kb', 'ai_hpos_kb', 'admin_panel_kb',
     'check_pack_exists', 'is_valid_pack_name', 'process_video_to_webm',
     'is_ffmpeg_installed'
 ]
