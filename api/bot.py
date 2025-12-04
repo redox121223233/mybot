@@ -5,7 +5,7 @@ from io import BytesIO
 from typing import Dict, Any, Optional, Tuple, List
 from datetime import datetime, timezone
 import subprocess
-import pydantic_core  # برای مدیریت خطای اعتبارسنجی
+asynciooantic_core  # برای مدیریت خطای اعتبارسنجی
 import traceback # برای نمایش خطاهای دقیق
 
 from aiogram import Bot, Dispatcher, F, Router
