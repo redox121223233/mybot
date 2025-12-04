@@ -1,85 +1,165 @@
+import asyncio
 import json
 import os
 import sys
+from http.server import BaseHTTPRequestHandler
+from urllib.parse import urlparse
+import nest_asyncio
 
-# Add current directory to Python path
+# Apply nest_asyncio to allow nested event loops.
+nest_asyncio.apply()
+
+# --- Global, Shared Event Loop ---
+# This is the key to solving all asyncio-related issues in a serverless context.
+# We create a single, long-running event loop that persists between invocations.
+try:
+    loop = asyncio.get_running_loop()
+except RuntimeError:  # 'RuntimeError: There is no current event loop...'
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
+# Add parent directory to path
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-# Global variables - NO initialization at module load time
+# Lazy-loaded imports
+Bot = None
+Dispatcher = None
+Update = None
+DefaultBotProperties = None
+ParseMode = None
+router = None
+BOT_TOKEN = None
+
+# Global instances
 bot_instance = None
+dispatcher_instance = None
 bot_initialized = False
-commands_set = False
 
-def handler(request):
-    """
-    Ultra-minimal Vercel handler to prevent issubclass() error
-    NO asyncio, NO complex imports, NO module-level operations
-    """
-    try:
-        # Parse request safely
-        method = getattr(request, 'method', 'GET')
-        if isinstance(request, dict):
-            method = request.get('method', 'GET')
-        
-        # Get path
-        path = getattr(request, 'url', '/').split('?')[0]
-        if isinstance(request, dict):
-            path = request.get('path', '/')
-        
-        # Health check endpoint
-        if method == 'GET' and path.endswith('/health'):
-            return {
-                'statusCode': 200,
-                'headers': {'Content-Type': 'application/json'},
-                'body': json.dumps({
-                    "status": "healthy",
-                    "bot_initialized": bot_initialized,
-                    "commands_set": commands_set,
-                    "message": "Ultra-minimal handler - no issubclass error"
-                })
-            }
-        
-        # Main API info endpoint
-        elif method == 'GET':
-            return {
-                'statusCode': 200,
-                'headers': {'Content-Type': 'application/json'},
-                'body': json.dumps({
-                    "message": "Telegram Sticker Bot API - Ultra-Minimal",
-                    "status": "running",
-                    "version": "3.0.0",
-                    "bot": "disabled_for_safety",
-                    "endpoints": {
-                        "health": "/api/health"
-                    }
-                })
-            }
-        
-        # Webhook endpoint - return OK without bot processing
-        elif method == 'POST' and path.endswith('/webhook'):
-            return {
-                'statusCode': 200,
-                'headers': {'Content-Type': 'application/json'},
-                'body': json.dumps({
-                    "status": "ok",
-                    "message": "Webhook received - bot disabled to prevent errors"
-                })
-            }
-        
-        # Default response
-        else:
-            return {
-                'statusCode': 404,
-                'headers': {'Content-Type': 'application/json'},
-                'body': json.dumps({"error": "Not found"})
-            }
+async def initialize_bot():
+    """Initializes the bot and dispatcher instances only once."""
+    global Bot, Dispatcher, Update, DefaultBotProperties, ParseMode, router, BOT_TOKEN
+    global bot_instance, dispatcher_instance, bot_initialized
+
+    if bot_initialized:
+        return
+
+    from aiogram import Bot as AiogramBot, Dispatcher as AiogramDispatcher
+    from aiogram.client.default import DefaultBotProperties as AiogramDefaultBotProperties
+    from aiogram.enums import ParseMode as AiogramParseMode
+    from aiogram.types import Update as AiogramUpdate
+    from aiogram.client.session.aiohttp import AiohttpSession
+    import aiohttp
+
+    from bot_core.bot_logic import router as bot_router
+    from bot_core.config import BOT_TOKEN as token
+    import bot_core.handlers
+    import bot_core.start_handler
+
+    Bot, Dispatcher, Update, DefaultBotProperties, ParseMode = AiogramBot, AiogramDispatcher, AiogramUpdate, AiogramDefaultBotProperties, AiogramParseMode
+    router, BOT_TOKEN = bot_router, token
+
+    if not BOT_TOKEN:
+        raise ValueError("BOT_TOKEN environment variable not set!")
+
+    session = AiohttpSession(timeout=aiohttp.ClientTimeout(total=None))
+
+    bot_instance = Bot(
+        token=BOT_TOKEN,
+        default=DefaultBotProperties(parse_mode=ParseMode.HTML),
+        session=session
+    )
+    dispatcher_instance = Dispatcher()
+    dispatcher_instance.include_router(router)
+
+    bot_initialized = True
+    print("Bot initialized successfully!")
+
+async def handle_webhook(update_data):
+    """Handles a webhook update from Telegram."""
+    if not bot_initialized:
+        await initialize_bot()
+
+    update = Update.model_validate(update_data, context={"bot": bot_instance})
+    await dispatcher_instance.feed_update(bot=bot_instance, update=update)
+
+async def set_telegram_webhook(url):
+    """Sets the Telegram webhook to the provided URL."""
+    if not bot_initialized:
+        await initialize_bot()
+
+    webhook_url = f"https://{url}/webhook"
+    await bot_instance.set_webhook(webhook_url)
+    return f"Webhook set to {webhook_url}"
+
+class handler(BaseHTTPRequestHandler):
+    """Vercel serverless function handler."""
+    def do_GET(self):
+        # Run async code on the shared, global event loop.
+        loop.run_until_complete(self.handle_get_async())
+
+    async def handle_get_async(self):
+        try:
+            parsed_path = urlparse(self.path)
+            path = parsed_path.path
+
+            if path == "/api/health":
+                self.send_response(200)
+                self.send_header("Content-type", "application/json")
+                self.end_headers()
+                response = {"status": "healthy", "bot_initialized": bot_initialized}
+                self.wfile.write(json.dumps(response).encode("utf-8"))
+
+            elif path == "/api/set_webhook":
+                vercel_url = self.headers.get('x-vercel-deployment-url')
+                if vercel_url:
+                    message = await set_telegram_webhook(vercel_url)
+                    self.send_response(200)
+                    self.send_header("Content-type", "application/json")
+                    self.end_headers()
+                    response = {"status": "ok", "message": message}
+                    self.wfile.write(json.dumps(response).encode("utf-8"))
+                else:
+                    self.send_response(400)
+                    self.send_header("Content-type", "application/json")
+                    self.end_headers()
+                    response = {"status": "error", "message": "x-vercel-deployment-url header not found"}
+                    self.wfile.write(json.dumps(response).encode("utf-8"))
             
-    except Exception as e:
-        return {
-            'statusCode': 500,
-            'headers': {'Content-Type': 'application/json'},
-            'body': json.dumps({"error": f"Internal server error: {str(e)}"})
-        }
+            else:
+                self.send_response(200)
+                self.send_header("Content-type", "text/plain")
+                self.end_headers()
+                self.wfile.write(b"Hello from the bot's main page!")
+        except Exception as e:
+            self.send_response(500)
+            self.send_header("Content-type", "application/json")
+            self.end_headers()
+            response = {"status": "error", "message": str(e)}
+            self.wfile.write(json.dumps(response).encode("utf-8"))
 
-# Export for Vercel
-__all__ = ['handler']
+    def do_POST(self):
+        # Run async code on the shared, global event loop.
+        loop.run_until_complete(self.handle_post_async())
+
+    async def handle_post_async(self):
+        try:
+            parsed_path = urlparse(self.path)
+            path = parsed_path.path
+
+            if path == "/webhook":
+                content_len = int(self.headers.get("Content-Length", 0))
+                post_body = self.rfile.read(content_len)
+                update_data = json.loads(post_body.decode("utf-8"))
+
+                await handle_webhook(update_data)
+
+                self.send_response(200)
+                self.end_headers()
+
+            else:
+                self.send_response(404)
+                self.end_headers()
+        except Exception as e:
+            print(f"Error processing update: {e}")
+            self.send_response(500)
+            self.end_headers()
