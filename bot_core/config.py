@@ -3,10 +3,9 @@ Bot configuration settings.
 Values are read from environment variables.
 """
 import os
-from dotenv import load_dotenv
 
-# Load environment variables from .env file for local development
-load_dotenv()
+# Environment variables are handled by the Vercel platform.
+# The .env file is only for local development.
 
 # --- Telegram Bot ---
 BOT_TOKEN = os.getenv("BOT_TOKEN")
