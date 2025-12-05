@@ -1,8 +1,9 @@
 
+import sys
+print("--- api/index.py execution started ---", file=sys.stderr)
 import asyncio
 import json
 import os
-import sys
 import traceback
 from http.server import BaseHTTPRequestHandler
 import nest_asyncio
