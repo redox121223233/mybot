@@ -21,26 +21,33 @@ BOT_INSTANCE = None
 DISPATCHER_INSTANCE = None
 
 try:
-    print("--- STARTING BOT INITIALIZATION ---")
+    print("--- STARTING BOT INITIALIZATION ---", file=sys.stderr)
     from aiogram import Bot, Dispatcher
     from aiogram.types import Update
     from bot_core.config import BOT_TOKEN
+    print("---IMPORTED CONFIG---", file=sys.stderr)
     from bot_core.handlers import router
+    print("---IMPORTED HANDLERS---", file=sys.stderr)
 
     if not BOT_TOKEN:
-        raise ValueError("BOT_TOKEN is not configured.")
+        print("!!! BOT_TOKEN IS NOT SET !!!", file=sys.stderr)
+        raise ValueError("BOT_TOKEN is not configured in environment variables.")
 
+    print(f"--- BOT_TOKEN FOUND: ...{BOT_TOKEN[-4:]} ---", file=sys.stderr)
     BOT_INSTANCE = Bot(token=BOT_TOKEN)
+    print("--- BOT INSTANCE CREATED ---", file=sys.stderr)
     DISPATCHER_INSTANCE = Dispatcher()
     DISPATCHER_INSTANCE.include_router(router)
+    print("--- DISPATCHER CONFIGURED ---", file=sys.stderr)
 
     BOT_INITIALIZED = True
-    print("--- BOT INITIALIZED SUCCESSFULLY ---")
+    print("--- BOT INITIALIZED SUCCESSFULLY ---", file=sys.stderr)
 
 except Exception as e:
-    print("--- BOT INITIALIZATION FAILED ---")
-    print(f"Error: {e}")
-    traceback.print_exc()
+    print("--- BOT INITIALIZATION FAILED ---", file=sys.stderr)
+    print(f"Error Type: {type(e).__name__}", file=sys.stderr)
+    print(f"Error Message: {e}", file=sys.stderr)
+    traceback.print_exc(file=sys.stderr)
 
 # --- Event Loop Management ---
 # Get or create an event loop that will be reused across invocations.
