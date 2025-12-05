@@ -1,35 +1,32 @@
 """
-Bot configuration settings.
+Bot configuration settings based on the reference bot script.
 Values are read from environment variables.
 """
 import os
-from dotenv import load_dotenv
-
-# Load environment variables from .env file for local development
-load_dotenv()
 
 # --- Telegram Bot ---
+# This value MUST be set in the Vercel environment variables.
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-BOT_USERNAME = ""  # Will be fetched automatically
+# This will be fetched automatically at runtime.
+BOT_USERNAME = ""
 
-# --- Channel & Support ---
+# --- Channel, Support & Admin ---
 CHANNEL_USERNAME = os.getenv("CHANNEL_USERNAME", "@redoxbot_sticker")
 SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "@onedaytoalive")
-
-# --- Admin ---
 ADMIN_ID = int(os.getenv("ADMIN_ID", "6053579919"))
 
 # --- Bot Settings ---
-MAINTENANCE = False
+MAINTENANCE = os.getenv("MAINTENANCE", "False").lower() == "true"
 DAILY_LIMIT = int(os.getenv("DAILY_LIMIT", "5"))
 
+# --- Word Filter ---
+# A space-separated string of forbidden words, read from env variables.
+FORBIDDEN_WORDS_STR = os.getenv("FORBIDDEN_WORDS", "kos kir kon koss kiri koon")
+FORBIDDEN_WORDS = FORBIDDEN_WORDS_STR.split()
+
 # --- Sticker Settings ---
-FORBIDDEN_WORDS = ["sticker", "anim", "video"]
 DEFAULT_PALETTE = [
-    ("سفید", "#FFFFFF"), ("مشکی", "#000000"), ("قرمز", "#FF0000"), ("سبز", "#00FF00"),
-    ("آبی", "#0000FF"), ("زرد", "#FFFF00"), ("صورتی", "#FFC0CB"), ("نارنجی", "#FFA500")
+    ("سفید", "#FFFFFF"), ("مشکی", "#000000"), ("قرمز", "#F43F5E"), ("آبی", "#3B82F6"),
+    ("سبز", "#22C55E"), ("زرد", "#EAB308"), ("بنفش", "#8B5CF6"), ("نارنجی", "#F97316"),
 ]
-NAME_TO_HEX = {name: hx for name, hx in DEFAULT_PALETTE}
-POS_WORDS = ["بالا", "وسط", "پایین", "چپ", "راست"]
-SIZE_WORDS = ["کوچک", "متوسط", "بزرگ"]
