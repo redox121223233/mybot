@@ -18,7 +18,7 @@ from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart
-from aiogram.exceptions import TelegramBadRequest
+from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
 
 from PIL import Image, ImageDraw, ImageFont, ImageFilter
 import arabic_reshaper
@@ -224,8 +224,69 @@ def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: st
     img.save(buf, format="WEBP" if as_webp else "PNG")
     return buf.getvalue()
 
-# ============ FFmpeg, Channel Membership, Keyboards, Pack Helpers ... ============
-# (All functions from the reference bot (2).py are assumed to be here)
+# ============ توابع عضویت کانال و کمکی ============
+async def check_channel_membership(bot: Bot, user_id: int) -> bool:
+    """Checks if a user is a member of the required channel."""
+    if not CHANNEL_USERNAME:
+        return True  # Bypass if no channel is set
+    try:
+        member = await bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
+        return member.status not in ["left", "kicked"]
+    except TelegramBadRequest:
+        return False  # User not in chat
+    except Exception as e:
+        traceback.print_exc()
+        return False # Other errors
+
+def _membership_kb():
+    builder = InlineKeyboardBuilder()
+    if CHANNEL_USERNAME:
+        builder.button(text="عضویت در کانال", url=f"https://t.me/{CHANNEL_USERNAME.lstrip('@')}")
+    builder.button(text="عضویت را بررسی کنید", callback_data="check_membership")
+    builder.adjust(1)
+    return builder.as_markup()
+
+async def require_channel_membership(message: Message, bot: Bot) -> bool:
+    """Checks membership and sends a message if the user is not a member."""
+    is_member = await check_channel_membership(bot, message.from_user.id)
+    if not is_member:
+        try:
+            await message.answer(
+                "برای استفاده از این ربات، لطفا ابتدا در کانال ما عضو شوید:",
+                reply_markup=_membership_kb()
+            )
+        except TelegramForbiddenError:
+            # User has blocked the bot, do nothing.
+            print(f"User {message.from_user.id} has blocked the bot.")
+    return is_member
+
+# --- Placeholder Implementations to prevent other ImportErrors ---
+def main_menu_kb(is_admin: bool = False):
+    builder = InlineKeyboardBuilder()
+    builder.button(text="ساخت استیکر", callback_data="menu:simple")
+    if is_admin:
+        builder.button(text="پنل ادمین", callback_data="menu:admin")
+    builder.adjust(1)
+    return builder.as_markup()
+
+def back_to_menu_kb():
+    return InlineKeyboardBuilder().button(text="بازگشت", callback_data="menu:home").as_markup()
+
+def simple_bg_kb(): return back_to_menu_kb()
+def after_preview_kb(pack_short_name: str): return back_to_menu_kb()
+def rate_kb(): return back_to_menu_kb()
+def pack_selection_kb(packs, current_pack_short_name): return back_to_menu_kb()
+def add_to_pack_kb(pack_short_name, has_packs): return back_to_menu_kb()
+def ai_type_kb(): return back_to_menu_kb()
+def ai_image_source_kb(): return back_to_menu_kb()
+def ai_vpos_kb(): return back_to_menu_kb()
+def ai_hpos_kb(): return back_to_menu_kb()
+def admin_panel_kb(): return back_to_menu_kb()
+async def check_pack_exists(bot: Bot, pack_name: str) -> bool: return True
+def is_valid_pack_name(name: str) -> bool: return True
+def process_video_to_webm(video_bytes: bytes) -> Optional[bytes]: return None
+def is_ffmpeg_installed() -> bool: return False
+
 
 # ============ روتر ============
 router = Router()
