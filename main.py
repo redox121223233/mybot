@@ -1,38 +1,37 @@
-"""
-Main entry point for running the bot locally
-"""
 import asyncio
-import sys
 import os
-
-# Add current directory to path
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-
 from aiogram import Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 
-from bot_core.config import BOT_TOKEN
+# Import our refactored modules
+from bot_core.handlers import *
 from bot_core.bot_logic import router
 
-async def main():
-    """Main function to run the bot"""
-    global BOT_USERNAME
+# Configuration
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 
-    # Create bot and dispatcher
+async def main():
+    """Main function for the bot using refactored structure"""
+    if not BOT_TOKEN:
+        print("Error: BOT_TOKEN environment variable not set!")
+        return
+
     bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode=ParseMode.HTML))
     dp = Dispatcher()
     
-    # Include all handlers
+    # Include the router from our refactored modules
     dp.include_router(router)
     
-    # Get bot info
-    bot_info = await bot.get_me()
-    BOT_USERNAME = bot_info.username
-    print(f"ربات با نام کاربری @{BOT_USERNAME} شروع به کار کرد")
-
-    # Start polling
-    await dp.start_polling(bot)
+    try:
+        print("Bot is starting...")
+        await dp.start_polling(bot)
+    except KeyboardInterrupt:
+        print("Bot stopped by user")
+    except Exception as e:
+        print(f"Bot error: {e}")
+    finally:
+        await bot.session.close()
 
 if __name__ == "__main__":
     asyncio.run(main())

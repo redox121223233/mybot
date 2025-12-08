@@ -1051,6 +1051,7 @@ async def on_rate_yes(cb: CallbackQuery, bot: Bot):
     try:
         sticker_to_add = InputSticker(
             sticker=BufferedInputFile(sticker_bytes, filename="sticker.webp"),
+            format="static",
             emoji_list=["😄"]  # تغییر ایموجی به یک گزینه رایج‌تر
         )
         response = await cb.bot.add_sticker_to_set(
@@ -1244,6 +1245,7 @@ async def on_message(message: Message, bot: Bot):
                 dummy_img = render_image("First", "center", "center", "Default", "#FFFFFF", "medium", as_webp=True)
                 sticker_to_add = InputSticker(
                     sticker=BufferedInputFile(dummy_img, filename="sticker.webp"),
+                    format="static",
                     emoji_list=["🎉"]
                 )
                 # --- شروع بخش اصلاح‌شده برای مدیریت خطای pydantic ---
