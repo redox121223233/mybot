@@ -292,13 +292,26 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
             if "last_sticker" in s:
                 del s["last_sticker"]
             
-            # Get current mode to determine next step
+            # --- Robust State Reset for Next Sticker ---
+            # Preserve essential state
+            pack_short_name = s.get("current_pack_short_name")
+            pack_title_preserved = s.get("current_pack_title")
             current_mode = s.get("mode", "simple")
-            logger.info(f"Current mode after sticker addition: {current_mode}")
             
+            # Perform a full reset of the session to clear any lingering state
+            reset_mode(uid)
+
+            # Get the new, clean session object
+            s = sess(uid)
+
+            # Restore the necessary state to continue in the same pack
+            s["current_pack_short_name"] = pack_short_name
+            s["current_pack_title"] = pack_title_preserved
+            s["mode"] = current_mode
+
+            logger.info(f"Session reset and restored for next sticker in mode: {current_mode}")
+
             if current_mode == "simple":
-                # Reset simple mode state for next sticker
-                s["simple"] = {}
                 await cb.message.answer(
                     f"✅ استیکر با موفقیت به پک «{pack_title}» اضافه شد!\n\n"
                     f"🔗 لینک پک: {pack_link}\n\n"
@@ -307,8 +320,6 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
                     reply_markup=back_to_menu_kb(uid == ADMIN_ID)
                 )
             else:  # AI mode
-                # Reset AI mode state for next sticker
-                s["ai"] = {}
                 await cb.message.answer(
                     f"✅ استیکر با موفقیت به پک «{pack_title}» اضافه شد!\n\n"
                     f"🔗 لینک پک: {pack_link}\n\n"
