@@ -87,9 +87,9 @@ async def on_pack_actions(cb: CallbackQuery, bot: Bot):
         pack_short_name = parts[2]
         pack = next((p for p in get_user_packs(uid) if p["short_name"] == pack_short_name), None)
         if pack:
+            mode = s.get("pack_wizard", {}).get("mode", "simple")
             set_current_pack(uid, pack_short_name)
             s.update({"current_pack_short_name": pack_short_name, "current_pack_title": pack["name"], "pack_wizard": {}})
-            mode = s.get("pack_wizard", {}).get("mode", "simple")
             if mode == "simple": s.update({"mode": "simple", "simple": {}}); await cb.message.edit_text(f"پک «{pack['name']}» انتخاب شد. متن را بفرستید.")
             else: s.update({"mode": "ai", "ai": {}}); await cb.message.edit_text(f"پک «{pack['name']}» انتخاب شد. نوع استیکر؟", reply_markup=ai_type_kb())
     elif action == "new":
@@ -120,6 +120,7 @@ async def on_simple_actions(cb: CallbackQuery, bot: Bot):
     elif action == "confirm":
         img = render_image(simple_data["text"], "center", "center", "Default", "#FFFFFF", "medium", bg_mode=simple_data.get("bg_mode", "transparent"), bg_photo=simple_data.get("bg_photo_bytes"), as_webp=True)
         s["last_sticker"] = img
+        s["last_sticker_format"] = 'static'
         await cb.message.answer_sticker(BufferedInputFile(img, "s.webp"))
         await cb.message.answer("از این استیکر راضی بودی؟", reply_markup=rate_kb())
     elif action == "edit":
@@ -148,6 +149,7 @@ async def on_ai_actions(cb: CallbackQuery, bot: Bot):
         if _quota_left(user(uid), uid==ADMIN_ID) <= 0: await cb.answer("سهمیه تمام شد!", show_alert=True); return
         img = render_image(ai_data["text"], ai_data["v_pos"], ai_data["h_pos"], ai_data.get("font","Default"), ai_data["color"], ai_data["size"], bg_photo=ai_data.get("bg_photo_bytes"), as_webp=True)
         s["last_sticker"] = img; user(uid)["ai_used"] = user(uid).get("ai_used", 0) + 1
+        s["last_sticker_format"] = 'static'
         await cb.message.answer_sticker(BufferedInputFile(img, "s.webp"))
         await cb.message.answer("از این استیکر راضی بودی؟", reply_markup=rate_kb())
     await cb.answer()
@@ -164,8 +166,12 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
             await cb.message.edit_text("خطا: اطلاعات پک یافت نشد.", reply_markup=back_to_menu_kb(uid == ADMIN_ID)); return
         await cb.message.edit_text("در حال افزودن به پک...")
         try:
-            sticker = InputSticker(sticker=BufferedInputFile(sticker_bytes, "s.webp"), emoji_list=["😂"])
+            sticker_format = s.get("last_sticker_format", 'static')
+            file_name = "s.webp" if sticker_format == 'static' else "s.webm"
+            sticker = InputSticker(sticker=BufferedInputFile(sticker_bytes, file_name), emoji_list=["😂"], format=sticker_format)
             await bot.add_sticker_to_set(user_id=uid, name=pack_name, sticker=sticker)
+            s.pop("last_sticker", None)
+            s.pop("last_sticker_format", None)
             await cb.message.answer(f"با موفقیت به پک «{pack_title}» اضافه شد.", reply_markup=back_to_menu_kb(uid == ADMIN_ID))
         except Exception as e:
             await cb.message.answer(f"خطا در افزودن به پک: {e}", reply_markup=back_to_menu_kb(uid == ADMIN_ID))
@@ -192,10 +198,8 @@ async def on_message(message: Message, bot: Bot):
         await message.answer("در حال ساخت پک...")
         try:
             dummy_img = render_image("First", "center", "center", "Default", "#FFFFFF", "medium", as_webp=True)
-            sticker = InputSticker(sticker=BufferedInputFile(dummy_img, "s.webp"), emoji_list=["🎉"])
-            try: await bot.create_new_sticker_set(uid, short_name, pack_name, stickers=[sticker], sticker_format='static')
-            except pydantic_core.ValidationError: print(f"Ignoring validation error for pack {short_name}")
-
+            sticker = InputSticker(sticker=BufferedInputFile(dummy_img, "s.webp"), emoji_list=["🎉"], format='static')
+            await bot.create_new_sticker_set(uid, short_name, pack_name, stickers=[sticker])
             add_user_pack(uid, pack_name, short_name)
             s.update({"current_pack_short_name": short_name, "current_pack_title": pack_name, "pack_wizard": {}})
             mode = pack_wizard.get("mode", "simple")
@@ -224,6 +228,7 @@ async def on_message(message: Message, bot: Bot):
         webm_bytes = await process_video_to_webm(file.read())
         if webm_bytes:
             s["last_sticker"] = webm_bytes
+            s["last_sticker_format"] = 'video'
             await message.answer_sticker(BufferedInputFile(webm_bytes, "s.webm"))
             await message.answer("از این استیکر راضی بودی؟", reply_markup=rate_kb())
         else: await message.answer("خطا در پردازش ویدیو.")
