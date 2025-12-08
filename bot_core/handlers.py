@@ -87,9 +87,9 @@ async def on_pack_actions(cb: CallbackQuery, bot: Bot):
         pack_short_name = parts[2]
         pack = next((p for p in get_user_packs(uid) if p["short_name"] == pack_short_name), None)
         if pack:
+            mode = s.get("pack_wizard", {}).get("mode", "simple")
             set_current_pack(uid, pack_short_name)
             s.update({"current_pack_short_name": pack_short_name, "current_pack_title": pack["name"], "pack_wizard": {}})
-            mode = s.get("pack_wizard", {}).get("mode", "simple")
             if mode == "simple": s.update({"mode": "simple", "simple": {}}); await cb.message.edit_text(f"پک «{pack['name']}» انتخاب شد. متن را بفرستید.")
             else: s.update({"mode": "ai", "ai": {}}); await cb.message.edit_text(f"پک «{pack['name']}» انتخاب شد. نوع استیکر؟", reply_markup=ai_type_kb())
     elif action == "new":
@@ -170,6 +170,8 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
             file_name = "s.webp" if sticker_format == 'static' else "s.webm"
             sticker = InputSticker(sticker=BufferedInputFile(sticker_bytes, file_name), emoji_list=["😂"], format=sticker_format)
             await bot.add_sticker_to_set(user_id=uid, name=pack_name, sticker=sticker)
+            s.pop("last_sticker", None)
+            s.pop("last_sticker_format", None)
             await cb.message.answer(f"با موفقیت به پک «{pack_title}» اضافه شد.", reply_markup=back_to_menu_kb(uid == ADMIN_ID))
         except Exception as e:
             await cb.message.answer(f"خطا در افزودن به پک: {e}", reply_markup=back_to_menu_kb(uid == ADMIN_ID))

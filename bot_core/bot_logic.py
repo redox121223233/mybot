@@ -67,7 +67,14 @@ def sess(uid: int) -> Dict[str, Any]:
     return SESSIONS[uid]
 
 def reset_mode(uid: int):
-    SESSIONS[uid] = {"mode": "menu", "ai": {}, "simple": {}, "pack_wizard": {}, "await_feedback": False, "last_sticker": None, "last_video_sticker": None, "admin": {}}
+    s = sess(uid)
+    keys_to_reset = ["mode", "simple", "ai", "pack_wizard", "await_feedback", "last_sticker", "last_sticker_format", "admin"]
+    for key in keys_to_reset:
+        if key in s:
+            if isinstance(s[key], dict): s[key] = {}
+            elif isinstance(s[key], bool): s[key] = False
+            else: s[key] = None
+    s["mode"] = "menu"
 
 # --- Sticker Pack Management ---
 def get_user_packs(uid: int) -> List[Dict[str, str]]: return user(uid).get("packs", [])
