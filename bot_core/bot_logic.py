@@ -136,7 +136,35 @@ def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: st
     anchor = "mm" if h_pos == "center" else "lm"
     draw.text((x, y), txt, font=font, fill=color, anchor=anchor, stroke_width=2, stroke_fill=(0,0,0,220))
 
-    buf = BytesIO(); img.save(buf, format="WEBP" if as_webp else "PNG"); return buf.getvalue()
+    buf = BytesIO() 
+    if as_webp:
+        img.save(buf, format="WEBP", quality=90)
+    else:
+        # PNG with optimization for Telegram stickers
+        img.save(buf, format="PNG", optimize=True, compress_level=9)
+    
+    result = buf.getvalue()
+    
+    # Check if file size is too large for Telegram
+    if not as_webp and len(result) > 64 * 1024:  # 64 KB limit for PNG stickers
+        # Try to reduce quality by resizing and re-compressing
+        try:
+            # Create a slightly smaller image
+            smaller_img = img.resize((400, 400), Image.Resampling.LANCZOS)
+            buf2 = BytesIO()
+            smaller_img.save(buf2, format="PNG", optimize=True, compress_level=9)
+            result = buf2.getvalue()
+            
+            # If still too large, try even smaller
+            if len(result) > 64 * 1024:
+                even_smaller_img = img.resize((350, 350), Image.Resampling.LANCZOS)
+                buf3 = BytesIO()
+                even_smaller_img.save(buf3, format="PNG", optimize=True, compress_level=9)
+                result = buf3.getvalue()
+        except Exception:
+            pass  # Keep original if optimization fails
+    
+    return result
 
 # --- FFmpeg ---
 def is_ffmpeg_installed() -> bool:

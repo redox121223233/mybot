@@ -253,7 +253,29 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
             
         await safe_edit_text(cb, "در حال افزودن به پک...")
         try:
-            sticker = InputSticker(sticker=BufferedInputFile(sticker_bytes, "s.webp"), format="static", emoji_list=["😂"])
+            # Convert to PNG format for pack addition (Telegram requires PNG for static stickers)
+            from .bot_logic import render_image
+            png_bytes = None
+            current_mode = s.get("mode", "simple")
+            
+            if current_mode == "simple":
+                simple_data = s.get("simple", {})
+                png_bytes = render_image(
+                    simple_data.get("text", "text"), "center", "center", "Default", "#FFFFFF", "medium", 
+                    bg_mode=simple_data.get("bg_mode", "transparent"), 
+                    bg_photo=simple_data.get("bg_photo_bytes"), 
+                    as_webp=False  # Force PNG for pack
+                )
+            else:  # AI mode
+                ai_data = s.get("ai", {})
+                png_bytes = render_image(
+                    ai_data.get("text", "text"), ai_data.get("v_pos", "center"), ai_data.get("h_pos", "center"), 
+                    ai_data.get("font","Default"), ai_data.get("color", "#FFFFFF"), ai_data.get("size", "medium"), 
+                    bg_photo=ai_data.get("bg_photo_bytes"), 
+                    as_webp=False  # Force PNG for pack
+                )
+            
+            sticker = InputSticker(sticker=BufferedInputFile(png_bytes, "s.png"), format="static", emoji_list=["😀"])
             logger.info(f"Attempting to add sticker to pack {pack_name}")
             await bot.add_sticker_to_set(user_id=uid, name=pack_name, sticker=sticker)
             logger.info(f"Successfully added sticker to pack {pack_name}")
@@ -308,8 +330,8 @@ async def on_message(message: Message, bot: Bot):
 
         await message.answer("در حال ساخت پک...")
         try:
-            dummy_img = render_image("First", "center", "center", "Default", "#FFFFFF", "medium", as_webp=True)
-            sticker = InputSticker(sticker=BufferedInputFile(dummy_img, "s.webp"), format="static", emoji_list=["🎉"])
+            dummy_img = render_image("First", "center", "center", "Default", "#FFFFFF", "medium", as_webp=False)
+            sticker = InputSticker(sticker=BufferedInputFile(dummy_img, "s.png"), format="static", emoji_list=["🎉"])
             
             try:
                 await bot.create_new_sticker_set(uid, short_name, pack_name, stickers=[sticker], sticker_format='static')
