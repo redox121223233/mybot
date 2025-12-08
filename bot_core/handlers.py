@@ -63,7 +63,10 @@ async def on_menu_selection(cb: CallbackQuery, bot: Bot):
     elif action == "quota":
         u = user(uid)
         left = _quota_left(u, is_admin)
-        quota_text = f"سهمیه امروز شما: {'نامحدود' if is_admin else f'{left} از {u.get('daily_limit', DAILY_LIMIT)}'}"
+        if is_admin:
+            quota_text = f"\u0633\u0647\u0645\u06cc\u0647 \u0627\u0645\u0631\u0648\u0632 \u0634\u0645\u0627: \u0646\u0627\u0645\u062d\u062f\u0648\u062f"
+        else:
+            quota_text = f"\u0633\u0647\u0645\u06cc\u0647 \u0627\u0645\u0631\u0648\u0632 \u0634\u0645\u0627: {left} \u0627\u0632 {u.get('daily_limit', DAILY_LIMIT)}"
         if not is_admin and left <= 0:
             time_left = _fmt_eta(_seconds_to_reset(u))
             quota_text += f"\n\nزمان باقی‌مانده تا سهمیه بعدی: **{time_left}**"
@@ -164,7 +167,7 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
             await cb.message.edit_text("خطا: اطلاعات پک یافت نشد.", reply_markup=back_to_menu_kb(uid == ADMIN_ID)); return
         await cb.message.edit_text("در حال افزودن به پک...")
         try:
-            sticker = InputSticker(sticker=BufferedInputFile(sticker_bytes, "s.webp"), emoji_list=["😂"])
+            sticker = InputSticker(sticker=BufferedInputFile(sticker_bytes, "s.webp"), format="webp", emoji_list=["😂"])
             await bot.add_sticker_to_set(user_id=uid, name=pack_name, sticker=sticker)
             await cb.message.answer(f"با موفقیت به پک «{pack_title}» اضافه شد.", reply_markup=back_to_menu_kb(uid == ADMIN_ID))
         except Exception as e:
@@ -192,7 +195,7 @@ async def on_message(message: Message, bot: Bot):
         await message.answer("در حال ساخت پک...")
         try:
             dummy_img = render_image("First", "center", "center", "Default", "#FFFFFF", "medium", as_webp=True)
-            sticker = InputSticker(sticker=BufferedInputFile(dummy_img, "s.webp"), emoji_list=["🎉"])
+            sticker = InputSticker(sticker=BufferedInputFile(dummy_img, "s.webp"), format="webp", emoji_list=["🎉"])
             try: await bot.create_new_sticker_set(uid, short_name, pack_name, stickers=[sticker], sticker_format='static')
             except pydantic_core.ValidationError: print(f"Ignoring validation error for pack {short_name}")
 
