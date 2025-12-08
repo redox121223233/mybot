@@ -75,6 +75,7 @@ async def on_menu_selection(cb: CallbackQuery, bot: Bot):
         if action == "ai" and _quota_left(user(uid), is_admin) <= 0:
             await cb.answer("سهمیه امروز شما تمام شده است.", show_alert=True); return
         s["pack_wizard"] = {"mode": action}
+        s["mode"] = action  # Also set mode at session level
         if get_user_packs(uid):
             await safe_edit_text(cb, "استیکر را به کدام پک اضافه می‌کنید؟", reply_markup=pack_selection_kb(uid, action))
         else:
@@ -147,18 +148,22 @@ async def on_pack_actions(cb: CallbackQuery, bot: Bot):
     
     if action == "select":
         pack_short_name = parts[2]
+        mode = parts[3] if len(parts) > 3 else "simple"  # Get mode from callback data
         pack = next((p for p in get_user_packs(uid) if p["short_name"] == pack_short_name), None)
         if pack:
             set_current_pack(uid, pack_short_name)
-            s.update({"current_pack_short_name": pack_short_name, "current_pack_title": pack["name"], "pack_wizard": {}})
-            # Get current mode from session, not from pack_wizard (which is only for new pack creation)
-            current_mode = s.get("mode", "simple")
-            logger.info(f"User {uid} selected pack {pack['name']}, current mode: {current_mode}")
-            if current_mode == "simple":
-                s.update({"simple": {}})  # Keep mode as simple, just reset simple state
+            s.update({
+                "current_pack_short_name": pack_short_name, 
+                "current_pack_title": pack["name"], 
+                "pack_wizard": {},
+                "mode": mode  # Explicitly set the mode
+            })
+            logger.info(f"User {uid} selected pack {pack['name']} in {mode} mode")
+            if mode == "simple":
+                s.update({"simple": {}})  # Reset simple state
                 await safe_edit_text(cb, f"پک «{pack['name']}» انتخاب شد. متن را بفرستید.")
             else:  # AI mode
-                s.update({"ai": {}})  # Keep mode as ai, just reset ai state
+                s.update({"ai": {}})  # Reset AI state
                 await safe_edit_text(cb, f"پک «{pack['name']}» انتخاب شد. نوع استیکر؟", reply_markup=ai_type_kb())
     elif action == "new":
         s["pack_wizard"] = {"step": "awaiting_name", "mode": parts[2]}
@@ -267,6 +272,8 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
                     as_webp=False  # Force PNG for pack
                 )
             else:  # AI mode
+                # Reset AI mode state for next sticker
+                s.update({"ai": {}})
                 ai_data = s.get("ai", {})
                 png_bytes = render_image(
                     ai_data.get("text", "text"), ai_data.get("v_pos", "center"), ai_data.get("h_pos", "center"), 
@@ -290,6 +297,8 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
             logger.info(f"Current mode after sticker addition: {current_mode}")
             
             if current_mode == "simple":
+                # Reset simple mode state for next sticker
+                s.update({"simple": {}})
                 await cb.message.answer(
                     f"✅ با موفقیت به پک «{pack_title}» اضافه شد!\n\n"
                     f"🔗 لینک پک: {pack_link}\n\n"
@@ -297,6 +306,8 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
                     reply_markup=back_to_menu_kb(uid == ADMIN_ID)
                 )
             else:  # AI mode
+                # Reset AI mode state for next sticker
+                s.update({"ai": {}})
                 await cb.message.answer(
                     f"✅ با موفقیت به پک «{pack_title}» اضافه شد!\n\n"
                     f"🔗 لینک پک: {pack_link}\n\n"
@@ -432,6 +443,8 @@ async def on_message(message: Message, bot: Bot):
                 s["simple"]["text"] = message.text.strip()
                 await message.answer("پس\\u200cزمینه را انتخاب کنید:", reply_markup=simple_bg_kb())
             else:  # AI mode
+                # Reset AI mode state for next sticker
+                s.update({"ai": {}})
                 s["ai"]["text"] = message.text.strip()
                 await message.answer("موقعیت عمودی متن:", reply_markup=ai_vpos_kb())
         elif s.get("mode") == "simple":

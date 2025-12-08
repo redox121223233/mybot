@@ -212,9 +212,9 @@ def rate_kb():
     kb = InlineKeyboardBuilder(); kb.button(text="بله", callback_data="rate:yes"); kb.button(text="خیر", callback_data="rate:no"); kb.button(text="ساخت پک جدید", callback_data="pack:start_creation"); kb.adjust(2, 1); return kb.as_markup()
 def pack_selection_kb(uid: int, mode: str):
     kb = InlineKeyboardBuilder(); current_pack = get_current_pack(uid)
-    if current_pack: kb.button(text=f"📦 {current_pack['name']} (فعلی)", callback_data=f"pack:select:{current_pack['short_name']}")
+    if current_pack: kb.button(text=f"📦 {current_pack['name']} (فعلی)", callback_data=f"pack:select:{current_pack['short_name']}:{mode}")
     for pack in get_user_packs(uid):
-        if not current_pack or pack["short_name"] != current_pack["short_name"]: kb.button(text=f"📦 {pack['name']}", callback_data=f"pack:select:{pack['short_name']}")
+        if not current_pack or pack["short_name"] != current_pack["short_name"]: kb.button(text=f"📦 {pack['name']}", callback_data=f"pack:select:{pack['short_name']}:{mode}")
     kb.button(text="➕ ساخت پک جدید", callback_data=f"pack:new:{mode}"); kb.adjust(1); return kb.as_markup()
 def ai_type_kb():
     kb = InlineKeyboardBuilder(); kb.button(text="استیکر تصویری", callback_data="ai:type:image"); kb.button(text="استیکر ویدیویی", callback_data="ai:type:video"); kb.adjust(2); return kb.as_markup()
