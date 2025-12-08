@@ -273,7 +273,6 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
                 )
             else:  # AI mode
                 # Reset AI mode state for next sticker
-                s.update({"ai": {}})
                 ai_data = s.get("ai", {})
                 png_bytes = render_image(
                     ai_data.get("text", "text"), ai_data.get("v_pos", "center"), ai_data.get("h_pos", "center"), 
@@ -297,8 +296,8 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
             logger.info(f"Current mode after sticker addition: {current_mode}")
             
             if current_mode == "simple":
-                # Reset simple mode state for next sticker
-                s.update({"simple": {}})
+                # Reset simple mode state for next sticker but keep it initialized
+                s.update({"simple": {}, "mode": "simple"})
                 await cb.message.answer(
                     f"✅ با موفقیت به پک «{pack_title}» اضافه شد!\n\n"
                     f"🔗 لینک پک: {pack_link}\n\n"
@@ -306,9 +305,8 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
                     reply_markup=back_to_menu_kb(uid == ADMIN_ID)
                 )
             else:  # AI mode
-                # Reset AI mode state for next sticker
-                s.update({"ai": {}})
-                await cb.message.answer(
+                # Reset AI mode state for next sticker but keep it initialized
+                s.update({"ai": {}, "mode": "ai"})
                     f"✅ با موفقیت به پک «{pack_title}» اضافه شد!\n\n"
                     f"🔗 لینک پک: {pack_link}\n\n"
                     f"🎨 برای استیکر بعدی، نوع ایمیج سورس رو انتخاب کنید:", 
@@ -442,10 +440,6 @@ async def on_message(message: Message, bot: Bot):
             if current_mode == "simple":
                 s["simple"]["text"] = message.text.strip()
                 await message.answer("پس\\u200cزمینه را انتخاب کنید:", reply_markup=simple_bg_kb())
-            else:  # AI mode
-                # Reset AI mode state for next sticker
-                s.update({"ai": {}})
-                s["ai"]["text"] = message.text.strip()
                 await message.answer("موقعیت عمودی متن:", reply_markup=ai_vpos_kb())
         elif s.get("mode") == "simple":
             s["simple"]["text"] = message.text.strip()
