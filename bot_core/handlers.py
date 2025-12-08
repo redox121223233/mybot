@@ -7,7 +7,6 @@ import traceback
 from aiogram import Bot, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery, BufferedInputFile, InputSticker
-from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.exceptions import TelegramBadRequest
 
 # Import all necessary components explicitly
@@ -21,20 +20,6 @@ from .bot_logic import (
     ai_type_kb, ai_image_source_kb, ai_vpos_kb, ai_hpos_kb, admin_panel_kb
 )
 from .config import DEFAULT_PALETTE
-
-async def safe_edit_text(cb: CallbackQuery, text: str, reply_markup=None, delete_if_no_text: bool = True):
-    """
-    Safely edit a message's text, handling the case where there's no text to edit.
-    If delete_if_no_text is True and the message has no text, delete it and send a new message.
-    """
-    try:
-        await cb.message.edit_text(text, reply_markup=reply_markup)
-    except TelegramBadRequest as e:
-        if "there is no text in the message to edit" in str(e) and delete_if_no_text:
-            await cb.message.delete()
-            await cb.message.answer(text, reply_markup=reply_markup)
-        else:
-            raise
 
 # --- Core Handlers ---
 @router.message(CommandStart())
@@ -55,7 +40,7 @@ async def on_check_membership(cb: CallbackQuery, bot: Bot):
 async def on_home(cb: CallbackQuery, bot: Bot):
     if not await require_channel_membership(cb.message, bot): return
     reset_mode(cb.from_user.id)
-    await safe_edit_text(cb, "منوی اصلی:", reply_markup=main_menu_kb(cb.from_user.id == ADMIN_ID))
+    await cb.message.edit_text("منوی اصلی:", reply_markup=main_menu_kb(cb.from_user.id == ADMIN_ID))
     await cb.answer()
 
 # --- Menu Handlers ---
@@ -71,27 +56,24 @@ async def on_menu_selection(cb: CallbackQuery, bot: Bot):
             await cb.answer("سهمیه امروز شما تمام شده است.", show_alert=True); return
         s["pack_wizard"] = {"mode": action}
         if get_user_packs(uid):
-            await safe_edit_text(cb, "استیکر را به کدام پک اضافه می‌کنید؟", reply_markup=pack_selection_kb(uid, action))
+            await cb.message.edit_text("استیکر را به کدام پک اضافه می‌کنید؟", reply_markup=pack_selection_kb(uid, action))
         else:
             s["pack_wizard"]["step"] = "awaiting_name"
-            await safe_edit_text(cb, "برای ساخت پک جدید، یک نام انگلیسی ارسال کنید.", reply_markup=back_to_menu_kb(is_admin))
+            await cb.message.edit_text("برای ساخت پک جدید، یک نام انگلیسی ارسال کنید.", reply_markup=back_to_menu_kb(is_admin))
     elif action == "quota":
         u = user(uid)
         left = _quota_left(u, is_admin)
-        if is_admin:
-            quota_text = f"\u0633\u0647\u0645\u06cc\u0647 \u0627\u0645\u0631\u0648\u0632 \u0634\u0645\u0627: \u0646\u0627\u0645\u062d\u062f\u0648\u062f"
-        else:
-            quota_text = f"\u0633\u0647\u0645\u06cc\u0647 \u0627\u0645\u0631\u0648\u0632 \u0634\u0645\u0627: {left} \u0627\u0632 {u.get('daily_limit', DAILY_LIMIT)}"
+        quota_text = f"سهمیه امروز شما: {'نامحدود' if is_admin else f'{left} از {u.get('daily_limit', DAILY_LIMIT)}'}"
         if not is_admin and left <= 0:
             time_left = _fmt_eta(_seconds_to_reset(u))
             quota_text += f"\n\nزمان باقی‌مانده تا سهمیه بعدی: **{time_left}**"
-        await safe_edit_text(cb, quota_text, reply_markup=back_to_menu_kb(is_admin))
+        await cb.message.edit_text(quota_text, reply_markup=back_to_menu_kb(is_admin))
     elif action == "help":
-        await safe_edit_text(cb, "راهنما...", reply_markup=back_to_menu_kb(is_admin))
+        await cb.message.edit_text("راهنما...", reply_markup=back_to_menu_kb(is_admin))
     elif action == "support":
-        await safe_edit_text(cb, f"پشتیبانی: {SUPPORT_USERNAME}", reply_markup=back_to_menu_kb(is_admin))
+        await cb.message.edit_text(f"پشتیبانی: {SUPPORT_USERNAME}", reply_markup=back_to_menu_kb(is_admin))
     elif action == "admin" and is_admin:
-        await safe_edit_text(cb, "پنل ادمین:", reply_markup=admin_panel_kb())
+        await cb.message.edit_text("پنل ادمین:", reply_markup=admin_panel_kb())
     await cb.answer()
 
 # --- Sticker Pack Handlers ---
@@ -108,14 +90,14 @@ async def on_pack_actions(cb: CallbackQuery, bot: Bot):
             set_current_pack(uid, pack_short_name)
             s.update({"current_pack_short_name": pack_short_name, "current_pack_title": pack["name"], "pack_wizard": {}})
             mode = s.get("pack_wizard", {}).get("mode", "simple")
-            if mode == "simple": s.update({"mode": "simple", "simple": {}}); await safe_edit_text(cb, f"پک «{pack['name']}» انتخاب شد. متن را بفرستید.")
-            else: s.update({"mode": "ai", "ai": {}}); await safe_edit_text(cb, f"پک «{pack['name']}» انتخاب شد. نوع استیکر؟", reply_markup=ai_type_kb())
+            if mode == "simple": s.update({"mode": "simple", "simple": {}}); await cb.message.edit_text(f"پک «{pack['name']}» انتخاب شد. متن را بفرستید.")
+            else: s.update({"mode": "ai", "ai": {}}); await cb.message.edit_text(f"پک «{pack['name']}» انتخاب شد. نوع استیکر؟", reply_markup=ai_type_kb())
     elif action == "new":
         s["pack_wizard"] = {"step": "awaiting_name", "mode": parts[2]}
-        await safe_edit_text(cb, "نام انگلیسی پک جدید را ارسال کنید:")
+        await cb.message.edit_text("نام انگلیسی پک جدید را ارسال کنید:")
     elif action == "start_creation":
         s["pack_wizard"] = {"step": "awaiting_name", "mode": s.get("pack_wizard",{}).get("mode", "simple")}
-        await safe_edit_text(cb, "نام انگلیسی پک جدید را ارسال کنید.")
+        await cb.message.edit_text("نام انگلیسی پک جدید را ارسال کنید.")
     await cb.answer()
 
 # --- Simple Sticker Creation ---
@@ -131,7 +113,7 @@ async def on_simple_actions(cb: CallbackQuery, bot: Bot):
         simple_data["bg_mode"] = bg_mode
         if bg_mode == "photo_prompt":
             simple_data["awaiting_bg_photo"] = True
-            await safe_edit_text(cb, "عکس پس‌زمینه را ارسال کنید.")
+            await cb.message.edit_text("عکس پس‌زمینه را ارسال کنید.")
         else:
             img = render_image(simple_data["text"], "center", "center", "Default", "#FFFFFF", "medium", bg_mode=bg_mode)
             await cb.message.answer_photo(BufferedInputFile(img, "p.png"), caption="پیش‌نمایش:", reply_markup=after_preview_kb("simple"))
@@ -141,7 +123,7 @@ async def on_simple_actions(cb: CallbackQuery, bot: Bot):
         await cb.message.answer_sticker(BufferedInputFile(img, "s.webp"))
         await cb.message.answer("از این استیکر راضی بودی؟", reply_markup=rate_kb())
     elif action == "edit":
-        await safe_edit_text(cb, "پس‌زمینه رو انتخاب کن:", reply_markup=simple_bg_kb())
+        await cb.message.edit_text("پس‌زمینه رو انتخاب کن:", reply_markup=simple_bg_kb())
     await cb.answer()
 
 # --- AI Sticker Creation ---
@@ -151,13 +133,13 @@ async def on_ai_actions(cb: CallbackQuery, bot: Bot):
     parts, uid, s = cb.data.split(":"), cb.from_user.id, sess(cb.from_user.id)
     action, ai_data = parts[1], s["ai"]
 
-    if action == "type": ai_data["sticker_type"] = parts[2]; await safe_edit_text(cb, "منبع استیکر؟", reply_markup=ai_image_source_kb())
+    if action == "type": ai_data["sticker_type"] = parts[2]; await cb.message.edit_text("منبع استیکر؟", reply_markup=ai_image_source_kb())
     elif action == "source":
-        if parts[2] == "text": await safe_edit_text(cb, "متن استیکر را بفرست:")
-        else: ai_data["awaiting_bg_photo"] = True; await safe_edit_text(cb, "عکس را ارسال کنید:")
-    elif action == "vpos": ai_data["v_pos"] = parts[2]; await safe_edit_text(cb, "موقعیت افقی؟", reply_markup=ai_hpos_kb())
-    elif action == "hpos": ai_data["h_pos"] = parts[2]; kb = InlineKeyboardBuilder(); [kb.button(text=n, callback_data=f"ai:color:{h}") for n,h in DEFAULT_PALETTE]; kb.adjust(4); await safe_edit_text(cb, "رنگ متن؟", reply_markup=kb.as_markup())
-    elif action == "color": ai_data["color"] = parts[2]; kb = InlineKeyboardBuilder(); [kb.button(text=l, callback_data=f"ai:size:{v}") for l,v in [("کوچک","small"),("متوسط","medium"),("بزرگ","large")]]; kb.adjust(3); await safe_edit_text(cb, "اندازه فونت؟", reply_markup=kb.as_markup())
+        if parts[2] == "text": await cb.message.edit_text("متن استیکر را بفرست:")
+        else: ai_data["awaiting_bg_photo"] = True; await cb.message.edit_text("عکس را ارسال کنید:")
+    elif action == "vpos": ai_data["v_pos"] = parts[2]; await cb.message.edit_text("موقعیت افقی؟", reply_markup=ai_hpos_kb())
+    elif action == "hpos": ai_data["h_pos"] = parts[2]; kb = InlineKeyboardBuilder(); [kb.button(text=n, callback_data=f"ai:color:{h}") for n,h in DEFAULT_PALETTE]; kb.adjust(4); await cb.message.edit_text("رنگ متن؟", reply_markup=kb.as_markup())
+    elif action == "color": ai_data["color"] = parts[2]; kb = InlineKeyboardBuilder(); [kb.button(text=l, callback_data=f"ai:size:{v}") for l,v in [("کوچک","small"),("متوسط","medium"),("بزرگ","large")]]; kb.adjust(3); await cb.message.edit_text("اندازه فونت؟", reply_markup=kb.as_markup())
     elif action in ["size", "edit"]:
         if action == "size": ai_data["size"] = parts[2]
         img = render_image(ai_data.get("text","متن نمونه"), ai_data["v_pos"], ai_data["h_pos"], ai_data.get("font","Default"), ai_data["color"], ai_data["size"], bg_photo=ai_data.get("bg_photo_bytes"))
@@ -179,17 +161,17 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
     if action == "yes":
         sticker_bytes, pack_name, pack_title = s.get("last_sticker"), s.get("current_pack_short_name"), s.get("current_pack_title")
         if not all([sticker_bytes, pack_name, pack_title]):
-            await safe_edit_text(cb, "خطا: اطلاعات پک یافت نشد.", reply_markup=back_to_menu_kb(uid == ADMIN_ID)); return
-        await safe_edit_text(cb, "در حال افزودن به پک...")
+            await cb.message.edit_text("خطا: اطلاعات پک یافت نشد.", reply_markup=back_to_menu_kb(uid == ADMIN_ID)); return
+        await cb.message.edit_text("در حال افزودن به پک...")
         try:
-            sticker = InputSticker(sticker=BufferedInputFile(sticker_bytes, "s.webp"), format="static", emoji_list=["😂"])
+            sticker = InputSticker(sticker=BufferedInputFile(sticker_bytes, "s.webp"), emoji_list=["😂"], format="static")
             await bot.add_sticker_to_set(user_id=uid, name=pack_name, sticker=sticker)
             await cb.message.answer(f"با موفقیت به پک «{pack_title}» اضافه شد.", reply_markup=back_to_menu_kb(uid == ADMIN_ID))
         except Exception as e:
             await cb.message.answer(f"خطا در افزودن به پک: {e}", reply_markup=back_to_menu_kb(uid == ADMIN_ID))
     elif action == "no":
         s["await_feedback"] = True
-        await safe_edit_text(cb, "چه چیزی رو دوست نداشتی؟")
+        await cb.message.edit_text("چه چیزی رو دوست نداشتی؟")
     await cb.answer()
 
 # --- Generic Message Handler ---
@@ -210,13 +192,13 @@ async def on_message(message: Message, bot: Bot):
         await message.answer("در حال ساخت پک...")
         try:
             dummy_img = render_image("First", "center", "center", "Default", "#FFFFFF", "medium", as_webp=True)
-            sticker = InputSticker(sticker=BufferedInputFile(dummy_img, "s.webp"), format="static", emoji_list=["🎉"])
+            sticker = InputSticker(sticker=BufferedInputFile(dummy_img, "s.webp"), emoji_list=["🎉"], format="static")
             try: await bot.create_new_sticker_set(uid, short_name, pack_name, stickers=[sticker], sticker_format='static')
             except pydantic_core.ValidationError: print(f"Ignoring validation error for pack {short_name}")
 
             add_user_pack(uid, pack_name, short_name)
-            mode = pack_wizard.get("mode", "simple")
             s.update({"current_pack_short_name": short_name, "current_pack_title": pack_name, "pack_wizard": {}})
+            mode = pack_wizard.get("mode", "simple")
             if mode == "simple": s.update({"mode": "simple", "simple": {}}); await message.answer(f"پک «{pack_name}» ساخته شد! حالا متن استیکر را بفرستید.")
             else: s.update({"mode": "ai", "ai": {}}); await message.answer(f"پک «{pack_name}» ساخته شد! حالا نوع استیکر را انتخاب کنید.", reply_markup=ai_type_kb())
         except Exception as e: await message.answer(f"خطا در ساخت پک: {e}", reply_markup=back_to_menu_kb(is_admin))
