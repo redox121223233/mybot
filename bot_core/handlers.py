@@ -116,7 +116,7 @@ async def on_simple_actions(cb: CallbackQuery, bot: Bot):
             await cb.message.edit_text("عکس پس‌زمینه را ارسال کنید.")
         else:
             img = render_image(simple_data["text"], "center", "center", "Default", "#FFFFFF", "medium", bg_mode=bg_mode)
-            await cb.message.answer_photo(BufferedInputFile(img, "p.png"), "پیش‌نمایش:", reply_markup=after_preview_kb("simple"))
+            await cb.message.answer_photo(BufferedInputFile(img, "p.png"), caption="پیش‌نمایش:", reply_markup=after_preview_kb("simple"))
     elif action == "confirm":
         img = render_image(simple_data["text"], "center", "center", "Default", "#FFFFFF", "medium", bg_mode=simple_data.get("bg_mode", "transparent"), bg_photo=simple_data.get("bg_photo_bytes"), as_webp=True)
         s["last_sticker"] = img
@@ -143,7 +143,7 @@ async def on_ai_actions(cb: CallbackQuery, bot: Bot):
     elif action in ["size", "edit"]:
         if action == "size": ai_data["size"] = parts[2]
         img = render_image(ai_data.get("text","متن نمونه"), ai_data["v_pos"], ai_data["h_pos"], ai_data.get("font","Default"), ai_data["color"], ai_data["size"], bg_photo=ai_data.get("bg_photo_bytes"))
-        await cb.message.answer_photo(BufferedInputFile(img, "p.png"), "پیش‌نمایش:", reply_markup=after_preview_kb("ai"))
+        await cb.message.answer_photo(BufferedInputFile(img, "p.png"), caption="پیش‌نمایش:", reply_markup=after_preview_kb("ai"))
     elif action == "confirm":
         if _quota_left(user(uid), uid==ADMIN_ID) <= 0: await cb.answer("سهمیه تمام شد!", show_alert=True); return
         img = render_image(ai_data["text"], ai_data["v_pos"], ai_data["h_pos"], ai_data.get("font","Default"), ai_data["color"], ai_data["size"], bg_photo=ai_data.get("bg_photo_bytes"), as_webp=True)
@@ -164,7 +164,7 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
             await cb.message.edit_text("خطا: اطلاعات پک یافت نشد.", reply_markup=back_to_menu_kb(uid == ADMIN_ID)); return
         await cb.message.edit_text("در حال افزودن به پک...")
         try:
-            sticker = InputSticker(sticker=BufferedInputFile(sticker_bytes, "s.webp"), emoji_list=["😂"])
+            sticker = InputSticker(sticker=BufferedInputFile(sticker_bytes, "s.webp"), emoji_list=["😂"], format="static")
             await bot.add_sticker_to_set(user_id=uid, name=pack_name, sticker=sticker)
             await cb.message.answer(f"با موفقیت به پک «{pack_title}» اضافه شد.", reply_markup=back_to_menu_kb(uid == ADMIN_ID))
         except Exception as e:
@@ -192,7 +192,7 @@ async def on_message(message: Message, bot: Bot):
         await message.answer("در حال ساخت پک...")
         try:
             dummy_img = render_image("First", "center", "center", "Default", "#FFFFFF", "medium", as_webp=True)
-            sticker = InputSticker(sticker=BufferedInputFile(dummy_img, "s.webp"), emoji_list=["🎉"])
+            sticker = InputSticker(sticker=BufferedInputFile(dummy_img, "s.webp"), emoji_list=["🎉"], format="static")
             try: await bot.create_new_sticker_set(uid, short_name, pack_name, stickers=[sticker], sticker_format='static')
             except pydantic_core.ValidationError: print(f"Ignoring validation error for pack {short_name}")
 
@@ -210,7 +210,7 @@ async def on_message(message: Message, bot: Bot):
             file = await bot.download(message.photo[-1].file_id)
             s_simple["bg_photo_bytes"] = file.read(); s_simple["awaiting_bg_photo"] = False
             img = render_image(s_simple["text"], "center", "center", "Default", "#FFFFFF", "medium", bg_photo=s_simple["bg_photo_bytes"])
-            await message.answer_photo(BufferedInputFile(img, "p.png"), "پیش‌نمایش:", reply_markup=after_preview_kb("simple"))
+            await message.answer_photo(BufferedInputFile(img, "p.png"), caption="پیش‌نمایش:", reply_markup=after_preview_kb("simple"))
         elif s.get("mode") == "ai" and s_ai.get("awaiting_bg_photo"):
             file = await bot.download(message.photo[-1].file_id)
             s_ai["bg_photo_bytes"] = file.read(); s_ai["awaiting_bg_photo"] = False
