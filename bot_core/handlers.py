@@ -205,12 +205,32 @@ async def on_simple_actions(cb: CallbackQuery, bot: Bot):
             simple_data["awaiting_bg_photo"] = True
             await safe_edit_text(cb, "عکس پس‌زمینه را ارسال کنید.")
         else:
-            img = render_image(simple_data["text"], "center", "center", "Default", "#FFFFFF", "medium", bg_mode=bg_mode)
-            await cb.message.answer_photo(BufferedInputFile(img, "p.png"), caption="پیش‌نمایش:", reply_markup=after_preview_kb("simple"))
+            # Generate both PNG for preview and WEBP for sticker in one go
+            images = render_image(
+                simple_data["text"], "center", "center", "Default", "#FFFFFF", "medium",
+                bg_mode=bg_mode, formats=['png', 'webp']
+            )
+            s['last_sticker_png'] = images.get('png')
+            s['last_sticker_webp'] = images.get('webp')
+            await cb.message.answer_photo(
+                BufferedInputFile(images['png'], "p.png"),
+                caption="پیش‌نمایش:",
+                reply_markup=after_preview_kb("simple")
+            )
     elif action == "confirm":
-        img = render_image(simple_data["text"], "center", "center", "Default", "#FFFFFF", "medium", bg_mode=simple_data.get("bg_mode", "transparent"), bg_photo=simple_data.get("bg_photo_bytes"), as_webp=True)
-        s["last_sticker"] = img
-        await cb.message.answer_sticker(BufferedInputFile(img, "s.webp"))
+        webp_sticker = s.get('last_sticker_webp')
+        if not webp_sticker:
+            # Fallback in case the webp version wasn't generated
+            images = render_image(
+                simple_data["text"], "center", "center", "Default", "#FFFFFF", "medium",
+                bg_mode=simple_data.get("bg_mode", "transparent"),
+                bg_photo=simple_data.get("bg_photo_bytes"),
+                formats=['png', 'webp']
+            )
+            s['last_sticker_png'] = images.get('png')
+            webp_sticker = images.get('webp')
+
+        await cb.message.answer_sticker(BufferedInputFile(webp_sticker, "s.webp"))
         await cb.message.answer("از این استیکر راضی بودی؟", reply_markup=rate_kb())
     elif action == "edit":
         await safe_edit_text(cb, "پس‌زمینه رو انتخاب کن:", reply_markup=simple_bg_kb())
@@ -232,13 +252,32 @@ async def on_ai_actions(cb: CallbackQuery, bot: Bot):
     elif action == "color": ai_data["color"] = parts[2]; kb = InlineKeyboardBuilder(); [kb.button(text=l, callback_data=f"ai:size:{v}") for l,v in [("کوچک","small"),("متوسط","medium"),("بزرگ","large")]]; kb.adjust(3); await safe_edit_text(cb, "اندازه فونت؟", reply_markup=kb.as_markup())
     elif action in ["size", "edit"]:
         if action == "size": ai_data["size"] = parts[2]
-        img = render_image(ai_data.get("text","متن نمونه"), ai_data["v_pos"], ai_data["h_pos"], ai_data.get("font","Default"), ai_data["color"], ai_data["size"], bg_photo=ai_data.get("bg_photo_bytes"))
-        await cb.message.answer_photo(BufferedInputFile(img, "p.png"), caption="پیش‌نمایش:", reply_markup=after_preview_kb("ai"))
+        images = render_image(
+            ai_data.get("text","متن نمونه"), ai_data["v_pos"], ai_data["h_pos"],
+            ai_data.get("font","Default"), ai_data["color"], ai_data["size"],
+            bg_photo=ai_data.get("bg_photo_bytes"), formats=['png', 'webp']
+        )
+        s['last_sticker_png'] = images.get('png')
+        s['last_sticker_webp'] = images.get('webp')
+        await cb.message.answer_photo(
+            BufferedInputFile(images['png'], "p.png"),
+            caption="پیش‌نمایش:",
+            reply_markup=after_preview_kb("ai")
+        )
     elif action == "confirm":
         if _quota_left(user(uid), uid==ADMIN_ID) <= 0: await cb.answer("سهمیه تمام شد!", show_alert=True); return
-        img = render_image(ai_data["text"], ai_data["v_pos"], ai_data["h_pos"], ai_data.get("font","Default"), ai_data["color"], ai_data["size"], bg_photo=ai_data.get("bg_photo_bytes"), as_webp=True)
-        s["last_sticker"] = img; user(uid)["ai_used"] = user(uid).get("ai_used", 0) + 1
-        await cb.message.answer_sticker(BufferedInputFile(img, "s.webp"))
+        webp_sticker = s.get('last_sticker_webp')
+        if not webp_sticker:
+            images = render_image(
+                ai_data["text"], ai_data["v_pos"], ai_data["h_pos"],
+                ai_data.get("font","Default"), ai_data["color"], ai_data["size"],
+                bg_photo=ai_data.get("bg_photo_bytes"), formats=['png', 'webp']
+            )
+            s['last_sticker_png'] = images.get('png')
+            webp_sticker = images.get('webp')
+
+        user(uid)["ai_used"] = user(uid).get("ai_used", 0) + 1
+        await cb.message.answer_sticker(BufferedInputFile(webp_sticker, "s.webp"))
         await cb.message.answer("از این استیکر راضی بودی؟", reply_markup=rate_kb())
     await cb.answer()
 
@@ -249,55 +288,31 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
     action, uid, s = cb.data.split(":")[1], cb.from_user.id, sess(cb.from_user.id)
 
     if action == "yes":
-        sticker_bytes, pack_name, pack_title = s.get("last_sticker"), s.get("current_pack_short_name"), s.get("current_pack_title")
+        png_bytes, pack_name, pack_title = s.get("last_sticker_png"), s.get("current_pack_short_name"), s.get("current_pack_title")
         logger.info(f"Adding sticker - User: {uid}, Pack: {pack_name}, Title: {pack_title}")
-        logger.info(f"Session state: {s}")
         
-        if not all([sticker_bytes, pack_name, pack_title]):
-            logger.error(f"Missing data - sticker_bytes: {bool(sticker_bytes)}, pack_name: {bool(pack_name)}, pack_title: {bool(pack_title)}")
-            await safe_edit_text(cb, "خطا: اطلاعات پک یافت نشد.", reply_markup=back_to_menu_kb(uid == ADMIN_ID)); return
+        if not all([png_bytes, pack_name, pack_title]):
+            logger.error(f"Missing data for sticker addition - png_bytes: {bool(png_bytes)}, pack_name: {bool(pack_name)}, pack_title: {bool(pack_title)}")
+            await safe_edit_text(cb, "خطا: اطلاعات استیکر یافت نشد. لطفا دوباره امتحان کنید.", reply_markup=back_to_menu_kb(uid == ADMIN_ID)); return
             
         await safe_edit_text(cb, "در حال افزودن به پک...")
         try:
-            # Convert to PNG format for pack addition (Telegram requires PNG for static stickers)
-            from .bot_logic import render_image
-            png_bytes = None
-            current_mode = s.get("mode", "simple")
-            
-            if current_mode == "simple":
-                simple_data = s.get("simple", {})
-                png_bytes = render_image(
-                    simple_data.get("text", "text"), "center", "center", "Default", "#FFFFFF", "medium", 
-                    bg_mode=simple_data.get("bg_mode", "transparent"), 
-                    bg_photo=simple_data.get("bg_photo_bytes"), 
-                    as_webp=False  # Force PNG for pack
-                )
-            else:  # AI mode
-                # Reset AI mode state for next sticker
-                ai_data = s.get("ai", {})
-                png_bytes = render_image(
-                    ai_data.get("text", "text"), ai_data.get("v_pos", "center"), ai_data.get("h_pos", "center"), 
-                    ai_data.get("font","Default"), ai_data.get("color", "#FFFFFF"), ai_data.get("size", "medium"), 
-                    bg_photo=ai_data.get("bg_photo_bytes"), 
-                    as_webp=False  # Force PNG for pack
-                )
-            
             sticker = InputSticker(sticker=BufferedInputFile(png_bytes, "s.png"), format="static", emoji_list=["😀"])
             logger.info(f"Attempting to add sticker to pack {pack_name}")
             await bot.add_sticker_to_set(user_id=uid, name=pack_name, sticker=sticker)
             logger.info(f"Successfully added sticker to pack {pack_name}")
-            # Add pack link after sticker addition
+
             pack_link = f"https://t.me/addstickers/{pack_name}"
-            # Clear last_sticker to prepare for next sticker
-            if "last_sticker" in s:
-                del s["last_sticker"]
             
-            # Get current mode to determine next step
+            # Clean up session
+            for key in ["last_sticker_png", "last_sticker_webp", "last_sticker"]:
+                if key in s:
+                    del s[key]
+
             current_mode = s.get("mode", "simple")
             logger.info(f"Current mode after sticker addition: {current_mode}")
             
             if current_mode == "simple":
-                # Reset simple mode state for next sticker
                 s["simple"] = {}
                 await cb.message.answer(
                     f"✅ استیکر با موفقیت به پک «{pack_title}» اضافه شد!\n\n"
@@ -307,7 +322,6 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
                     reply_markup=back_to_menu_kb(uid == ADMIN_ID)
                 )
             else:  # AI mode
-                # Reset AI mode state for next sticker
                 s["ai"] = {}
                 await cb.message.answer(
                     f"✅ استیکر با موفقیت به پک «{pack_title}» اضافه شد!\n\n"
