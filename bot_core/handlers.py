@@ -300,17 +300,20 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
                 # Reset simple mode state for next sticker but keep it initialized
                 s.update({"simple": {}, "mode": "simple"})
                 await cb.message.answer(
-                    f"✅ با موفقیت به پک «{pack_title}» اضافه شد!\n\n"
+                    f"✅ استیکر با موفقیت به پک «{pack_title}» اضافه شد!\\n\\n"
                     f"🔗 لینک پک: {pack_link}\n\n"
-                    f"📝 متنی برای استیکر بعدی بفرستید:", 
+                    f"ℹ️ نکته: اگر استیکر اتوماتیک اضافه نشد، می‌تونی دستی از طریق لینک بالا اضافه کنی\\n\\n"/g
+                    f"📝 برای استیکر بعدی، متن جدید رو بفرست:\\n\\n"/g
+                    f"📝 برای استیکر بعدی، متن جدید رو بفرست:\\n\\n"
                     reply_markup=back_to_menu_kb(uid == ADMIN_ID)
                 )
             else:  # AI mode
                 # Reset AI mode state for next sticker but keep it initialized
                 s.update({"ai": {}, "mode": "ai"})
                 await cb.message.answer(
-                    f"✅ با موفقیت به پک «{pack_title}» اضافه شد!\n\n"
-                    f"🔗 لینک پک: {pack_link}\n\n"
+                    f"✅ استیکر با موفقیت به پک «{pack_title}» اضافه شد!\\n\\n"
+                    f"🔗 لینک پک: {pack_link}\\n\\n"
+                    f"🎨 برای استیکر بعدی، نوع ایمیج سورس رو انتخاب کنید:",
                     f"🎨 برای استیکر بعدی، نوع ایمیج سورس رو انتخاب کنید:", 
                     reply_markup=ai_image_source_kb()
                 )
@@ -445,7 +448,6 @@ async def on_message(message: Message, bot: Bot):
             elif current_mode == "ai":
                 s["ai"]["text"] = message.text.strip()
                 await message.answer("\u0645\u0648\u0642\u0639\u06cc\u062a \u0639\u0645\u0648\u062f\u06cc \u0645\u062a\u0646:", reply_markup=ai_vpos_kb())
-            await message.answer("پس‌زمینه را انتخاب کنید:", reply_markup=simple_bg_kb())
         elif s.get("mode") == "ai":
             s["ai"]["text"] = message.text.strip()
             await message.answer("موقعیت عمودی متن:", reply_markup=ai_vpos_kb())
