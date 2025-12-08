@@ -441,7 +441,7 @@ async def on_message(message: Message, bot: Bot):
             current_mode = s.get("mode", "simple")
             if current_mode == "simple":
                 s["simple"]["text"] = message.text.strip()
-                await message.answer("پس\\u200cزمینه را انتخاب کنید:", reply_markup=simple_bg_kb())
+                await message.answer("پس\u200cزمینه را انتخاب کنید:", reply_markup=simple_bg_kb())
         elif s.get("mode") == "simple":
             s["simple"]["text"] = message.text.strip()
             await message.answer("پس‌زمینه را انتخاب کنید:", reply_markup=simple_bg_kb())

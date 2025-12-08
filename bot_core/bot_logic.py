@@ -217,7 +217,7 @@ def pack_selection_kb(uid: int, mode: str):
         if not current_pack or pack["short_name"] != current_pack["short_name"]: kb.button(text=f"📦 {pack['name']}", callback_data=f"pack:select:{pack['short_name']}:{mode}")
     kb.button(text="➕ ساخت پک جدید", callback_data=f"pack:new:{mode}"); kb.adjust(1); return kb.as_markup()
 def ai_type_kb():
-    kb = InlineKeyboardBuilder(); kb.button(text="استیکر تصویری", callback_data="ai:type:image"); kb.button(text="استیکر ویدیویی", callback_data="ai:type:video"); kb.adjust(2); return kb.as_markup()
+    kb = InlineKeyboardBuilder(); kb.button(text="استیکر تصویری", callback_data="ai:type:image"); kb.adjust(1); return kb.as_markup()
 def ai_image_source_kb():
     kb = InlineKeyboardBuilder(); kb.button(text="متن بنویس", callback_data="ai:source:text"); kb.button(text="عکس بفرست", callback_data="ai:source:photo"); kb.adjust(2); return kb.as_markup()
 def ai_vpos_kb():
