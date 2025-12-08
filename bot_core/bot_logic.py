@@ -104,36 +104,35 @@ def resolve_font_path(font_key: Optional[str], text: str = "") -> str:
 
 def _prepare_text(text: str) -> str: return get_display(arabic_reshaper.reshape(text))
 
-def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: str, size_key: str, bg_mode: str = "transparent", bg_photo: Optional[bytes] = None, as_webp: bool = False) -> bytes:
-    W, H = 512, 512
+def render_image(
+    text: str,
+    v_pos: str,
+    h_pos: str,
+    font_key: str,
+    color_hex: str,
+    size_key: str,
+    bg_mode: str = "transparent",
+    bg_photo: Optional[bytes] = None,
+    formats: Optional[List[str]] = None
+) -> Dict[str, bytes]:
+    """Renders an image and returns a dictionary with the specified formats (e.g., {'webp': b'...'})."""
+    if formats is None:
+        formats = ['webp']  # Default to webp for backward compatibility
 
-    # Create the base canvas
+    W, H = 512, 512
     base_canvas = Image.new("RGBA", (W, H), (0,0,0,0))
 
     if bg_mode == "default":
-        # Draw a solid color background
         base_canvas.paste((20, 20, 35, 255), (0, 0, W, H))
     elif bg_photo:
         try:
             bg_img = Image.open(BytesIO(bg_photo)).convert("RGBA")
-
-            # --- Smart Resizing Logic ---
-            # Resize the image to fit within 512x512 while maintaining aspect ratio
             bg_img.thumbnail((W, H), Image.Resampling.LANCZOS)
-
-            # Create a new transparent background to paste the resized image onto
-            paste_x = (W - bg_img.width) // 2
-            paste_y = (H - bg_img.height) // 2
-
-            # Paste the resized image onto the center of the transparent canvas
+            paste_x, paste_y = (W - bg_img.width) // 2, (H - bg_img.height) // 2
             base_canvas.paste(bg_img, (paste_x, paste_y))
-
         except Exception as e:
             print(f"Error processing background photo: {e}")
-            # If processing fails, we continue with a transparent background
-            pass
 
-    # Use the prepared canvas for drawing
     img = base_canvas
     draw = ImageDraw.Draw(img)
     color = tuple(int(color_hex.lstrip('#')[i:i+2], 16) for i in (0, 2, 4)) + (255,)
@@ -158,35 +157,30 @@ def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: st
     anchor = "mm" if h_pos == "center" else "lm"
     draw.text((x, y), txt, font=font, fill=color, anchor=anchor, stroke_width=2, stroke_fill=(0,0,0,220))
 
-    buf = BytesIO() 
-    if as_webp:
-        img.save(buf, format="WEBP", quality=90)
-    else:
-        # PNG with optimization for Telegram stickers
-        img.save(buf, format="PNG", optimize=True, compress_level=9)
-    
-    result = buf.getvalue()
-    
-    # Check if file size is too large for Telegram
-    if not as_webp and len(result) > 64 * 1024:  # 64 KB limit for PNG stickers
-        # Try to reduce quality by resizing and re-compressing
-        try:
-            # Create a slightly smaller image
-            smaller_img = img.resize((400, 400), Image.Resampling.LANCZOS)
-            buf2 = BytesIO()
-            smaller_img.save(buf2, format="PNG", optimize=True, compress_level=9)
-            result = buf2.getvalue()
+    output_data = {}
+    for fmt in formats:
+        buf = BytesIO()
+        if fmt == 'webp':
+            img.save(buf, format="WEBP", quality=90)
+            output_data['webp'] = buf.getvalue()
+        elif fmt == 'png':
+            img.save(buf, format="PNG", optimize=True, compress_level=9)
+            result = buf.getvalue()
+            if len(result) > 64 * 1024: # 64 KB limit for PNG stickers
+                try:
+                    smaller_img = img.resize((400, 400), Image.Resampling.LANCZOS)
+                    buf2 = BytesIO()
+                    smaller_img.save(buf2, format="PNG", optimize=True, compress_level=9)
+                    result = buf2.getvalue()
+                    if len(result) > 64 * 1024:
+                        even_smaller_img = img.resize((350, 350), Image.Resampling.LANCZOS)
+                        buf3 = BytesIO()
+                        even_smaller_img.save(buf3, format="PNG", optimize=True, compress_level=9)
+                        result = buf3.getvalue()
+                except Exception: pass
+            output_data['png'] = result
             
-            # If still too large, try even smaller
-            if len(result) > 64 * 1024:
-                even_smaller_img = img.resize((350, 350), Image.Resampling.LANCZOS)
-                buf3 = BytesIO()
-                even_smaller_img.save(buf3, format="PNG", optimize=True, compress_level=9)
-                result = buf3.getvalue()
-        except Exception:
-            pass  # Keep original if optimization fails
-    
-    return result
+    return output_data
 
 # --- FFmpeg ---
 def is_ffmpeg_installed() -> bool:
