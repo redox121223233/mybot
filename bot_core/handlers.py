@@ -200,6 +200,7 @@ async def on_simple_actions(cb: CallbackQuery, bot: Bot):
     if action == "bg":
         bg_mode = cb.data.split(":")[-1]
         simple_data["bg_mode"] = bg_mode
+        logger.info(f"User {cb.from_user.id} selected bg_mode: {bg_mode}, text: {simple_data.get('text', 'None')}")
         if bg_mode == "photo_prompt":
             simple_data["awaiting_bg_photo"] = True
             await safe_edit_text(cb, "عکس پس‌زمینه را ارسال کنید.")
@@ -441,7 +442,6 @@ async def on_message(message: Message, bot: Bot):
             if current_mode == "simple":
                 s["simple"]["text"] = message.text.strip()
                 await message.answer("پس\\u200cزمینه را انتخاب کنید:", reply_markup=simple_bg_kb())
-                await message.answer("موقعیت عمودی متن:", reply_markup=ai_vpos_kb())
         elif s.get("mode") == "simple":
             s["simple"]["text"] = message.text.strip()
             await message.answer("پس‌زمینه را انتخاب کنید:", reply_markup=simple_bg_kb())
