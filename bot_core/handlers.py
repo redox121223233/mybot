@@ -167,7 +167,7 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
             await cb.message.edit_text("خطا: اطلاعات پک یافت نشد.", reply_markup=back_to_menu_kb(uid == ADMIN_ID)); return
         await cb.message.edit_text("در حال افزودن به پک...")
         try:
-            sticker = InputSticker(sticker=BufferedInputFile(sticker_bytes, "s.webp"), format="webp", emoji_list=["😂"])
+            sticker = InputSticker(sticker=BufferedInputFile(sticker_bytes, "s.webp"), format="static", emoji_list=["😂"])
             await bot.add_sticker_to_set(user_id=uid, name=pack_name, sticker=sticker)
             await cb.message.answer(f"با موفقیت به پک «{pack_title}» اضافه شد.", reply_markup=back_to_menu_kb(uid == ADMIN_ID))
         except Exception as e:
@@ -195,7 +195,7 @@ async def on_message(message: Message, bot: Bot):
         await message.answer("در حال ساخت پک...")
         try:
             dummy_img = render_image("First", "center", "center", "Default", "#FFFFFF", "medium", as_webp=True)
-            sticker = InputSticker(sticker=BufferedInputFile(dummy_img, "s.webp"), format="webp", emoji_list=["🎉"])
+            sticker = InputSticker(sticker=BufferedInputFile(dummy_img, "s.webp"), format="static", emoji_list=["🎉"])
             try: await bot.create_new_sticker_set(uid, short_name, pack_name, stickers=[sticker], sticker_format='static')
             except pydantic_core.ValidationError: print(f"Ignoring validation error for pack {short_name}")
 
