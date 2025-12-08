@@ -7,6 +7,7 @@ import traceback
 from aiogram import Bot, F
 from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery, BufferedInputFile, InputSticker
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.exceptions import TelegramBadRequest
 
 # Import all necessary components explicitly
@@ -214,8 +215,8 @@ async def on_message(message: Message, bot: Bot):
             except pydantic_core.ValidationError: print(f"Ignoring validation error for pack {short_name}")
 
             add_user_pack(uid, pack_name, short_name)
-            s.update({"current_pack_short_name": short_name, "current_pack_title": pack_name, "pack_wizard": {}})
             mode = pack_wizard.get("mode", "simple")
+            s.update({"current_pack_short_name": short_name, "current_pack_title": pack_name, "pack_wizard": {}})
             if mode == "simple": s.update({"mode": "simple", "simple": {}}); await message.answer(f"پک «{pack_name}» ساخته شد! حالا متن استیکر را بفرستید.")
             else: s.update({"mode": "ai", "ai": {}}); await message.answer(f"پک «{pack_name}» ساخته شد! حالا نوع استیکر را انتخاب کنید.", reply_markup=ai_type_kb())
         except Exception as e: await message.answer(f"خطا در ساخت پک: {e}", reply_markup=back_to_menu_kb(is_admin))
