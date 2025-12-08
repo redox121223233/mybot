@@ -317,6 +317,8 @@ async def on_message(message: Message, bot: Bot):
 
     if message.photo:
         s_simple, s_ai = s.get("simple", {}), s.get("ai", {})
+        logger.info(f"Photo received in mode: {s.get('mode')}, awaiting_bg_photo - simple: {s_simple.get('awaiting_bg_photo')}, ai: {s_ai.get('awaiting_bg_photo')}")
+        
         if s.get("mode") == "simple" and s_simple.get("awaiting_bg_photo"):
             file = await bot.download(message.photo[-1].file_id)
             s_simple["bg_photo_bytes"] = file.read(); s_simple["awaiting_bg_photo"] = False
@@ -326,6 +328,24 @@ async def on_message(message: Message, bot: Bot):
             file = await bot.download(message.photo[-1].file_id)
             s_ai["bg_photo_bytes"] = file.read(); s_ai["awaiting_bg_photo"] = False
             await message.answer("عکس دریافت شد. حالا متن را بفرستید:")
+        elif s.get("mode") == "ai":
+            # In AI mode but not awaiting photo - show helpful message
+            await message.answer(
+                "عکس دریافت شد! 📸\n\n"
+                "برای استفاده از این عکس در استیکر:\n"
+                "1. ابتدا نوع استیکر را انتخاب کنید\n"
+                "2. سپس منبع تصویر را «عکس» انتخاب کنید\n\n"
+                "یا از منو گزینه مورد نظر را انتخاب کنید:",
+                reply_markup=ai_image_source_kb()
+            )
+        elif s.get("mode") == "simple":
+            # In simple mode but not awaiting photo - show helpful message
+            await message.answer(
+                "عکس دریافت شد! 📸\n\n"
+                "برای استفاده از این عکس به عنوان پس‌زمینه:\n"
+                "1. ابتدا متن استیکر را بفرستید\n"
+                "2. سپس گزینه «عکس» را برای پس‌زمینه انتخاب کنید"
+            )
         return
 
     if message.video and s.get("mode") == "ai" and s.get("ai", {}).get("sticker_type") == "video":
