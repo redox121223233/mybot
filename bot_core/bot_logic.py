@@ -136,7 +136,35 @@ def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: st
     anchor = "mm" if h_pos == "center" else "lm"
     draw.text((x, y), txt, font=font, fill=color, anchor=anchor, stroke_width=2, stroke_fill=(0,0,0,220))
 
-    buf = BytesIO(); img.save(buf, format="WEBP" if as_webp else "PNG"); return buf.getvalue()
+    buf = BytesIO() 
+    if as_webp:
+        img.save(buf, format="WEBP", quality=90)
+    else:
+        # PNG with optimization for Telegram stickers
+        img.save(buf, format="PNG", optimize=True, compress_level=9)
+    
+    result = buf.getvalue()
+    
+    # Check if file size is too large for Telegram
+    if not as_webp and len(result) > 64 * 1024:  # 64 KB limit for PNG stickers
+        # Try to reduce quality by resizing and re-compressing
+        try:
+            # Create a slightly smaller image
+            smaller_img = img.resize((400, 400), Image.Resampling.LANCZOS)
+            buf2 = BytesIO()
+            smaller_img.save(buf2, format="PNG", optimize=True, compress_level=9)
+            result = buf2.getvalue()
+            
+            # If still too large, try even smaller
+            if len(result) > 64 * 1024:
+                even_smaller_img = img.resize((350, 350), Image.Resampling.LANCZOS)
+                buf3 = BytesIO()
+                even_smaller_img.save(buf3, format="PNG", optimize=True, compress_level=9)
+                result = buf3.getvalue()
+        except Exception:
+            pass  # Keep original if optimization fails
+    
+    return result
 
 # --- FFmpeg ---
 def is_ffmpeg_installed() -> bool:
@@ -184,12 +212,12 @@ def rate_kb():
     kb = InlineKeyboardBuilder(); kb.button(text="بله", callback_data="rate:yes"); kb.button(text="خیر", callback_data="rate:no"); kb.button(text="ساخت پک جدید", callback_data="pack:start_creation"); kb.adjust(2, 1); return kb.as_markup()
 def pack_selection_kb(uid: int, mode: str):
     kb = InlineKeyboardBuilder(); current_pack = get_current_pack(uid)
-    if current_pack: kb.button(text=f"📦 {current_pack['name']} (فعلی)", callback_data=f"pack:select:{current_pack['short_name']}")
+    if current_pack: kb.button(text=f"📦 {current_pack['name']} (فعلی)", callback_data=f"pack:select:{current_pack['short_name']}:{mode}")
     for pack in get_user_packs(uid):
-        if not current_pack or pack["short_name"] != current_pack["short_name"]: kb.button(text=f"📦 {pack['name']}", callback_data=f"pack:select:{pack['short_name']}")
+        if not current_pack or pack["short_name"] != current_pack["short_name"]: kb.button(text=f"📦 {pack['name']}", callback_data=f"pack:select:{pack['short_name']}:{mode}")
     kb.button(text="➕ ساخت پک جدید", callback_data=f"pack:new:{mode}"); kb.adjust(1); return kb.as_markup()
 def ai_type_kb():
-    kb = InlineKeyboardBuilder(); kb.button(text="استیکر تصویری", callback_data="ai:type:image"); kb.button(text="استیکر ویدیویی", callback_data="ai:type:video"); kb.adjust(2); return kb.as_markup()
+    kb = InlineKeyboardBuilder(); kb.button(text="استیکر تصویری", callback_data="ai:type:image"); kb.adjust(1); return kb.as_markup()
 def ai_image_source_kb():
     kb = InlineKeyboardBuilder(); kb.button(text="متن بنویس", callback_data="ai:source:text"); kb.button(text="عکس بفرست", callback_data="ai:source:photo"); kb.adjust(2); return kb.as_markup()
 def ai_vpos_kb():
