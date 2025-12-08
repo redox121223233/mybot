@@ -112,10 +112,26 @@ async def on_pack_actions(cb: CallbackQuery, bot: Bot):
             else: s.update({"mode": "ai", "ai": {}}); await safe_edit_text(cb, f"پک «{pack['name']}» انتخاب شد. نوع استیکر؟", reply_markup=ai_type_kb())
     elif action == "new":
         s["pack_wizard"] = {"step": "awaiting_name", "mode": parts[2]}
-        await safe_edit_text(cb, "نام انگلیسی پک جدید را ارسال کنید:")
+        rules_text = (
+            "نام پک را بنویس (مثال: my_stickers):\n\n"
+            "• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
+            "• باید با حرف شروع شود\n"
+            "• نباید با زیرخط تمام شود\n"
+            "• نباید دو زیرخط پشت سر هم داشته باشد\n"
+            "• حداکثر ۵۰ کاراکتر (به خاطر اضافه شدن نام ربات)"
+        )
+        await safe_edit_text(cb, rules_text)
     elif action == "start_creation":
         s["pack_wizard"] = {"step": "awaiting_name", "mode": s.get("pack_wizard",{}).get("mode", "simple")}
-        await safe_edit_text(cb, "نام انگلیسی پک جدید را ارسال کنید.")
+        rules_text = (
+            "نام پک را بنویس (مثال: my_stickers):\n\n"
+            "• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
+            "• باید با حرف شروع شود\n"
+            "• نباید با زیرخط تمام شود\n"
+            "• نباید دو زیرخط پشت سر هم داشته باشد\n"
+            "• حداکثر ۵۰ کاراکتر (به خاطر اضافه شدن نام ربات)"
+        )
+        await safe_edit_text(cb, rules_text)
     await cb.answer()
 
 # --- Simple Sticker Creation ---
@@ -211,15 +227,48 @@ async def on_message(message: Message, bot: Bot):
         try:
             dummy_img = render_image("First", "center", "center", "Default", "#FFFFFF", "medium", as_webp=True)
             sticker = InputSticker(sticker=BufferedInputFile(dummy_img, "s.webp"), format="static", emoji_list=["🎉"])
-            try: await bot.create_new_sticker_set(uid, short_name, pack_name, stickers=[sticker], sticker_format='static')
-            except pydantic_core.ValidationError: print(f"Ignoring validation error for pack {short_name}")
+            
+            try:
+                await bot.create_new_sticker_set(uid, short_name, pack_name, stickers=[sticker], sticker_format='static')
+            except pydantic_core.ValidationError as e:
+                # نادیده گرفتن خطای شناخته شده در نسخه‌های جدید aiogram
+                if "result.is_animated" in str(e) and "result.is_video" in str(e):
+                    print(f"Ignoring known aiogram validation error for pack {short_name}")
+                else:
+                    raise e
 
             add_user_pack(uid, pack_name, short_name)
             mode = pack_wizard.get("mode", "simple")
             s.update({"current_pack_short_name": short_name, "current_pack_title": pack_name, "pack_wizard": {}})
-            if mode == "simple": s.update({"mode": "simple", "simple": {}}); await message.answer(f"پک «{pack_name}» ساخته شد! حالا متن استیکر را بفرستید.")
-            else: s.update({"mode": "ai", "ai": {}}); await message.answer(f"پک «{pack_name}» ساخته شد! حالا نوع استیکر را انتخاب کنید.", reply_markup=ai_type_kb())
-        except Exception as e: await message.answer(f"خطا در ساخت پک: {e}", reply_markup=back_to_menu_kb(is_admin))
+            pack_link = f"https://t.me/addstickers/{short_name}"
+            
+            if mode == "simple": 
+                s.update({"mode": "simple", "simple": {}})
+                await message.answer(
+                    f"پک استیکر «{pack_name}» با موفقیت ساخته شد!\n\n{pack_link}\n\nحالا متن استیکر را بفرستید.",
+                    reply_markup=back_to_menu_kb(is_admin)
+                )
+            else: 
+                s.update({"mode": "ai", "ai": {}})
+                await message.answer(
+                    f"پک استیکر «{pack_name}» با موفقیت ساخته شد!\n\n{pack_link}\n\nحالا نوع استیکر را انتخاب کنید:",
+                    reply_markup=ai_type_kb()
+                )
+        except TelegramBadRequest as e:
+            error_msg = e.message.lower()
+            if "invalid sticker set name" in error_msg or "bad request" in error_msg:
+                await message.answer(
+                    f"نام پک نامعتبر است. خطا: {e.message}\n\n"
+                    "لطفاً یک نام دیگر انتخاب کنید که:\n"
+                    "• فقط شامل حروف انگلیسی کوچک، عدد و زیرخط باشد\n"
+                    "• با حرف شروع شود\n"
+                    "• کوتاه‌تر باشد",
+                    reply_markup=back_to_menu_kb(is_admin)
+                )
+            else:
+                await message.answer(f"خطا در ساخت پک: {e.message}", reply_markup=back_to_menu_kb(is_admin))
+        except Exception as e:
+            await message.answer(f"خطای غیرمنتظره: {str(e)}", reply_markup=back_to_menu_kb(is_admin))
         return
 
     if message.photo:
