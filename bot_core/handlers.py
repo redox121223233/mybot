@@ -307,6 +307,7 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
             else:  # AI mode
                 # Reset AI mode state for next sticker but keep it initialized
                 s.update({"ai": {}, "mode": "ai"})
+                await cb.message.answer(
                     f"✅ با موفقیت به پک «{pack_title}» اضافه شد!\n\n"
                     f"🔗 لینک پک: {pack_link}\n\n"
                     f"🎨 برای استیکر بعدی، نوع ایمیج سورس رو انتخاب کنید:", 
