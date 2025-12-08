@@ -442,8 +442,9 @@ async def on_message(message: Message, bot: Bot):
             if current_mode == "simple":
                 s["simple"]["text"] = message.text.strip()
                 await message.answer("پس\u200cزمینه را انتخاب کنید:", reply_markup=simple_bg_kb())
-        elif s.get("mode") == "simple":
-            s["simple"]["text"] = message.text.strip()
+            elif current_mode == "ai":
+                s["ai"]["text"] = message.text.strip()
+                await message.answer("\u0645\u0648\u0642\u0639\u06cc\u062a \u0639\u0645\u0648\u062f\u06cc \u0645\u062a\u0646:", reply_markup=ai_vpos_kb())
             await message.answer("پس‌زمینه را انتخاب کنید:", reply_markup=simple_bg_kb())
         elif s.get("mode") == "ai":
             s["ai"]["text"] = message.text.strip()
