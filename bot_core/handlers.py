@@ -112,9 +112,15 @@ async def on_pack_actions(cb: CallbackQuery, bot: Bot):
         if pack:
             set_current_pack(uid, pack_short_name)
             s.update({"current_pack_short_name": pack_short_name, "current_pack_title": pack["name"], "pack_wizard": {}})
-            mode = s.get("pack_wizard", {}).get("mode", "simple")
-            if mode == "simple": s.update({"mode": "simple", "simple": {}}); await safe_edit_text(cb, f"پک «{pack['name']}» انتخاب شد. متن را بفرستید.")
-            else: s.update({"mode": "ai", "ai": {}}); await safe_edit_text(cb, f"پک «{pack['name']}» انتخاب شد. نوع استیکر؟", reply_markup=ai_type_kb())
+            # Get current mode from session, not from pack_wizard (which is only for new pack creation)
+            current_mode = s.get("mode", "simple")
+            logger.info(f"User {uid} selected pack {pack['name']}, current mode: {current_mode}")
+            if current_mode == "simple":
+                s.update({"simple": {}})  # Keep mode as simple, just reset simple state
+                await safe_edit_text(cb, f"پک «{pack['name']}» انتخاب شد. متن را بفرستید.")
+            else:  # AI mode
+                s.update({"ai": {}})  # Keep mode as ai, just reset ai state
+                await safe_edit_text(cb, f"پک «{pack['name']}» انتخاب شد. نوع استیکر؟", reply_markup=ai_type_kb())
     elif action == "new":
         s["pack_wizard"] = {"step": "awaiting_name", "mode": parts[2]}
         rules_text = (
