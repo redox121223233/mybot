@@ -2,9 +2,14 @@
 Bot message and callback handlers, fully refactored from the reference script `bot (2).py`.
 """
 import asyncio
+import logging
 import pydantic_core
 import traceback
 from aiogram import Bot, F
+
+# Configure logging
+logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
 from aiogram.filters import CommandStart
 from aiogram.types import Message, CallbackQuery, BufferedInputFile, InputSticker
 from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -194,14 +199,46 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
 
     if action == "yes":
         sticker_bytes, pack_name, pack_title = s.get("last_sticker"), s.get("current_pack_short_name"), s.get("current_pack_title")
+        logger.info(f"Adding sticker - User: {uid}, Pack: {pack_name}, Title: {pack_title}")
+        logger.info(f"Session state: {s}")
+        
         if not all([sticker_bytes, pack_name, pack_title]):
+            logger.error(f"Missing data - sticker_bytes: {bool(sticker_bytes)}, pack_name: {bool(pack_name)}, pack_title: {bool(pack_title)}")
             await safe_edit_text(cb, "خطا: اطلاعات پک یافت نشد.", reply_markup=back_to_menu_kb(uid == ADMIN_ID)); return
+            
         await safe_edit_text(cb, "در حال افزودن به پک...")
         try:
             sticker = InputSticker(sticker=BufferedInputFile(sticker_bytes, "s.webp"), format="static", emoji_list=["😂"])
+            logger.info(f"Attempting to add sticker to pack {pack_name}")
             await bot.add_sticker_to_set(user_id=uid, name=pack_name, sticker=sticker)
-            await cb.message.answer(f"با موفقیت به پک «{pack_title}» اضافه شد.", reply_markup=back_to_menu_kb(uid == ADMIN_ID))
+            logger.info(f"Successfully added sticker to pack {pack_name}")
+            # Add pack link after sticker addition
+            pack_link = f"https://t.me/addstickers/{pack_name}"
+            # Clear last_sticker to prepare for next sticker
+            if "last_sticker" in s:
+                del s["last_sticker"]
+            
+            # Get current mode to determine next step
+            current_mode = s.get("mode", "simple")
+            logger.info(f"Current mode after sticker addition: {current_mode}")
+            
+            if current_mode == "simple":
+                await cb.message.answer(
+                    f"✅ با موفقیت به پک «{pack_title}» اضافه شد!\n\n"
+                    f"🔗 لینک پک: {pack_link}\n\n"
+                    f"📝 متنی برای استیکر بعدی بفرستید:", 
+                    reply_markup=back_to_menu_kb(uid == ADMIN_ID)
+                )
+            else:  # AI mode
+                await cb.message.answer(
+                    f"✅ با موفقیت به پک «{pack_title}» اضافه شد!\n\n"
+                    f"🔗 لینک پک: {pack_link}\n\n"
+                    f"🎨 برای استیکر بعدی، نوع ایمیج سورس رو انتخاب کنید:", 
+                    reply_markup=ai_image_source_kb()
+                )
         except Exception as e:
+            logger.error(f"Error adding sticker to pack {pack_name}: {type(e).__name__}: {e}")
+            logger.error(f"Traceback: {traceback.format_exc()}")
             await cb.message.answer(f"خطا در افزودن به پک: {e}", reply_markup=back_to_menu_kb(uid == ADMIN_ID))
     elif action == "no":
         s["await_feedback"] = True
@@ -214,6 +251,7 @@ async def on_message(message: Message, bot: Bot):
     if not await require_channel_membership(message, bot): return
     uid, is_admin, s = message.from_user.id, message.from_user.id == ADMIN_ID, sess(message.from_user.id)
     pack_wizard = s.get("pack_wizard", {})
+    logger.info(f"Message from user {uid}: {message.text[:50] if message.text else 'Non-text message'}, mode: {s.get('mode', 'None')}")
 
     if pack_wizard.get("step") == "awaiting_name" and message.text:
         pack_name = message.text.strip().lower()
@@ -299,6 +337,16 @@ async def on_message(message: Message, bot: Bot):
     if message.text:
         if s.get("await_feedback"):
             s["await_feedback"] = False; await message.answer("ممنون از بازخوردت!", reply_markup=back_to_menu_kb(is_admin))
+        # Check if user has an active pack and can add stickers directly
+        elif s.get("current_pack_short_name") and s.get("current_pack_title"):
+            logger.info(f"User {uid} has active pack {s.get('current_pack_short_name')} - creating sticker directly")
+            current_mode = s.get("mode", "simple")
+            if current_mode == "simple":
+                s["simple"]["text"] = message.text.strip()
+                await message.answer("پس\\u200cزمینه را انتخاب کنید:", reply_markup=simple_bg_kb())
+            else:  # AI mode
+                s["ai"]["text"] = message.text.strip()
+                await message.answer("موقعیت عمودی متن:", reply_markup=ai_vpos_kb())
         elif s.get("mode") == "simple":
             s["simple"]["text"] = message.text.strip()
             await message.answer("پس‌زمینه را انتخاب کنید:", reply_markup=simple_bg_kb())
