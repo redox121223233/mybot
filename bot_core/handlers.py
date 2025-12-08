@@ -356,8 +356,8 @@ async def on_message(message: Message, bot: Bot):
 
         await message.answer("در حال ساخت پک...")
         try:
-            dummy_img = render_image("First", "center", "center", "Default", "#FFFFFF", "medium", as_webp=False)
-            sticker = InputSticker(sticker=BufferedInputFile(dummy_img, "s.png"), format="static", emoji_list=["🎉"])
+            images = render_image("First", "center", "center", "Default", "#FFFFFF", "medium", formats=['png'])
+            sticker = InputSticker(sticker=BufferedInputFile(images['png'], "s.png"), format="static", emoji_list=["🎉"])
             
             try:
                 await bot.create_new_sticker_set(uid, short_name, pack_name, stickers=[sticker], sticker_format='static')
