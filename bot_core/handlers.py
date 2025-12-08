@@ -297,8 +297,8 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
             logger.info(f"Current mode after sticker addition: {current_mode}")
             
             if current_mode == "simple":
-                # Reset simple mode state for next sticker but keep it initialized
-                s.update({"simple": {}, "mode": "simple"})
+                # Reset simple mode state for next sticker
+                s["simple"] = {}
                 await cb.message.answer(
                     f"✅ استیکر با موفقیت به پک «{pack_title}» اضافه شد!\n\n"
                     f"🔗 لینک پک: {pack_link}\n\n"
@@ -307,8 +307,8 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
                     reply_markup=back_to_menu_kb(uid == ADMIN_ID)
                 )
             else:  # AI mode
-                # Reset AI mode state for next sticker but keep it initialized
-                s.update({"ai": {}, "mode": "ai"})
+                # Reset AI mode state for next sticker
+                s["ai"] = {}
                 await cb.message.answer(
                     f"✅ استیکر با موفقیت به پک «{pack_title}» اضافه شد!\n\n"
                     f"🔗 لینک پک: {pack_link}\n\n"
