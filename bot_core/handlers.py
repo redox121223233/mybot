@@ -452,6 +452,16 @@ async def on_message(message: Message, bot: Bot):
             logger.info(f"User {uid} has active pack {s.get('current_pack_short_name')} - creating sticker directly")
             current_mode = s.get("mode", "simple")
             if current_mode == "simple":
+                # --- Bug Fix: Prevent restarting a simple sticker creation in progress ---
+                simple_state = s.get("simple", {})
+                if simple_state.get("text") or simple_state.get("awaiting_bg_photo"):
+                    await message.answer(
+                        "شما در حال ساخت یک استیکر ساده هستید.\n"
+                        "لطفاً ابتدا فرآیند فعلی را با استفاده از دکمه‌های زیر پیش‌نمایش، تکمیل یا لغو کنید.",
+                        reply_markup=after_preview_kb("simple")
+                    )
+                    return # Exit to prevent overwriting state
+
                 s["simple"]["text"] = message.text.strip()
                 await message.answer("پس\u200cزمینه را انتخاب کنید:", reply_markup=simple_bg_kb())
             elif current_mode == "ai":
