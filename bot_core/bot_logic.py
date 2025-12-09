@@ -117,16 +117,30 @@ def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: st
         try:
             bg_img = Image.open(BytesIO(bg_photo)).convert("RGBA")
 
-            # --- Smart Resizing Logic ---
-            # Resize the image to fit within 512x512 while maintaining aspect ratio
-            bg_img.thumbnail((W, H), Image.Resampling.LANCZOS)
+            # --- Final Resizing Logic ---
+            # Ensures one dimension is exactly 512px, preserving aspect ratio.
+            original_width, original_height = bg_img.size
 
-            # Create a new transparent background to paste the resized image onto
-            paste_x = (W - bg_img.width) // 2
-            paste_y = (H - bg_img.height) // 2
+            if original_width > original_height:
+                # Landscape orientation
+                new_width = W
+                new_height = int(original_height * (W / original_width))
+            else:
+                # Portrait or square orientation
+                new_height = H
+                new_width = int(original_width * (H / original_height))
 
-            # Paste the resized image onto the center of the transparent canvas
-            base_canvas.paste(bg_img, (paste_x, paste_y))
+            # Ensure dimensions are not zero
+            if new_width > 0 and new_height > 0:
+                resized_img = bg_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
+
+                # Center the resized image on the 512x512 transparent canvas
+                paste_x = (W - new_width) // 2
+                paste_y = (H - new_height) // 2
+                base_canvas.paste(resized_img, (paste_x, paste_y))
+            else:
+                # Fallback for invalid image dimensions
+                pass
 
         except Exception as e:
             print(f"Error processing background photo: {e}")
