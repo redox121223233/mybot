@@ -292,29 +292,38 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
             if "last_sticker" in s:
                 del s["last_sticker"]
             
-            # Get current mode to determine next step
+            # --- Robust State Reset for Next Sticker ---
+            # Preserve essential state
+            pack_short_name = s.get("current_pack_short_name")
+            pack_title_preserved = s.get("current_pack_title")
             current_mode = s.get("mode", "simple")
-            logger.info(f"Current mode after sticker addition: {current_mode}")
             
+            # Perform a full reset of the session to clear any lingering state
+            reset_mode(uid)
+
+            # Get the new, clean session object
+            s = sess(uid)
+
+            # Restore the necessary state to continue in the same pack
+            s["current_pack_short_name"] = pack_short_name
+            s["current_pack_title"] = pack_title_preserved
+            s["mode"] = current_mode
+
+            logger.info(f"Session reset and restored for next sticker in mode: {current_mode}")
+
             if current_mode == "simple":
-                # Reset simple mode state for next sticker but keep it initialized
-                s.update({"simple": {}, "mode": "simple"})
                 await cb.message.answer(
-                    f"✅ استیکر با موفقیت به پک «{pack_title}» اضافه شد!\\n\\n"
+                    f"✅ استیکر با موفقیت به پک «{pack_title}» اضافه شد!\n\n"
                     f"🔗 لینک پک: {pack_link}\n\n"
-                    f"ℹ️ نکته: اگر استیکر اتوماتیک اضافه نشد، می‌تونی دستی از طریق لینک بالا اضافه کنی\\n\\n"/g
-                    f"📝 برای استیکر بعدی، متن جدید رو بفرست:\\n\\n"/g
-                    f"📝 برای استیکر بعدی، متن جدید رو بفرست:\\n\\n"
+                    f"ℹ️ نکته: اگر استیکر اتوماتیک اضافه نشد، می‌تونی دستی از طریق لینک بالا اضافه کنی.\n\n"
+                    f"📝 برای استیکر بعدی، متن جدید رو بفرست:",
                     reply_markup=back_to_menu_kb(uid == ADMIN_ID)
                 )
             else:  # AI mode
-                # Reset AI mode state for next sticker but keep it initialized
-                s.update({"ai": {}, "mode": "ai"})
                 await cb.message.answer(
-                    f"✅ استیکر با موفقیت به پک «{pack_title}» اضافه شد!\\n\\n"
-                    f"🔗 لینک پک: {pack_link}\\n\\n"
+                    f"✅ استیکر با موفقیت به پک «{pack_title}» اضافه شد!\n\n"
+                    f"🔗 لینک پک: {pack_link}\n\n"
                     f"🎨 برای استیکر بعدی، نوع ایمیج سورس رو انتخاب کنید:",
-                    f"🎨 برای استیکر بعدی، نوع ایمیج سورس رو انتخاب کنید:", 
                     reply_markup=ai_image_source_kb()
                 )
         except Exception as e:
@@ -443,6 +452,16 @@ async def on_message(message: Message, bot: Bot):
             logger.info(f"User {uid} has active pack {s.get('current_pack_short_name')} - creating sticker directly")
             current_mode = s.get("mode", "simple")
             if current_mode == "simple":
+                # --- Bug Fix: Prevent restarting a simple sticker creation in progress ---
+                simple_state = s.get("simple", {})
+                if simple_state.get("text") or simple_state.get("awaiting_bg_photo"):
+                    await message.answer(
+                        "شما در حال ساخت یک استیکر ساده هستید.\n"
+                        "لطفاً ابتدا فرآیند فعلی را با استفاده از دکمه‌های زیر پیش‌نمایش، تکمیل یا لغو کنید.",
+                        reply_markup=after_preview_kb("simple")
+                    )
+                    return # Exit to prevent overwriting state
+
                 s["simple"]["text"] = message.text.strip()
                 await message.answer("پس\u200cزمینه را انتخاب کنید:", reply_markup=simple_bg_kb())
             elif current_mode == "ai":

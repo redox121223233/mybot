@@ -105,13 +105,45 @@ def resolve_font_path(font_key: Optional[str], text: str = "") -> str:
 def _prepare_text(text: str) -> str: return get_display(arabic_reshaper.reshape(text))
 
 def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: str, size_key: str, bg_mode: str = "transparent", bg_photo: Optional[bytes] = None, as_webp: bool = False) -> bytes:
-    W, H = 512, 512
-    img = Image.new("RGBA", (W, H), (0,0,0,0))
-    if bg_mode == "default":
-        img = Image.new("RGBA", (W, H), (20, 20, 35, 255))
-    elif bg_photo:
-        try: img = Image.open(BytesIO(bg_photo)).convert("RGBA").resize((W, H))
-        except: pass
+    MAX_DIM = 512
+    W, H = MAX_DIM, MAX_DIM  # Default canvas size
+
+    img = None
+    if bg_photo:
+        try:
+            bg_img = Image.open(BytesIO(bg_photo)).convert("RGBA")
+            original_width, original_height = bg_img.size
+
+            # --- Smart Canvas and Resizing Logic ---
+            # Calculate new dimensions to fit within MAX_DIM, preserving aspect ratio
+            if original_width > original_height:
+                W = MAX_DIM
+                H = int(original_height * (MAX_DIM / original_width))
+            else:
+                H = MAX_DIM
+                W = int(original_width * (MAX_DIM / original_height))
+
+            # Ensure dimensions are not zero
+            if W > 0 and H > 0:
+                # Create the canvas with the *correct* final dimensions
+                img = bg_img.resize((W, H), Image.Resampling.LANCZOS)
+            else:
+                # Fallback to a default square canvas if calculation fails
+                W, H = MAX_DIM, MAX_DIM
+                img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+
+        except Exception as e:
+            print(f"Error processing background photo, falling back: {e}")
+            # Fallback to a default square canvas on error
+            W, H = MAX_DIM, MAX_DIM
+            img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+
+    # If no background photo, or if it failed, create the canvas based on bg_mode
+    if img is None:
+        if bg_mode == "default":
+            img = Image.new("RGBA", (W, H), (20, 20, 35, 255)) # Solid color
+        else: # transparent
+            img = Image.new("RGBA", (W, H), (0, 0, 0, 0)) # Transparent
 
     draw = ImageDraw.Draw(img)
     color = tuple(int(color_hex.lstrip('#')[i:i+2], 16) for i in (0, 2, 4)) + (255,)
