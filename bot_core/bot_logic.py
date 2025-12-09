@@ -105,50 +105,46 @@ def resolve_font_path(font_key: Optional[str], text: str = "") -> str:
 def _prepare_text(text: str) -> str: return get_display(arabic_reshaper.reshape(text))
 
 def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: str, size_key: str, bg_mode: str = "transparent", bg_photo: Optional[bytes] = None, as_webp: bool = False) -> bytes:
-    W, H = 512, 512
+    MAX_DIM = 512
+    W, H = MAX_DIM, MAX_DIM  # Default canvas size
 
-    # Create the base canvas
-    base_canvas = Image.new("RGBA", (W, H), (0,0,0,0))
-
-    if bg_mode == "default":
-        # Draw a solid color background
-        base_canvas.paste((20, 20, 35, 255), (0, 0, W, H))
-    elif bg_photo:
+    img = None
+    if bg_photo:
         try:
             bg_img = Image.open(BytesIO(bg_photo)).convert("RGBA")
-
-            # --- Final Resizing Logic ---
-            # Ensures one dimension is exactly 512px, preserving aspect ratio.
             original_width, original_height = bg_img.size
 
+            # --- Smart Canvas and Resizing Logic ---
+            # Calculate new dimensions to fit within MAX_DIM, preserving aspect ratio
             if original_width > original_height:
-                # Landscape orientation
-                new_width = W
-                new_height = int(original_height * (W / original_width))
+                W = MAX_DIM
+                H = int(original_height * (MAX_DIM / original_width))
             else:
-                # Portrait or square orientation
-                new_height = H
-                new_width = int(original_width * (H / original_height))
+                H = MAX_DIM
+                W = int(original_width * (MAX_DIM / original_height))
 
             # Ensure dimensions are not zero
-            if new_width > 0 and new_height > 0:
-                resized_img = bg_img.resize((new_width, new_height), Image.Resampling.LANCZOS)
-
-                # Center the resized image on the 512x512 transparent canvas
-                paste_x = (W - new_width) // 2
-                paste_y = (H - new_height) // 2
-                base_canvas.paste(resized_img, (paste_x, paste_y))
+            if W > 0 and H > 0:
+                # Create the canvas with the *correct* final dimensions
+                img = bg_img.resize((W, H), Image.Resampling.LANCZOS)
             else:
-                # Fallback for invalid image dimensions
-                pass
+                # Fallback to a default square canvas if calculation fails
+                W, H = MAX_DIM, MAX_DIM
+                img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
 
         except Exception as e:
-            print(f"Error processing background photo: {e}")
-            # If processing fails, we continue with a transparent background
-            pass
+            print(f"Error processing background photo, falling back: {e}")
+            # Fallback to a default square canvas on error
+            W, H = MAX_DIM, MAX_DIM
+            img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
 
-    # Use the prepared canvas for drawing
-    img = base_canvas
+    # If no background photo, or if it failed, create the canvas based on bg_mode
+    if img is None:
+        if bg_mode == "default":
+            img = Image.new("RGBA", (W, H), (20, 20, 35, 255)) # Solid color
+        else: # transparent
+            img = Image.new("RGBA", (W, H), (0, 0, 0, 0)) # Transparent
+
     draw = ImageDraw.Draw(img)
     color = tuple(int(color_hex.lstrip('#')[i:i+2], 16) for i in (0, 2, 4)) + (255,)
     padding = 40
