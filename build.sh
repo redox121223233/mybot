@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# 1. Install dependencies for downloading and extracting
-apt-get update
-apt-get install -y curl tar
+# 1. Install dependencies for downloading and extracting using yum
+yum update -y
+yum install -y curl tar
 
 # 2. Define FFmpeg version and URL
 FFMPEG_URL="https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
