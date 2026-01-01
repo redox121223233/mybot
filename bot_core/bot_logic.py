@@ -199,13 +199,13 @@ def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: st
 
 # --- FFmpeg ---
 def is_ffmpeg_installed() -> bool:
-    # Check for the binary included via vercel.json
-    return os.path.exists("./bin/ffmpeg")
+    # The vercel-python runtime places included files in the parent directory
+    return os.path.exists("../bin/ffmpeg")
 
 async def process_video_to_webm(video_bytes: bytes, text_overlay_data: Dict[str, Any]) -> Optional[bytes]:
-    ffmpeg_path = "./bin/ffmpeg" # Path provided by includeFiles
+    ffmpeg_path = "../bin/ffmpeg" # Relative path from the `api` directory
     if not os.path.exists(ffmpeg_path):
-        print("FFmpeg executable not found at ./bin/ffmpeg. Video processing aborted.")
+        print("FFmpeg executable not found at ../bin/ffmpeg. Video processing aborted.")
         return None
 
     # --- Prepare paths for temporary files ---

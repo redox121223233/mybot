@@ -8,5 +8,8 @@
         "includeFiles": ["bin/ffmpeg"]
       }
     }
+  ],
+  "rewrites": [
+    { "source": "/(.*)", "destination": "/api/index.py" }
   ]
 }
