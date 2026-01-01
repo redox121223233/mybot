@@ -1,8 +1,6 @@
 #!/bin/bash
 
-# 1. Install dependencies for downloading and extracting using yum
-yum update -y
-yum install -y curl tar
+# Dependencies like curl and tar are pre-installed in the Vercel build environment.
 
 # 2. Define FFmpeg version and URL
 FFMPEG_URL="https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
