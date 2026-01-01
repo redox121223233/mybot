@@ -1,15 +1,14 @@
 {
-  "version": 2,
   "builds": [
     {
       "src": "api/index.py",
-      "use": "@vercel/python"
+      "use": "@vercel/python",
+      "config": { "maxLambdaSize": "100mb" }
     }
   ],
-  "routes": [
+  "buildpacks": [
     {
-      "src": "/(.*)",
-      "dest": "/api/index.py"
+      "url": "https://github.com/jonathanong/heroku-buildpack-ffmpeg-latest"
     }
   ]
 }
