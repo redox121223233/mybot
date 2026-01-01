@@ -518,9 +518,20 @@ async def on_message(message: Message, bot: Bot):
 
     if message.text:
         if s.get("await_feedback"):
-            s["await_feedback"] = False; await message.answer("ممنون از بازخوردت!", reply_markup=back_to_menu_kb(is_admin))
-        # Check if user has an active pack and can add stickers directly
-        elif s.get("current_pack_short_name") and s.get("current_pack_title"):
+            s["await_feedback"] = False
+            await message.answer("ممنون از بازخوردت!", reply_markup=back_to_menu_kb(is_admin))
+            return
+
+        # Handle specific states for receiving text first, as they are more specific.
+        if s.get("mode") in ["ai_awaiting_text_for_video", "ai_awaiting_text_for_image"]:
+            s["ai"]["text"] = message.text.strip()
+            # Transition to the standard AI text configuration flow
+            s["mode"] = "ai"
+            await message.answer("موقعیت عمودی متن:", reply_markup=ai_vpos_kb())
+            return
+
+        # Check if user has an active pack and can start a new sticker creation directly
+        if s.get("current_pack_short_name") and s.get("current_pack_title"):
             logger.info(f"User {uid} has active pack {s.get('current_pack_short_name')} - creating sticker directly")
             current_mode = s.get("mode", "simple")
             if current_mode == "simple":
@@ -539,14 +550,6 @@ async def on_message(message: Message, bot: Bot):
             elif current_mode == "ai":
                 s["ai"]["text"] = message.text.strip()
                 await message.answer("\u0645\u0648\u0642\u0639\u06cc\u062a \u0639\u0645\u0648\u062f\u06cc \u0645\u062a\u0646:", reply_markup=ai_vpos_kb())
-        elif s.get("mode") == "ai":
-            s["ai"]["text"] = message.text.strip()
-            await message.answer("موقعیت عمودی متن:", reply_markup=ai_vpos_kb())
-        elif s.get("mode") in ["ai_awaiting_text_for_video", "ai_awaiting_text_for_image"]:
-            s["ai"]["text"] = message.text.strip()
-            # Transition to the standard AI text configuration flow
-            s["mode"] = "ai"
-            await message.answer("موقعیت عمودی متن:", reply_markup=ai_vpos_kb())
-        return
+            return
 
     await message.answer("دستور شما مشخص نیست.", reply_markup=main_menu_kb(is_admin))
