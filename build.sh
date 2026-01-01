@@ -9,11 +9,11 @@ FFMPEG_DIR="ffmpeg-*-amd64-static" # Wildcard to match version
 # 3. Download and extract FFmpeg to /tmp
 curl -L $FFMPEG_URL | tar -Jx -C /tmp
 
-# 4. Move the ffmpeg binary to the api directory
-# This makes it available in the same directory as the serverless function
-mv /tmp/$FFMPEG_DIR/ffmpeg api/
+# 4. Create a bin directory and move the ffmpeg binary there
+mkdir -p bin/
+mv /tmp/$FFMPEG_DIR/ffmpeg bin/
 
 # 5. Make it executable
-chmod +x api/ffmpeg
+chmod +x bin/ffmpeg
 
-echo "FFmpeg binary has been placed in the api/ directory."
+echo "FFmpeg binary has been placed in the bin/ directory."
