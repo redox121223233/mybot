@@ -199,12 +199,13 @@ def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: st
 
 # --- FFmpeg ---
 def is_ffmpeg_installed() -> bool:
-    try: subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True); return True
-    except: return False
+    # Check for the binary in the api/ directory
+    return os.path.exists("api/ffmpeg")
 
 async def process_video_to_webm(video_bytes: bytes, text_overlay_data: Dict[str, Any]) -> Optional[bytes]:
-    if not is_ffmpeg_installed():
-        print("FFmpeg is not installed. Video processing aborted.")
+    ffmpeg_path = "./ffmpeg" # Relative path from api/index.py
+    if not os.path.exists(ffmpeg_path):
+        print("FFmpeg executable not found at ./ffmpeg. Video processing aborted.")
         return None
 
     # --- Prepare paths for temporary files ---
@@ -239,7 +240,7 @@ async def process_video_to_webm(video_bytes: bytes, text_overlay_data: Dict[str,
         # -b:v 1M -crf 30: Quality and bitrate settings to control file size
         # -fs 250k: Limit file size to just under 256KB
         ffmpeg_cmd = [
-            'ffmpeg',
+            ffmpeg_path,
             '-i', input_path,
             '-i', overlay_path,
             '-filter_complex', "[0:v]scale='if(gt(iw,ih),512,-1)':'if(gt(ih,iw),512,-1)',pad=512:512:(512-iw)/2:(512-ih)/2:color=black@0[bg];[bg][1:v]overlay=0:0",
