@@ -170,24 +170,29 @@ def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: st
     
     result = buf.getvalue()
     
-    # Check if file size is too large for Telegram
+    # Check if file size is too large for Telegram and optimize if necessary
     if not as_webp and len(result) > 64 * 1024:  # 64 KB limit for PNG stickers
-        # Try to reduce quality by resizing and re-compressing
         try:
-            # Create a slightly smaller image
-            smaller_img = img.resize((400, 400), Image.Resampling.LANCZOS)
-            buf2 = BytesIO()
-            smaller_img.save(buf2, format="PNG", optimize=True, compress_level=9)
-            result = buf2.getvalue()
+            # Use color quantization to reduce file size while keeping dimensions.
+            # This converts the image to use a palette of at most 256 colors.
+            quantized_img = img.quantize(colors=256, dither=Image.Dither.NONE)
             
-            # If still too large, try even smaller
-            if len(result) > 64 * 1024:
-                even_smaller_img = img.resize((350, 350), Image.Resampling.LANCZOS)
-                buf3 = BytesIO()
-                even_smaller_img.save(buf3, format="PNG", optimize=True, compress_level=9)
-                result = buf3.getvalue()
-        except Exception:
-            pass  # Keep original if optimization fails
+            # Re-convert to RGBA to ensure transparency is handled correctly when saving.
+            quantized_img = quantized_img.convert("RGBA")
+
+            buf2 = BytesIO()
+            quantized_img.save(buf2, format="PNG", optimize=True, compress_level=9)
+            new_result = buf2.getvalue()
+
+            # Only use the quantized image if it's smaller than the original.
+            if len(new_result) < len(result):
+                result = new_result
+
+        except Exception as e:
+            print(f"Could not quantize image to reduce size: {e}")
+            # If quantization fails, keep the original oversized file. It's better to let
+            # Telegram reject it for size than to send a dimensionally invalid sticker.
+            pass
     
     return result
 
