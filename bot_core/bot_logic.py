@@ -106,44 +106,37 @@ def _prepare_text(text: str) -> str: return get_display(arabic_reshaper.reshape(
 
 def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: str, size_key: str, bg_mode: str = "transparent", bg_photo: Optional[bytes] = None, as_webp: bool = False) -> bytes:
     MAX_DIM = 512
-    W, H = MAX_DIM, MAX_DIM  # Default canvas size
+    W, H = MAX_DIM, MAX_DIM  # Start with a fixed 512x512 canvas size
 
-    img = None
+    # --- Definitive Canvas and Background Logic ---
+    # Always create a 512x512 transparent canvas first.
+    img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+
     if bg_photo:
         try:
             bg_img = Image.open(BytesIO(bg_photo)).convert("RGBA")
-            original_width, original_height = bg_img.size
 
-            # --- Smart Canvas and Resizing Logic ---
-            # Calculate new dimensions to fit within MAX_DIM, preserving aspect ratio
-            if original_width > original_height:
-                W = MAX_DIM
-                H = int(original_height * (MAX_DIM / original_width))
-            else:
-                H = MAX_DIM
-                W = int(original_width * (MAX_DIM / original_height))
+            # Use thumbnail to resize the image, preserving aspect ratio,
+            # ensuring it fits within a 512x512 box.
+            bg_img.thumbnail((W, H), Image.Resampling.LANCZOS)
 
-            # Ensure dimensions are not zero
-            if W > 0 and H > 0:
-                # Create the canvas with the *correct* final dimensions
-                img = bg_img.resize((W, H), Image.Resampling.LANCZOS)
-            else:
-                # Fallback to a default square canvas if calculation fails
-                W, H = MAX_DIM, MAX_DIM
-                img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+            # Calculate position to paste the thumbnail in the center of the canvas
+            paste_x = (W - bg_img.width) // 2
+            paste_y = (H - bg_img.height) // 2
+
+            # Paste the resized background onto the main canvas
+            img.paste(bg_img, (paste_x, paste_y), bg_img)
 
         except Exception as e:
-            print(f"Error processing background photo, falling back: {e}")
-            # Fallback to a default square canvas on error
-            W, H = MAX_DIM, MAX_DIM
-            img = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+            print(f"Error processing background photo, falling back to transparent: {e}")
+            # If there's an error, the canvas remains transparent, which is a safe fallback.
+            pass
 
-    # If no background photo, or if it failed, create the canvas based on bg_mode
-    if img is None:
-        if bg_mode == "default":
-            img = Image.new("RGBA", (W, H), (20, 20, 35, 255)) # Solid color
-        else: # transparent
-            img = Image.new("RGBA", (W, H), (0, 0, 0, 0)) # Transparent
+    elif bg_mode == "default":
+        # For default solid background, create it and paste it, replacing the transparent one.
+        img = Image.new("RGBA", (W, H), (20, 20, 35, 255))
+
+    # If bg_mode is 'transparent' and no photo is provided, the canvas is already correctly set up.
 
     draw = ImageDraw.Draw(img)
     color = tuple(int(color_hex.lstrip('#')[i:i+2], 16) for i in (0, 2, 4)) + (255,)
