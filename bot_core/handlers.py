@@ -248,8 +248,13 @@ async def on_ai_actions(cb: CallbackQuery, bot: Bot):
         else: # video
              await safe_edit_text(cb, "حالا ویدیوی خود را ارسال کنید.\n\n🔴 توجه: ویدیو شما باید **حداکثر ۳ ثانیه** باشد.")
     elif action == "source":
-        if parts[2] == "text": await safe_edit_text(cb, "متن استیکر را بفرست:")
-        else: ai_data["awaiting_bg_photo"] = True; await safe_edit_text(cb, "عکس را ارسال کنید:")
+        if parts[2] == "text":
+            s["mode"] = "ai_awaiting_text_for_image"
+            await safe_edit_text(cb, "متن استیکر را بفرست:")
+        else: # photo
+            ai_data["awaiting_bg_photo"] = True
+            s["mode"] = "ai_awaiting_source" # Ensure mode is set for photo awaiting
+            await safe_edit_text(cb, "عکس را ارسال کنید:")
     elif action == "vpos": ai_data["v_pos"] = parts[2]; await safe_edit_text(cb, "موقعیت افقی؟", reply_markup=ai_hpos_kb())
     elif action == "hpos": ai_data["h_pos"] = parts[2]; kb = InlineKeyboardBuilder(); [kb.button(text=n, callback_data=f"ai:color:{h}") for n,h in DEFAULT_PALETTE]; kb.adjust(4); await safe_edit_text(cb, "رنگ متن؟", reply_markup=kb.as_markup())
     elif action == "color": ai_data["color"] = parts[2]; kb = InlineKeyboardBuilder(); [kb.button(text=l, callback_data=f"ai:size:{v}") for l,v in [("کوچک","small"),("متوسط","medium"),("بزرگ","large")]]; kb.adjust(3); await safe_edit_text(cb, "اندازه فونت؟", reply_markup=kb.as_markup())
@@ -471,9 +476,11 @@ async def on_message(message: Message, bot: Bot):
             s_simple["bg_photo_bytes"] = file.read(); s_simple["awaiting_bg_photo"] = False
             img = render_image(s_simple["text"], "center", "center", "Default", "#FFFFFF", "medium", bg_photo=s_simple["bg_photo_bytes"])
             await message.answer_photo(BufferedInputFile(img, "p.png"), caption="پیش‌نمایش:", reply_markup=after_preview_kb("simple"))
-        elif s.get("mode") == "ai" and s_ai.get("awaiting_bg_photo"):
+        elif s.get("mode") == "ai_awaiting_source" and s_ai.get("awaiting_bg_photo"):
             file = await bot.download(message.photo[-1].file_id)
-            s_ai["bg_photo_bytes"] = file.read(); s_ai["awaiting_bg_photo"] = False
+            s_ai["bg_photo_bytes"] = file.read()
+            s_ai["awaiting_bg_photo"] = False
+            s["mode"] = "ai_awaiting_text_for_image" # New specific mode
             await message.answer("عکس دریافت شد. حالا متن را بفرستید:")
         elif s.get("mode") == "ai":
             # In AI mode but not awaiting photo - show helpful message
@@ -535,7 +542,7 @@ async def on_message(message: Message, bot: Bot):
         elif s.get("mode") == "ai":
             s["ai"]["text"] = message.text.strip()
             await message.answer("موقعیت عمودی متن:", reply_markup=ai_vpos_kb())
-        elif s.get("mode") == "ai_awaiting_text_for_video":
+        elif s.get("mode") in ["ai_awaiting_text_for_video", "ai_awaiting_text_for_image"]:
             s["ai"]["text"] = message.text.strip()
             # Transition to the standard AI text configuration flow
             s["mode"] = "ai"
