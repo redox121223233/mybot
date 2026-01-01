@@ -217,13 +217,36 @@ async def on_simple_actions(cb: CallbackQuery, bot: Bot):
     await cb.answer()
 
 # --- AI Sticker Creation ---
+@router.callback_query(F.data == "ai:type:image")
+async def on_ai_type_image(call: CallbackQuery):
+    s = sess(call.from_user.id)
+    s["ai"]["type"] = "image"
+    s["mode"] = "ai_awaiting_source"  # Specific mode for image source selection
+    await call.message.edit_text("منبع استیکر خود را انتخاب کنید:", reply_markup=ai_image_source_kb())
+
+@router.callback_query(F.data == "ai:type:video")
+async def on_ai_type_video(call: CallbackQuery):
+    s = sess(call.from_user.id)
+    s["ai"]["type"] = "video"
+    s["mode"] = "ai_awaiting_video" # Specific mode for awaiting video
+    await call.message.edit_text(
+        "حالا ویدیوی خود را ارسال کنید.\n\n"
+        "🔴 توجه: ویدیو شما باید **حداکثر ۳ ثانیه** باشد. فقط ۳ ثانیه اول ویدیوهای طولانی‌تر پردازش خواهد شد."
+    )
+
 @router.callback_query(F.data.startswith("ai:"))
 async def on_ai_actions(cb: CallbackQuery, bot: Bot):
     if not await require_channel_membership(cb.message, bot): return
     parts, uid, s = cb.data.split(":"), cb.from_user.id, sess(cb.from_user.id)
     action, ai_data = parts[1], s["ai"]
 
-    if action == "type": ai_data["sticker_type"] = parts[2]; await safe_edit_text(cb, "منبع استیکر؟", reply_markup=ai_image_source_kb())
+    if action == "type":
+        # This part is now handled by the specific handlers above, but we keep it for safety.
+        ai_data["sticker_type"] = parts[2]
+        if parts[2] == "image":
+            await safe_edit_text(cb, "منبع استیکر؟", reply_markup=ai_image_source_kb())
+        else: # video
+             await safe_edit_text(cb, "حالا ویدیوی خود را ارسال کنید.\n\n🔴 توجه: ویدیو شما باید **حداکثر ۳ ثانیه** باشد.")
     elif action == "source":
         if parts[2] == "text": await safe_edit_text(cb, "متن استیکر را بفرست:")
         else: ai_data["awaiting_bg_photo"] = True; await safe_edit_text(cb, "عکس را ارسال کنید:")
@@ -235,11 +258,48 @@ async def on_ai_actions(cb: CallbackQuery, bot: Bot):
         img = render_image(ai_data.get("text","متن نمونه"), ai_data["v_pos"], ai_data["h_pos"], ai_data.get("font","Default"), ai_data["color"], ai_data["size"], bg_photo=ai_data.get("bg_photo_bytes"))
         await cb.message.answer_photo(BufferedInputFile(img, "p.png"), caption="پیش‌نمایش:", reply_markup=after_preview_kb("ai"))
     elif action == "confirm":
-        if _quota_left(user(uid), uid==ADMIN_ID) <= 0: await cb.answer("سهمیه تمام شد!", show_alert=True); return
-        img = render_image(ai_data["text"], ai_data["v_pos"], ai_data["h_pos"], ai_data.get("font","Default"), ai_data["color"], ai_data["size"], bg_photo=ai_data.get("bg_photo_bytes"), as_webp=True)
-        s["last_sticker"] = img; user(uid)["ai_used"] = user(uid).get("ai_used", 0) + 1
-        await cb.message.answer_sticker(BufferedInputFile(img, "s.webp"))
-        await cb.message.answer("از این استیکر راضی بودی؟", reply_markup=rate_kb())
+        if _quota_left(user(uid), uid == ADMIN_ID) <= 0:
+            await cb.answer("سهمیه تمام شد!", show_alert=True)
+            return
+
+        sticker_type = ai_data.get("type", "image")
+
+        if sticker_type == "video":
+            await safe_edit_text(cb, "در حال پردازش ویدیو... این ممکن است کمی طول بکشد.")
+            video_bytes = ai_data.get("video_bytes")
+            if not video_bytes:
+                await safe_edit_text(cb, "خطا: فایل ویدیو یافت نشد.", reply_markup=back_to_menu_kb(uid == ADMIN_ID))
+                return
+
+            # Prepare text overlay data for the processing function
+            text_overlay_data = {
+                "text": ai_data.get("text", ""), "v_pos": ai_data.get("v_pos", "center"),
+                "h_pos": ai_data.get("h_pos", "center"), "font_key": ai_data.get("font", "Default"),
+                "color_hex": ai_data.get("color", "#FFFFFF"), "size_key": ai_data.get("size", "medium")
+            }
+
+            webm_bytes = await process_video_to_webm(video_bytes, text_overlay_data)
+
+            if webm_bytes:
+                s["last_sticker"] = webm_bytes
+                s["last_sticker_format"] = "video"
+                user(uid)["ai_used"] = user(uid).get("ai_used", 0) + 1
+                await cb.message.answer_sticker(BufferedInputFile(webm_bytes, "s.webm"))
+                await cb.message.answer("از این استیکر راضی بودی؟", reply_markup=rate_kb())
+            else:
+                await cb.message.answer("خطا در پردازش ویدیو. ممکن است فرمت ویدیو پشتیبانی نشود یا حجم آن زیاد باشد.", reply_markup=back_to_menu_kb(uid == ADMIN_ID))
+
+        else: # Default to image sticker
+            img = render_image(
+                ai_data["text"], ai_data["v_pos"], ai_data["h_pos"],
+                ai_data.get("font", "Default"), ai_data["color"], ai_data["size"],
+                bg_photo=ai_data.get("bg_photo_bytes"), as_webp=True
+            )
+            s["last_sticker"] = img
+            s["last_sticker_format"] = "static"
+            user(uid)["ai_used"] = user(uid).get("ai_used", 0) + 1
+            await cb.message.answer_sticker(BufferedInputFile(img, "s.webp"))
+            await cb.message.answer("از این استیکر راضی بودی؟", reply_markup=rate_kb())
     await cb.answer()
 
 # --- Sticker Confirmation and Rating ---
@@ -259,31 +319,34 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
             
         await safe_edit_text(cb, "در حال افزودن به پک...")
         try:
-            # Convert to PNG format for pack addition (Telegram requires PNG for static stickers)
-            from .bot_logic import render_image
-            png_bytes = None
-            current_mode = s.get("mode", "simple")
+            sticker_format = s.get("last_sticker_format", "static")
+            sticker_file = s.get("last_sticker")
             
-            if current_mode == "simple":
-                simple_data = s.get("simple", {})
-                png_bytes = render_image(
-                    simple_data.get("text", "text"), "center", "center", "Default", "#FFFFFF", "medium", 
-                    bg_mode=simple_data.get("bg_mode", "transparent"), 
-                    bg_photo=simple_data.get("bg_photo_bytes"), 
-                    as_webp=False  # Force PNG for pack
-                )
-            else:  # AI mode
-                # Reset AI mode state for next sticker
-                ai_data = s.get("ai", {})
-                png_bytes = render_image(
-                    ai_data.get("text", "text"), ai_data.get("v_pos", "center"), ai_data.get("h_pos", "center"), 
-                    ai_data.get("font","Default"), ai_data.get("color", "#FFFFFF"), ai_data.get("size", "medium"), 
-                    bg_photo=ai_data.get("bg_photo_bytes"), 
-                    as_webp=False  # Force PNG for pack
-                )
-            
-            sticker = InputSticker(sticker=BufferedInputFile(png_bytes, "s.png"), format="static", emoji_list=["😀"])
-            logger.info(f"Attempting to add sticker to pack {pack_name}")
+            if sticker_format == "video":
+                # For video stickers, the bytes are already in the correct webm format
+                sticker = InputSticker(sticker=BufferedInputFile(sticker_file, "s.webm"), format="video", emoji_list=["😀"])
+            else: # static (default)
+                # For static stickers, we need to re-render them as PNG
+                current_mode = s.get("mode", "simple")
+                if current_mode == "simple":
+                    simple_data = s.get("simple", {})
+                    png_bytes = render_image(
+                        simple_data.get("text", "text"), "center", "center", "Default", "#FFFFFF", "medium",
+                        bg_mode=simple_data.get("bg_mode", "transparent"),
+                        bg_photo=simple_data.get("bg_photo_bytes"),
+                        as_webp=False
+                    )
+                else:  # AI mode for image
+                    ai_data = s.get("ai", {})
+                    png_bytes = render_image(
+                        ai_data.get("text", "text"), ai_data.get("v_pos", "center"), ai_data.get("h_pos", "center"),
+                        ai_data.get("font", "Default"), ai_data.get("color", "#FFFFFF"), ai_data.get("size", "medium"),
+                        bg_photo=ai_data.get("bg_photo_bytes"),
+                        as_webp=False
+                    )
+                sticker = InputSticker(sticker=BufferedInputFile(png_bytes, "s.png"), format="static", emoji_list=["😀"])
+
+            logger.info(f"Attempting to add {sticker_format} sticker to pack {pack_name}")
             await bot.add_sticker_to_set(user_id=uid, name=pack_name, sticker=sticker)
             logger.info(f"Successfully added sticker to pack {pack_name}")
             # Add pack link after sticker addition
@@ -432,17 +495,19 @@ async def on_message(message: Message, bot: Bot):
             )
         return
 
-    if message.video and s.get("mode") == "ai" and s.get("ai", {}).get("sticker_type") == "video":
-        if not is_ffmpeg_installed(): await message.answer("پردازش ویدیو فعال نیست."); return
-        await message.answer("در حال پردازش ویدیو...")
-        file = await bot.download(message.video.file_id)
-        webm_bytes = await process_video_to_webm(file.read())
-        if webm_bytes:
-            s["last_sticker"] = webm_bytes
-            await message.answer_sticker(BufferedInputFile(webm_bytes, "s.webm"))
-            await message.answer("از این استیکر راضی بودی؟", reply_markup=rate_kb())
-        else: await message.answer("خطا در پردازش ویدیو.")
-        return
+    if message.video or message.animation:
+        video = message.video or message.animation
+        if s.get("mode") == "ai_awaiting_video":
+            if not is_ffmpeg_installed():
+                await message.answer("پردازش ویدیو در حال حاضر در سرور فعال نیست.")
+                return
+
+            s_ai = s.get("ai", {})
+            file = await bot.download(video.file_id)
+            s_ai["video_bytes"] = file.read()
+            s["mode"] = "ai_awaiting_text_for_video" # New mode to wait for text
+            await message.answer("ویدیو دریافت شد. حالا متنی که می‌خواهی روی آن باشد را بفرست.")
+            return
 
     if message.text:
         if s.get("await_feedback"):
@@ -469,6 +534,11 @@ async def on_message(message: Message, bot: Bot):
                 await message.answer("\u0645\u0648\u0642\u0639\u06cc\u062a \u0639\u0645\u0648\u062f\u06cc \u0645\u062a\u0646:", reply_markup=ai_vpos_kb())
         elif s.get("mode") == "ai":
             s["ai"]["text"] = message.text.strip()
+            await message.answer("موقعیت عمودی متن:", reply_markup=ai_vpos_kb())
+        elif s.get("mode") == "ai_awaiting_text_for_video":
+            s["ai"]["text"] = message.text.strip()
+            # Transition to the standard AI text configuration flow
+            s["mode"] = "ai"
             await message.answer("موقعیت عمودی متن:", reply_markup=ai_vpos_kb())
         return
 

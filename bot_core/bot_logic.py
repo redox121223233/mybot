@@ -9,6 +9,7 @@ from typing import Dict, Any, Optional, Tuple, List
 from datetime import datetime, timezone
 import subprocess
 import traceback
+import asyncio
 
 from aiogram import Bot, Router
 from aiogram.exceptions import TelegramBadRequest, TelegramForbiddenError
@@ -201,14 +202,83 @@ def is_ffmpeg_installed() -> bool:
     try: subprocess.run(["ffmpeg", "-version"], capture_output=True, check=True); return True
     except: return False
 
-async def process_video_to_webm(video_bytes: bytes) -> Optional[bytes]:
-    if not is_ffmpeg_installed(): return None
+async def process_video_to_webm(video_bytes: bytes, text_overlay_data: Dict[str, Any]) -> Optional[bytes]:
+    if not is_ffmpeg_installed():
+        print("FFmpeg is not installed. Video processing aborted.")
+        return None
+
+    # --- Prepare paths for temporary files ---
+    temp_dir = "/tmp"
+    input_path = os.path.join(temp_dir, "input.mp4")
+    overlay_path = os.path.join(temp_dir, "overlay.png")
+    output_path = os.path.join(temp_dir, "output.webm")
+
     try:
-        p = await asyncio.create_subprocess_exec('ffmpeg', '-i', '-', '-f', 'webm', '-c:v', 'libvpx-vp9', '-b:v', '1M', '-crf', '30', '-', stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        stdout, stderr = await p.communicate(input=video_bytes)
-        if p.returncode != 0: print(f"FFmpeg error: {stderr.decode()}"); return None
-        return stdout
-    except Exception as e: print(f"Video processing error: {e}"); return None
+        # 1. Save input video to a temporary file
+        with open(input_path, "wb") as f:
+            f.write(video_bytes)
+
+        # 2. Render text overlay as a transparent PNG
+        overlay_bytes = render_image(
+            text=text_overlay_data["text"],
+            v_pos=text_overlay_data["v_pos"],
+            h_pos=text_overlay_data["h_pos"],
+            font_key=text_overlay_data["font_key"],
+            color_hex=text_overlay_data["color_hex"],
+            size_key=text_overlay_data["size_key"],
+            bg_mode="transparent"
+        )
+        with open(overlay_path, "wb") as f:
+            f.write(overlay_bytes)
+
+        # 3. Construct and run the FFmpeg command
+        # -t 3: Trim to 3 seconds
+        # -an: No audio
+        # -vf "scale=512:-1,...": Resize to 512px on one side, preserving aspect ratio
+        # -c:v libvpx-vp9: VP9 codec for webm
+        # -b:v 1M -crf 30: Quality and bitrate settings to control file size
+        # -fs 250k: Limit file size to just under 256KB
+        ffmpeg_cmd = [
+            'ffmpeg',
+            '-i', input_path,
+            '-i', overlay_path,
+            '-filter_complex', "[0:v]scale='if(gt(iw,ih),512,-1)':'if(gt(ih,iw),512,-1)',pad=512:512:(512-iw)/2:(512-ih)/2:color=black@0[bg];[bg][1:v]overlay=0:0",
+            '-t', '3',
+            '-an',
+            '-c:v', 'libvpx-vp9',
+            '-b:v', '1M',
+            '-crf', '30',
+            '-fs', '250k', # Limit file size to 250KB, safely below Telegram's 256KB limit
+            '-y',
+            output_path
+        ]
+
+        process = await asyncio.create_subprocess_exec(
+            *ffmpeg_cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
+        )
+        stdout, stderr = await process.communicate()
+
+        if process.returncode != 0:
+            print(f"FFmpeg error: {stderr.decode()}")
+            return None
+
+        # 4. Read the processed video file
+        if os.path.exists(output_path):
+            with open(output_path, "rb") as f:
+                return f.read()
+        return None
+
+    except Exception as e:
+        print(f"Video processing error: {e}")
+        traceback.print_exc()
+        return None
+    finally:
+        # 5. Clean up temporary files
+        for path in [input_path, overlay_path, output_path]:
+            if os.path.exists(path):
+                os.remove(path)
 
 # --- Channel Membership ---
 async def check_channel_membership(bot: Bot, user_id: int) -> bool:
@@ -247,7 +317,12 @@ def pack_selection_kb(uid: int, mode: str):
         if not current_pack or pack["short_name"] != current_pack["short_name"]: kb.button(text=f"📦 {pack['name']}", callback_data=f"pack:select:{pack['short_name']}:{mode}")
     kb.button(text="➕ ساخت پک جدید", callback_data=f"pack:new:{mode}"); kb.adjust(1); return kb.as_markup()
 def ai_type_kb():
-    kb = InlineKeyboardBuilder(); kb.button(text="استیکر تصویری", callback_data="ai:type:image"); kb.adjust(1); return kb.as_markup()
+    kb = InlineKeyboardBuilder()
+    kb.button(text="استیکر تصویری", callback_data="ai:type:image")
+    kb.button(text="استیکر ویدیویی", callback_data="ai:type:video")
+    kb.adjust(1)
+    return kb.as_markup()
+
 def ai_image_source_kb():
     kb = InlineKeyboardBuilder(); kb.button(text="متن بنویس", callback_data="ai:source:text"); kb.button(text="عکس بفرست", callback_data="ai:source:photo"); kb.adjust(2); return kb.as_markup()
 def ai_vpos_kb():
