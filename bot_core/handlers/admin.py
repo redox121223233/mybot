@@ -7,6 +7,10 @@ from .common import safe_edit_text
 
 router = Router()
 
+def is_admin_active(message: Message) -> bool:
+    s = storage.get_session(message.from_user.id)
+    return bool(s.get("admin", {}).get("step"))
+
 @router.callback_query(F.data == "admin:broadcast")
 async def on_admin_broadcast_prompt(cb: CallbackQuery):
     if cb.from_user.id != ADMIN_ID: return
@@ -21,7 +25,7 @@ async def on_admin_dm_prompt(cb: CallbackQuery):
     await safe_edit_text(cb, "آیدی عددی کاربر را بفرستید:", reply_markup=back_to_menu_kb(True))
     await cb.answer()
 
-@router.message(F.from_user.id == ADMIN_ID)
+@router.message(F.from_user.id == ADMIN_ID, is_admin_active)
 async def admin_message_handler(message: Message, bot: Bot):
     s = storage.get_session(message.from_user.id)
     admin_state = s.get("admin", {})
@@ -30,7 +34,6 @@ async def admin_message_handler(message: Message, bot: Bot):
     if step == "awaiting_broadcast":
         storage.update_session(message.from_user.id, {"admin": {}})
         await message.answer("در حال ارسال پیام همگانی...")
-        # In a real scenario, we would iterate over all users in storage.USERS
         users = storage.USERS.keys()
         count = 0
         for uid_str in users:
@@ -57,5 +60,3 @@ async def admin_message_handler(message: Message, bot: Bot):
             await message.answer("پیام با موفقیت ارسال شد.", reply_markup=admin_panel_kb())
         except Exception as e:
             await message.answer(f"خطا در ارسال پیام: {e}", reply_markup=admin_panel_kb())
-
-    # Let other handlers process if not an admin step

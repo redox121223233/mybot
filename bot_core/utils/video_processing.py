@@ -2,22 +2,34 @@ import os
 import subprocess
 import asyncio
 import traceback
+import logging
 from typing import Optional, Dict, Any
 from .image_processing import render_image
 
-# Cache FFmpeg status
-FFMPEG_CACHE = None
+logger = logging.getLogger(__name__)
 
-async def is_ffmpeg_installed() -> bool:
-    global FFMPEG_CACHE
-    if FFMPEG_CACHE is not None:
-        return FFMPEG_CACHE
+# Cache FFmpeg path
+FFMPEG_PATH_CACHE = None
 
-    paths = ["../bin/ffmpeg", "/usr/bin/ffmpeg", "ffmpeg"]
-    for path in paths:
+async def get_ffmpeg_path() -> Optional[str]:
+    global FFMPEG_PATH_CACHE
+    if FFMPEG_PATH_CACHE is not None:
+        return FFMPEG_PATH_CACHE
+
+    # Check project bin directory (Vercel build artifact)
+    # The current file is in bot_core/utils/, so ../../bin/ffmpeg from here
+    local_bin = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "bin", "ffmpeg"))
+
+    # Also check parent directory if called from api/ (Vercel root)
+    root_bin = os.path.abspath(os.path.join(os.getcwd(), "bin", "ffmpeg"))
+
+    potential_paths = [local_bin, root_bin, "/usr/bin/ffmpeg", "ffmpeg"]
+
+    for path in potential_paths:
         if os.path.exists(path):
-            FFMPEG_CACHE = True
-            return True
+            logger.info(f"FFmpeg found at: {path}")
+            FFMPEG_PATH_CACHE = path
+            return path
 
     try:
         process = await asyncio.create_subprocess_exec(
@@ -25,22 +37,31 @@ async def is_ffmpeg_installed() -> bool:
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE
         )
-        await process.communicate()
-        FFMPEG_CACHE = (process.returncode == 0)
+        stdout, _ = await process.communicate()
+        if process.returncode == 0:
+            path = stdout.decode().strip()
+            logger.info(f"FFmpeg found via 'which': {path}")
+            FFMPEG_PATH_CACHE = path
+            return path
     except Exception:
-        FFMPEG_CACHE = False
+        pass
 
-    return FFMPEG_CACHE
+    logger.warning("FFmpeg NOT found in any known locations.")
+    return None
+
+async def is_ffmpeg_installed() -> bool:
+    return await get_ffmpeg_path() is not None
 
 async def process_video_to_webm(video_bytes: bytes, text_overlay_data: Dict[str, Any]) -> Optional[bytes]:
-    ffmpeg_path = "ffmpeg"
-    if os.path.exists("../bin/ffmpeg"):
-        ffmpeg_path = "../bin/ffmpeg"
+    ffmpeg_path = await get_ffmpeg_path()
+    if not ffmpeg_path:
+        logger.error("Cannot process video: FFmpeg not found.")
+        return None
 
     temp_dir = "/tmp"
-    input_path = os.path.join(temp_dir, "input.mp4")
-    overlay_path = os.path.join(temp_dir, "overlay.png")
-    output_path = os.path.join(temp_dir, "output.webm")
+    input_path = os.path.join(temp_dir, f"input_{os.getpid()}.mp4")
+    overlay_path = os.path.join(temp_dir, f"overlay_{os.getpid()}.png")
+    output_path = os.path.join(temp_dir, f"output_{os.getpid()}.webm")
 
     try:
         with open(input_path, "wb") as f:
@@ -73,6 +94,7 @@ async def process_video_to_webm(video_bytes: bytes, text_overlay_data: Dict[str,
             output_path
         ]
 
+        logger.info(f"Running FFmpeg: {' '.join(ffmpeg_cmd)}")
         process = await asyncio.create_subprocess_exec(
             *ffmpeg_cmd,
             stdout=subprocess.PIPE,
@@ -81,7 +103,7 @@ async def process_video_to_webm(video_bytes: bytes, text_overlay_data: Dict[str,
         stdout, stderr = await process.communicate()
 
         if process.returncode != 0:
-            print(f"FFmpeg error: {stderr.decode()}")
+            logger.error(f"FFmpeg error: {stderr.decode()}")
             return None
 
         if os.path.exists(output_path):
@@ -90,8 +112,8 @@ async def process_video_to_webm(video_bytes: bytes, text_overlay_data: Dict[str,
         return None
 
     except Exception as e:
-        print(f"Video processing error: {e}")
-        traceback.print_exc()
+        logger.error(f"Video processing error: {e}")
+        logger.error(traceback.format_exc())
         return None
     finally:
         for path in [input_path, overlay_path, output_path]:
