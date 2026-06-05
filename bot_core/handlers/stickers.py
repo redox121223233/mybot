@@ -145,7 +145,15 @@ async def on_ai_actions(cb: CallbackQuery, bot: Bot):
             img = render_image(ai_data.get("text","Sample"), ai_data.get("v_pos", "center"), ai_data.get("h_pos", "center"),
                               "Default", ai_data.get("color", "#FFFFFF"), ai_data.get("size", "medium"),
                               bg_photo=ai_data.get("bg_photo_bytes"))
-            await cb.message.answer_photo(BufferedInputFile(img, "p.png"), caption="پیش‌نمایش:", reply_markup=after_preview_kb("ai"))
+
+            caption = "پیش‌نمایش:"
+            if ai_data.get("type") == "video":
+                caption = (
+                    "پیش‌نمایش متن:\n\n"
+                    "صفحه سفید پشت برای نشون دادن فونت متن به شماست و بعد از زدن دکمه تایید روی گیف/ویدیو شما میاد"
+                )
+
+            await cb.message.answer_photo(BufferedInputFile(img, "p.png"), caption=caption, reply_markup=after_preview_kb("ai"))
     elif action == "confirm":
         if _quota_left(storage.get_user(uid), uid == ADMIN_ID) <= 0:
             await cb.answer("سهمیه تمام شد!", show_alert=True); return
@@ -268,22 +276,38 @@ async def on_message(message: Message, bot: Bot):
             await message.answer(f"خطا در ساخت پک: {e}")
         return
 
+    # Anti-spam/Single-media enforcement
+    if (message.photo or message.video or message.animation) and s.get("is_processing"):
+        await message.answer(
+            "نمیتونید بیشتر از یکی بفرستید اگر چندتا چیز میخواید بسازید باید دونه دونه بسازید "
+            "به دلیل سرور ها ربات مجبوریم اینکارو انجام بدیم تا زمانی که بشه از ربات پولی دریافت کرد"
+        )
+        return
+
     if message.photo:
         s_simple, s_ai = s.get("simple", {}), s.get("ai", {})
         if s.get("mode") == "simple" and s_simple.get("awaiting_bg_photo"):
-            file = await bot.download(message.photo[-1].file_id)
-            s_simple["bg_photo_bytes"] = file.read()
-            s_simple["awaiting_bg_photo"] = False
-            storage.update_session(uid, {"simple": s_simple})
-            img = render_image(s_simple["text"], "center", "center", "Default", "#FFFFFF", "medium", bg_photo=s_simple["bg_photo_bytes"])
-            await message.answer_photo(BufferedInputFile(img, "p.png"), caption="پیش‌نمایش:", reply_markup=after_preview_kb("simple"))
+            storage.update_session(uid, {"is_processing": True})
+            try:
+                file = await bot.download(message.photo[-1].file_id)
+                s_simple["bg_photo_bytes"] = file.read()
+                s_simple["awaiting_bg_photo"] = False
+                storage.update_session(uid, {"simple": s_simple})
+                img = render_image(s_simple["text"], "center", "center", "Default", "#FFFFFF", "medium", bg_photo=s_simple["bg_photo_bytes"])
+                await message.answer_photo(BufferedInputFile(img, "p.png"), caption="پیش‌نمایش:", reply_markup=after_preview_kb("simple"))
+            finally:
+                storage.update_session(uid, {"is_processing": False})
             return
         elif s.get("mode") == "ai_awaiting_source" and s_ai.get("awaiting_bg_photo"):
-            file = await bot.download(message.photo[-1].file_id)
-            s_ai["bg_photo_bytes"] = file.read()
-            s_ai["awaiting_bg_photo"] = False
-            storage.update_session(uid, {"ai": s_ai, "mode": "ai_awaiting_text_for_image"})
-            await message.answer("عکس دریافت شد. حالا متن را بفرستید:")
+            storage.update_session(uid, {"is_processing": True})
+            try:
+                file = await bot.download(message.photo[-1].file_id)
+                s_ai["bg_photo_bytes"] = file.read()
+                s_ai["awaiting_bg_photo"] = False
+                storage.update_session(uid, {"ai": s_ai, "mode": "ai_awaiting_text_for_image"})
+                await message.answer("عکس دریافت شد. حالا متن را بفرستید:")
+            finally:
+                storage.update_session(uid, {"is_processing": False})
             return
 
     # Handle Video, GIF, and Animation proactively
@@ -298,18 +322,22 @@ async def on_message(message: Message, bot: Bot):
             await message.answer("ابتدا باید یک پک استیکر بسازید یا انتخاب کنید.", reply_markup=main_menu_kb(is_admin))
             return
 
-        await message.answer("در حال دریافت فایل...")
-        file = await bot.download(video.file_id)
-        file_bytes = file.read()
+        storage.update_session(uid, {"is_processing": True})
+        try:
+            await message.answer("در حال دریافت فایل...")
+            file = await bot.download(video.file_id)
+            file_bytes = file.read()
 
-        ai_data = s.get("ai", {})
-        ai_data.update({"video_bytes": file_bytes, "type": "video"})
-        storage.update_session(uid, {"ai": ai_data, "mode": "ai_confirm_video_text"})
+            ai_data = s.get("ai", {})
+            ai_data.update({"video_bytes": file_bytes, "type": "video"})
+            storage.update_session(uid, {"ai": ai_data, "mode": "ai_confirm_video_text"})
 
-        kb = InlineKeyboardBuilder()
-        kb.button(text="بدون متن", callback_data="ai:confirm")
-        kb.button(text="افزودن متن", callback_data="ai:source:text")
-        await message.answer("فایل دریافت شد. آیا می‌خواهید متنی روی آن اضافه کنید؟", reply_markup=kb.as_markup())
+            kb = InlineKeyboardBuilder()
+            kb.button(text="بدون متن", callback_data="ai:confirm")
+            kb.button(text="افزودن متن", callback_data="ai:source:text")
+            await message.answer("فایل دریافت شد. آیا می‌خواهید متنی روی آن اضافه کنید؟", reply_markup=kb.as_markup())
+        finally:
+            storage.update_session(uid, {"is_processing": False})
         return
 
     if message.text:
