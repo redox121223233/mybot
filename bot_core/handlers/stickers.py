@@ -2,6 +2,7 @@ import logging
 import traceback
 from aiogram import Bot, Router, F
 from aiogram.types import Message, CallbackQuery, BufferedInputFile, InputSticker
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 from aiogram.exceptions import TelegramBadRequest
 
 from ..config import ADMIN_ID, FORBIDDEN_WORDS, SUPPORT_USERNAME
@@ -144,7 +145,7 @@ async def on_ai_actions(cb: CallbackQuery, bot: Bot):
             img = render_image(ai_data.get("text","Sample"), ai_data.get("v_pos", "center"), ai_data.get("h_pos", "center"),
                               "Default", ai_data.get("color", "#FFFFFF"), ai_data.get("size", "medium"),
                               bg_photo=ai_data.get("bg_photo_bytes"))
-            await cb.message.answer_photo(BufferedInputFile(img, "p.png"), caption="پیش‌نمایش:", reply_markup=after_preview_kb("ai"))
+            await message.answer_photo(BufferedInputFile(img, "p.png"), caption="پیش‌نمایش:", reply_markup=after_preview_kb("ai"))
     elif action == "confirm":
         if _quota_left(storage.get_user(uid), uid == ADMIN_ID) <= 0:
             await cb.answer("سهمیه تمام شد!", show_alert=True); return
@@ -173,7 +174,7 @@ async def on_ai_actions(cb: CallbackQuery, bot: Bot):
                 else:
                     await cb.message.answer("خطا در پردازش ویدیو. مطمئن شوید زمان آن کمتر از ۳ ثانیه است.", reply_markup=back_to_menu_kb(uid == ADMIN_ID))
         else:
-            img = render_image(ai_data["text"], ai_data["v_pos"], ai_data["h_pos"], "Default", ai_data["color"], ai_data["size"],
+            img = render_image(ai_data["text"], ai_data["v_pos"], ai_data.get("h_pos", "center"), "Default", ai_data["color"], ai_data["size"],
                               bg_photo=ai_data.get("bg_photo_bytes"), as_webp=True)
             storage.update_session(uid, {"last_sticker": img, "last_sticker_format": "static"})
             storage.get_user(uid)["ai_used"] += 1

@@ -1,9 +1,20 @@
 import json
 import os
+import base64
 from typing import Dict, Any, List, Optional
 from ..utils.helpers import _today_start_ts
 
 STORAGE_FILE = "/tmp/bot_storage.json" if os.environ.get("VERCEL") else "bot_storage.json"
+
+def _json_encode_helper(obj):
+    if isinstance(obj, bytes):
+        return {"__bytes__": base64.b64encode(obj).decode("utf-8")}
+    return obj
+
+def _json_decode_helper(obj):
+    if isinstance(obj, dict) and "__bytes__" in obj:
+        return base64.b64decode(obj["__bytes__"])
+    return obj
 
 class Storage:
     def __init__(self):
@@ -15,9 +26,8 @@ class Storage:
         if os.path.exists(STORAGE_FILE):
             try:
                 with open(STORAGE_FILE, "r") as f:
-                    data = json.load(f)
+                    data = json.load(f, object_hook=_json_decode_helper)
                     self.USERS = data.get("users", {})
-                    # Sessions are also persisted to survive cold starts
                     self.SESSIONS = data.get("sessions", {})
             except Exception as e:
                 print(f"Error loading storage: {e}")
@@ -28,7 +38,7 @@ class Storage:
                 json.dump({
                     "users": self.USERS,
                     "sessions": self.SESSIONS
-                }, f)
+                }, f, default=_json_encode_helper)
         except Exception as e:
             print(f"Error saving storage: {e}")
 
