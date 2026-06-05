@@ -7,8 +7,9 @@ from aiogram.exceptions import TelegramBadRequest
 from ..config import ADMIN_ID, FORBIDDEN_WORDS, SUPPORT_USERNAME
 from ..services.storage import storage
 from ..utils.image_processing import render_image
-from ..utils.video_processing import is_ffmpeg_installed, process_video_to_webm
+from ..utils.video_processing import is_ffmpeg_installed
 from ..utils.helpers import _quota_left, is_valid_pack_name
+from ..bot_logic import convert_video_to_sticker, convert_gif_to_sticker
 from ..keyboards import (
     simple_bg_kb, after_preview_kb, rate_kb, ai_type_kb,
     ai_image_source_kb, ai_vpos_kb, ai_hpos_kb, ai_color_kb, ai_size_kb,
@@ -133,9 +134,7 @@ async def on_ai_actions(cb: CallbackQuery, bot: Bot):
             ai_data["size"] = parts[2]
             storage.update_session(uid, {"ai": ai_data})
 
-        # New: Option to skip text for video stickers
         if ai_data.get("type") == "video" and not ai_data.get("text"):
-            # If no text, prompt for text or confirm raw
             kb = InlineKeyboardBuilder()
             kb.button(text="تایید بدون متن", callback_data="ai:confirm")
             kb.button(text="افزودن متن", callback_data="ai:source:text")
@@ -160,11 +159,11 @@ async def on_ai_actions(cb: CallbackQuery, bot: Bot):
                 text_overlay["color_hex"] = text_overlay.pop("color", "#FFFFFF")
                 text_overlay["size_key"] = text_overlay.pop("size", "medium")
 
-                # If no text provided, don't pass text to overlay
                 if not text_overlay.get("text"):
                     text_overlay = None
 
-                webm_bytes = await process_video_to_webm(video_bytes, text_overlay)
+                # Use the new utility hub functions
+                webm_bytes = await convert_video_to_sticker(video_bytes, text_overlay)
                 if webm_bytes:
                     storage.update_session(uid, {"last_sticker": webm_bytes, "last_sticker_format": "video"})
                     storage.get_user(uid)["ai_used"] += 1
@@ -205,7 +204,6 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
             if format == "video":
                 sticker = InputSticker(sticker=BufferedInputFile(sticker_bytes, "s.webm"), format="video", emoji_list=["😀"])
             else:
-                # Re-render as PNG for static sticker sets
                 if s.get("mode") == "simple":
                     d = s.get("simple", {})
                     png = render_image(d.get("text"), "center", "center", "Default", "#FFFFFF", "medium", bg_mode=d.get("bg_mode"), bg_photo=d.get("bg_photo_bytes"), as_webp=False)
@@ -216,7 +214,6 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
 
             await bot.add_sticker_to_set(user_id=uid, name=pack_name, sticker=sticker)
 
-            # Reset state but preserve pack info
             mode = s.get("mode", "simple")
             storage.reset_session(uid)
             storage.update_session(uid, {"current_pack_short_name": pack_name, "current_pack_title": pack_title, "mode": mode})
@@ -246,9 +243,9 @@ async def on_message(message: Message, bot: Bot):
     s = storage.get_session(uid)
     is_admin = (uid == ADMIN_ID)
 
-    # 1. Handle Pack Wizard
     if s.get("pack_wizard", {}).get("step") == "awaiting_name" and message.text:
         pack_name = message.text.strip().lower()
+        from ..utils.helpers import is_valid_pack_name
         if any(word in pack_name for word in FORBIDDEN_WORDS) or not is_valid_pack_name(pack_name):
             await message.answer("نام نامعتبر است."); return
 
@@ -270,7 +267,6 @@ async def on_message(message: Message, bot: Bot):
             await message.answer(f"خطا در ساخت پک: {e}")
         return
 
-    # 2. Handle Media (Photo/Video/GIF)
     if message.photo:
         s_simple, s_ai = s.get("simple", {}), s.get("ai", {})
         if s.get("mode") == "simple" and s_simple.get("awaiting_bg_photo"):
@@ -289,30 +285,32 @@ async def on_message(message: Message, bot: Bot):
             await message.answer("عکس دریافت شد. حالا متن را بفرستید:")
             return
 
+    # Handle Video, GIF, and Animation proactively
     if message.video or message.animation:
         video = message.video or message.animation
-        # Check if we are in AI video mode or if user just sent a video/GIF
-        if s.get("mode") == "ai_awaiting_video" or (s.get("current_pack_short_name") and not s.get("mode") == "simple"):
-            if not await is_ffmpeg_installed():
-                await message.answer("پردازش ویدیو در حال حاضر فعال نیست.")
-                return
-
-            await message.answer("در حال دریافت فایل...")
-            file = await bot.download(video.file_id)
-            ai_data = s.get("ai", {})
-            ai_data.update({"video_bytes": file.read(), "type": "video"})
-            storage.update_session(uid, {"ai": ai_data, "mode": "ai_confirm_video_text"})
-
-            kb = InlineKeyboardBuilder()
-            kb.button(text="بدون متن", callback_data="ai:confirm")
-            kb.button(text="افزودن متن", callback_data="ai:source:text")
-            await message.answer("ویدیو دریافت شد. آیا می‌خواهید متنی روی آن اضافه کنید؟", reply_markup=kb.as_markup())
+        if not await is_ffmpeg_installed():
+            await message.answer("پردازش ویدیو در حال حاضر فعال نیست.")
             return
-        elif not s.get("current_pack_short_name"):
+
+        # If no pack active, prompt to select/create
+        if not s.get("current_pack_short_name"):
             await message.answer("ابتدا باید یک پک استیکر بسازید یا انتخاب کنید.", reply_markup=main_menu_kb(is_admin))
             return
 
-    # 3. Handle Text
+        await message.answer("در حال دریافت فایل...")
+        file = await bot.download(video.file_id)
+        file_bytes = file.read()
+
+        ai_data = s.get("ai", {})
+        ai_data.update({"video_bytes": file_bytes, "type": "video"})
+        storage.update_session(uid, {"ai": ai_data, "mode": "ai_confirm_video_text"})
+
+        kb = InlineKeyboardBuilder()
+        kb.button(text="بدون متن", callback_data="ai:confirm")
+        kb.button(text="افزودن متن", callback_data="ai:source:text")
+        await message.answer("فایل دریافت شد. آیا می‌خواهید متنی روی آن اضافه کنید؟", reply_markup=kb.as_markup())
+        return
+
     if message.text:
         if s.get("await_feedback"):
             storage.update_session(uid, {"await_feedback": False})
