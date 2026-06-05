@@ -145,7 +145,7 @@ async def on_ai_actions(cb: CallbackQuery, bot: Bot):
             img = render_image(ai_data.get("text","Sample"), ai_data.get("v_pos", "center"), ai_data.get("h_pos", "center"),
                               "Default", ai_data.get("color", "#FFFFFF"), ai_data.get("size", "medium"),
                               bg_photo=ai_data.get("bg_photo_bytes"))
-            await message.answer_photo(BufferedInputFile(img, "p.png"), caption="پیش‌نمایش:", reply_markup=after_preview_kb("ai"))
+            await cb.message.answer_photo(BufferedInputFile(img, "p.png"), caption="پیش‌نمایش:", reply_markup=after_preview_kb("ai"))
     elif action == "confirm":
         if _quota_left(storage.get_user(uid), uid == ADMIN_ID) <= 0:
             await cb.answer("سهمیه تمام شد!", show_alert=True); return
