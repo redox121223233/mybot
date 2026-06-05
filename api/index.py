@@ -7,8 +7,13 @@ import logging
 from http.server import BaseHTTPRequestHandler
 import nest_asyncio
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
+# Configure logging to stdout immediately
+root = logging.getLogger()
+root.setLevel(logging.INFO)
+handler_log = logging.StreamHandler(sys.stdout)
+handler_log.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+root.addHandler(handler_log)
+
 logger = logging.getLogger(__name__)
 
 # Apply nest_asyncio
@@ -23,7 +28,7 @@ DISPATCHER_INSTANCE = None
 LOOP = None
 
 def get_bot_and_dispatcher():
-    """Lazy initialization of Bot and Dispatcher to avoid issubclass errors during module load."""
+    """Lazy initialization of Bot and Dispatcher."""
     global BOT_INSTANCE, DISPATCHER_INSTANCE
     if BOT_INSTANCE is None:
         from aiogram import Bot, Dispatcher
@@ -31,7 +36,7 @@ def get_bot_and_dispatcher():
         from bot_core.handlers import router
 
         if not BOT_TOKEN:
-            logger.error("BOT_TOKEN is not configured in environment variables.")
+            logger.error("BOT_TOKEN is not configured.")
             raise ValueError("BOT_TOKEN is not configured.")
 
         logger.info("Initializing Bot and Dispatcher...")
@@ -46,11 +51,11 @@ def get_loop():
     if LOOP is None:
         try:
             LOOP = asyncio.get_running_loop()
-            logger.info("Using existing asyncio loop.")
+            logger.info("Attached to existing loop.")
         except RuntimeError:
             LOOP = asyncio.new_event_loop()
             asyncio.set_event_loop(LOOP)
-            logger.info("Created new asyncio loop.")
+            logger.info("Created new loop.")
     return LOOP
 
 class handler(BaseHTTPRequestHandler):
@@ -66,21 +71,20 @@ class handler(BaseHTTPRequestHandler):
                 body = self.rfile.read(content_length)
                 update_data = json.loads(body.decode('utf-8'))
 
-                logger.info(f"Received update: {update_data.get('update_id')}")
+                logger.info(f"Update received: {update_data.get('update_id')}")
 
                 from aiogram.types import Update
                 update = Update.model_validate(update_data, context={"bot": bot})
 
-                # Feed the update to the dispatcher
                 await dp.feed_update(bot=bot, update=update)
-                logger.info(f"Successfully processed update: {update.update_id}")
+                logger.info(f"Update {update.update_id} processed.")
 
                 self.send_response(200)
                 self.end_headers()
                 self.wfile.write(json.dumps({'status': 'ok'}).encode('utf-8'))
 
             except Exception as e:
-                logger.error(f"Error processing update: {e}")
+                logger.error(f"Error: {e}")
                 logger.error(traceback.format_exc())
                 self.send_response(500)
                 self.end_headers()
@@ -89,9 +93,23 @@ class handler(BaseHTTPRequestHandler):
         loop.run_until_complete(process_update())
 
     def do_GET(self):
-        """Health check."""
+        """Health and Diagnostic check."""
         self.send_response(200)
         self.send_header('Content-type', 'application/json')
         self.end_headers()
-        bot_initialized = BOT_INSTANCE is not None
-        self.wfile.write(json.dumps({'status': 'ok', 'bot_initialized': bot_initialized}).encode('utf-8'))
+
+        # Diagnostics
+        from bot_core.utils.video_processing import get_ffmpeg_path
+        loop = get_loop()
+        ffmpeg_path = loop.run_until_complete(get_ffmpeg_path())
+
+        diag = {
+            'status': 'ok',
+            'bot_initialized': BOT_INSTANCE is not None,
+            'ffmpeg_path': ffmpeg_path,
+            'ffmpeg_exists': os.path.exists(ffmpeg_path) if ffmpeg_path else False,
+            'cwd': os.getcwd(),
+            'ls_bin': os.listdir('bin') if os.path.exists('bin') else 'bin_not_found',
+            'env': {k: v for k, v in os.environ.items() if 'TOKEN' not in k and 'ID' not in k}
+        }
+        self.wfile.write(json.dumps(diag).encode('utf-8'))
