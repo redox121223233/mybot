@@ -1,104 +1,115 @@
-
 import asyncio
 import json
 import os
 import sys
 import traceback
+import logging
 from http.server import BaseHTTPRequestHandler
 import nest_asyncio
 
-# Apply nest_asyncio once at the top level
+# Configure logging to stdout immediately
+root = logging.getLogger()
+root.setLevel(logging.INFO)
+handler_log = logging.StreamHandler(sys.stdout)
+handler_log.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+root.addHandler(handler_log)
+
+logger = logging.getLogger(__name__)
+
+# Apply nest_asyncio
 nest_asyncio.apply()
 
-# --- Setup sys.path ---
-# Ensure the project root is in the path to allow imports from bot_core
+# Ensure the project root is in the path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-# --- Global Bot Initialization ---
-# This section runs only ONCE when the Vercel instance starts (cold start).
-BOT_INITIALIZED = False
+# Global variables for caching
 BOT_INSTANCE = None
 DISPATCHER_INSTANCE = None
+LOOP = None
 
-try:
-    print("--- STARTING BOT INITIALIZATION ---")
-    from aiogram import Bot, Dispatcher
-    from aiogram.types import Update
-    from bot_core.config import BOT_TOKEN
-    from bot_core.handlers import router
+def get_bot_and_dispatcher():
+    """Lazy initialization of Bot and Dispatcher."""
+    global BOT_INSTANCE, DISPATCHER_INSTANCE
+    if BOT_INSTANCE is None:
+        from aiogram import Bot, Dispatcher
+        from bot_core.config import BOT_TOKEN
+        from bot_core.handlers import router
 
-    if not BOT_TOKEN:
-        raise ValueError("BOT_TOKEN is not configured.")
+        if not BOT_TOKEN:
+            logger.error("BOT_TOKEN is not configured.")
+            raise ValueError("BOT_TOKEN is not configured.")
 
-    BOT_INSTANCE = Bot(token=BOT_TOKEN)
-    DISPATCHER_INSTANCE = Dispatcher()
-    DISPATCHER_INSTANCE.include_router(router)
+        logger.info("Initializing Bot and Dispatcher...")
+        BOT_INSTANCE = Bot(token=BOT_TOKEN)
+        DISPATCHER_INSTANCE = Dispatcher()
+        DISPATCHER_INSTANCE.include_router(router)
+        logger.info("Bot and Dispatcher initialized successfully.")
+    return BOT_INSTANCE, DISPATCHER_INSTANCE
 
-    BOT_INITIALIZED = True
-    print("--- BOT INITIALIZED SUCCESSFULLY ---")
-
-except Exception as e:
-    print("--- BOT INITIALIZATION FAILED ---")
-    print(f"Error: {e}")
-    traceback.print_exc()
-
-# --- Event Loop Management ---
-# Get or create an event loop that will be reused across invocations.
-try:
-    LOOP = asyncio.get_running_loop()
-    print("Attached to existing asyncio event loop.")
-except RuntimeError:
-    LOOP = asyncio.new_event_loop()
-    asyncio.set_event_loop(LOOP)
-    print("Created and set new asyncio event loop.")
-
+def get_loop():
+    global LOOP
+    if LOOP is None:
+        try:
+            LOOP = asyncio.get_running_loop()
+            logger.info("Attached to existing loop.")
+        except RuntimeError:
+            LOOP = asyncio.new_event_loop()
+            asyncio.set_event_loop(LOOP)
+            logger.info("Created new loop.")
+    return LOOP
 
 class handler(BaseHTTPRequestHandler):
     def do_POST(self):
         """Handles incoming POST requests from Telegram."""
-        if not BOT_INITIALIZED:
-            print("ERROR: Received POST request, but bot is not initialized.")
-            self.send_response(500)
-            self.send_header('Content-type', 'application/json')
-            self.end_headers()
-            self.wfile.write(json.dumps({'error': 'Bot failed to initialize.'}).encode())
-            return
+        loop = get_loop()
 
         async def process_update():
-            """Async function to handle the update."""
             try:
+                bot, dp = get_bot_and_dispatcher()
+
                 content_length = int(self.headers['Content-Length'])
                 body = self.rfile.read(content_length)
                 update_data = json.loads(body.decode('utf-8'))
 
-                update = Update.model_validate(update_data, context={"bot": BOT_INSTANCE})
+                logger.info(f"Update received: {update_data.get('update_id')}")
 
-                await DISPATCHER_INSTANCE.feed_update(bot=BOT_INSTANCE, update=update)
+                from aiogram.types import Update
+                update = Update.model_validate(update_data, context={"bot": bot})
+
+                await dp.feed_update(bot=bot, update=update)
+                logger.info(f"Update {update.update_id} processed.")
 
                 self.send_response(200)
                 self.end_headers()
+                self.wfile.write(json.dumps({'status': 'ok'}).encode('utf-8'))
 
-            except json.JSONDecodeError:
-                print("ERROR: Could not decode JSON from request body.")
-                self.send_response(400) # Bad Request
-                self.end_headers()
             except Exception as e:
-                print(f"--- ERROR PROCESSING UPDATE ---")
-                print(f"Error: {e}")
-                traceback.print_exc()
-                self.send_response(500) # Internal Server Error
+                logger.error(f"Error: {e}")
+                logger.error(traceback.format_exc())
+                self.send_response(500)
                 self.end_headers()
+                self.wfile.write(json.dumps({'error': str(e)}).encode('utf-8'))
 
-        # Run the async processing on our persistent event loop
-        LOOP.run_until_complete(process_update())
+        loop.run_until_complete(process_update())
 
     def do_GET(self):
-        """Handles GET requests for health checks."""
+        """Health and Diagnostic check."""
         self.send_response(200)
         self.send_header('Content-type', 'application/json')
         self.end_headers()
-        response = {
+
+        # Diagnostics
+        from bot_core.utils.video_processing import get_ffmpeg_path
+        loop = get_loop()
+        ffmpeg_path = loop.run_until_complete(get_ffmpeg_path())
+
+        diag = {
             'status': 'ok',
-            'bot_initialized': BOT_INITIALIZED
+            'bot_initialized': BOT_INSTANCE is not None,
+            'ffmpeg_path': ffmpeg_path,
+            'ffmpeg_exists': os.path.exists(ffmpeg_path) if ffmpeg_path else False,
+            'cwd': os.getcwd(),
+            'ls_bin': os.listdir('bin') if os.path.exists('bin') else 'bin_not_found',
+            'env': {k: v for k, v in os.environ.items() if 'TOKEN' not in k and 'ID' not in k}
         }
-        self.wfile.write(json.dumps(response).encode('utf-8'))
+        self.wfile.write(json.dumps(diag).encode('utf-8'))

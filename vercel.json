@@ -5,11 +5,18 @@
       "use": "@vercel/python",
       "config": {
         "prelude": "build.sh",
-        "includeFiles": ["bin/ffmpeg"]
+        "includeFiles": [
+          "bin/ffmpeg",
+          "bin/ffprobe",
+          "fonts/**"
+        ]
       }
     }
   ],
   "rewrites": [
-    { "source": "/(.*)", "destination": "/api/index.py" }
+    {
+      "source": "/(.*)",
+      "destination": "/api/index.py"
+    }
   ]
 }

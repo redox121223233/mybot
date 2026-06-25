@@ -1,19 +1,27 @@
 #!/bin/bash
 
-# Dependencies like curl and tar are pre-installed in the Vercel build environment.
-
-# 2. Define FFmpeg version and URL
+# Define FFmpeg version and URL
 FFMPEG_URL="https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz"
-FFMPEG_DIR="ffmpeg-*-amd64-static" # Wildcard to match version
 
-# 3. Download and extract FFmpeg to /tmp
+# Create a bin directory in the root
+mkdir -p bin/
+
+# Download and extract FFmpeg
+echo "Downloading FFmpeg from $FFMPEG_URL..."
 curl -L $FFMPEG_URL | tar -Jx -C /tmp
 
-# 4. Create a bin directory and move the ffmpeg binary there
-mkdir -p bin/
-mv /tmp/$FFMPEG_DIR/ffmpeg bin/
+# Find the extracted directory
+EXTRACTED_DIR=$(find /tmp -name "ffmpeg-*-amd64-static" -type d | head -n 1)
 
-# 5. Make it executable
-chmod +x bin/ffmpeg
-
-echo "FFmpeg binary has been placed in the bin/ directory."
+if [ -n "$EXTRACTED_DIR" ]; then
+    echo "Found extracted FFmpeg in $EXTRACTED_DIR"
+    # Copy both ffmpeg and ffprobe
+    cp "$EXTRACTED_DIR/ffmpeg" bin/
+    cp "$EXTRACTED_DIR/ffprobe" bin/
+    chmod +x bin/ffmpeg bin/ffprobe
+    echo "FFmpeg binaries placed in bin/ directory."
+    ls -l bin/
+else
+    echo "ERROR: Failed to find extracted FFmpeg directory."
+    exit 1
+fi
