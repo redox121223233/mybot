@@ -1,15 +1,22 @@
 {
-  "version": 2,
   "builds": [
     {
       "src": "api/index.py",
-      "use": "@vercel/python"
+      "use": "@vercel/python",
+      "config": {
+        "prelude": "build.sh",
+        "includeFiles": [
+          "bin/ffmpeg",
+          "bin/ffprobe",
+          "fonts/**"
+        ]
+      }
     }
   ],
-  "routes": [
+  "rewrites": [
     {
-      "src": "/(.*)",
-      "dest": "/api/index.py"
+      "source": "/(.*)",
+      "destination": "/api/index.py"
     }
   ]
 }
