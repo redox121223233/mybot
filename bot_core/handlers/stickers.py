@@ -144,7 +144,7 @@ async def on_ai_actions(cb: CallbackQuery, bot: Bot):
             storage.update_session(uid, {"ai": ai_data, "mode": "ai_awaiting_source"})
             await safe_edit_text(cb, "عکس را ارسال کنید:")
 
-    elif action == "text": # Unified with ask_text_kb("ai")
+    elif action == "text":
         choice = parts[2]
         if choice == "yes":
             storage.update_session(uid, {"mode": "ai_awaiting_text_for_overlay"})
@@ -152,7 +152,7 @@ async def on_ai_actions(cb: CallbackQuery, bot: Bot):
         else:
             ai_data["text"] = None
             storage.update_session(uid, {"ai": ai_data})
-            await safe_edit_text(cb, "تایید نهایی؟", reply_markup=after_preview_kb("ai"))
+            await safe_edit_text(cb, "آماده تایید نهایی؟", reply_markup=after_preview_kb("ai"))
 
     elif action == "font":
         ai_data["font"] = parts[2]
