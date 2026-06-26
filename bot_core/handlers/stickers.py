@@ -144,7 +144,7 @@ async def on_ai_actions(cb: CallbackQuery, bot: Bot):
             storage.update_session(uid, {"ai": ai_data, "mode": "ai_awaiting_source"})
             await safe_edit_text(cb, "عکس را ارسال کنید:")
 
-    elif action == "text_choice":
+    elif action == "text": # Unified with ask_text_kb("ai")
         choice = parts[2]
         if choice == "yes":
             storage.update_session(uid, {"mode": "ai_awaiting_text_for_overlay"})
@@ -328,7 +328,8 @@ async def on_message(message: Message, bot: Bot):
             else:
                 await message.answer(f"پک «{pack_name}» ساخته شد! حالا نوع استیکر را انتخاب کنید:", reply_markup=ai_type_kb())
         except TelegramBadRequest as e:
-            if "STICKERSET_INVALID" in str(e) or "name_occupied" in str(e).lower():
+            err_str = str(e).lower()
+            if "stickerset_invalid" in err_str or "name_occupied" in err_str or "peer_id_invalid" in err_str:
                 await message.answer(
                     "❌ این نام قبلاً توسط شخص دیگری انتخاب شده است.\n"
                     "لطفاً یک نام انگلیسی دیگر انتخاب کنید.\n\n"

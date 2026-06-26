@@ -1,6 +1,6 @@
 from aiogram import Bot, Router, F
 from aiogram.types import Message, CallbackQuery
-from aiogram.filters import CommandStart
+from aiogram.filters import CommandStart, Command
 from aiogram.exceptions import TelegramForbiddenError, TelegramBadRequest
 
 from ..config import ADMIN_ID, CHANNEL_USERNAME, SUPPORT_USERNAME, DAILY_LIMIT
@@ -45,12 +45,37 @@ async def safe_edit_text(cb: CallbackQuery, text: str, reply_markup=None, delete
         else:
             raise
 
+async def show_help(message: Message, is_admin: bool):
+    help_text = """🤖 *راهنمای سریع ربات استیکر‌ساز*
+
+✨ *قابلیت‌های جدید:*
+✅ ساخت استیکر ویدیویی از ویدیو و گیف
+✅ امکان انتخاب فونت‌های متنوع فارسی و انگلیسی
+✅ قابلیت ساخت استیکر بدون متن
+
+📝 *مراحل ساخت:*
+1️⃣ انتخاب نوع (ساده یا پیشرفته)
+2️⃣ انتخاب یا ساخت پک استیکر
+3️⃣ ارسال محتوا (متن، عکس، ویدیو یا گیف)
+4️⃣ پاسخ به سوال "آیا متن اضافه شود؟"
+5️⃣ انجام تنظیمات (فونت، رنگ، مکان) و تایید نهایی
+
+💡 *نکته:* برای ویدیوها، صفحه سفید در پیش‌نمایش فقط برای دیدن فونت است و در نهایت روی ویدیو قرار می‌گیرد.
+
+🆘 پشتیبانی: {support}""".format(support=SUPPORT_USERNAME)
+    await message.answer(help_text, reply_markup=back_to_menu_kb(is_admin))
+
 @router.message(CommandStart())
 async def on_start(message: Message, bot: Bot):
     if not await require_channel_membership(message, bot):
         return
     storage.reset_session(message.from_user.id)
     await message.answer("سلام! خوش آمدید\nیکی از گزینه‌های زیر رو انتخاب کن:", reply_markup=main_menu_kb(message.from_user.id == ADMIN_ID))
+
+@router.message(Command("help"))
+async def on_help_command(message: Message, bot: Bot):
+    if not await require_channel_membership(message, bot): return
+    await show_help(message, message.from_user.id == ADMIN_ID)
 
 @router.callback_query(F.data == "check_membership")
 async def on_check_membership(cb: CallbackQuery, bot: Bot):
@@ -108,24 +133,7 @@ async def on_menu_selection(cb: CallbackQuery, bot: Bot):
         await safe_edit_text(cb, quota_text, reply_markup=back_to_menu_kb(is_admin))
 
     elif action == "help":
-        help_text = """🤖 *راهنمای سریع ربات استیکر‌ساز*
-
-✨ *قابلیت‌های جدید:*
-✅ ساخت استیکر ویدیویی از ویدیو و گیف
-✅ امکان انتخاب فونت‌های متنوع فارسی و انگلیسی
-✅ قابلیت ساخت استیکر بدون متن
-
-📝 *مراحل ساخت:*
-1️⃣ انتخاب نوع (ساده یا پیشرفته)
-2️⃣ انتخاب یا ساخت پک استیکر
-3️⃣ ارسال محتوا (متن، عکس، ویدیو یا گیف)
-4️⃣ پاسخ به سوال "آیا متن اضافه شود؟"
-5️⃣ انجام تنظیمات (فونت، رنگ، مکان) و تایید نهایی
-
-💡 *نکته:* برای ویدیوها، صفحه سفید در پیش‌نمایش فقط برای دیدن فونت است و در نهایت روی ویدیو قرار می‌گیرد.
-
-🆘 پشتیبانی: {support}""".format(support=SUPPORT_USERNAME)
-        await safe_edit_text(cb, help_text, reply_markup=back_to_menu_kb(is_admin))
+        await show_help(cb.message, is_admin)
 
     elif action == "support":
         await safe_edit_text(cb, f"پشتیبانی: {SUPPORT_USERNAME}", reply_markup=back_to_menu_kb(is_admin))
