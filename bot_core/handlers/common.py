@@ -118,7 +118,19 @@ async def on_menu_selection(cb: CallbackQuery, bot: Bot):
             await safe_edit_text(cb, "استیکر را به کدام پک اضافه می‌کنید؟", reply_markup=pack_selection_kb(uid, packs, short_name, action))
         else:
             storage.update_session(uid, {"pack_wizard": {"step": "awaiting_name", "mode": action}})
-            await safe_edit_text(cb, "برای ساخت پک جدید، یک نام انگلیسی ارسال کنید.", reply_markup=back_to_menu_kb(is_admin))
+            guide_msg = (
+                "📦 **ساخت پک استیکر جدید**\n\n"
+                "برای شروع، باید یک نام انگلیسی برای پک خود انتخاب و ارسال کنید.\n\n"
+                "⚠️ **قوانین بسیار مهم نام‌گذاری:**\n"
+                "• نام پک باید حتماً به **زبان انگلیسی** باشد.\n"
+                "• فقط حروف کوچک انگلیسی (a-z)، اعداد (0-9) و زیرخط (_) مجاز هستند.\n"
+                "• نام پک باید با یک حرف انگلیسی شروع شود.\n"
+                "• نام انتخابی باید **کاملاً یکتا و جدید** باشد و قبلاً توسط شخص دیگری در تلگرام ثبت نشده باشد.\n\n"
+                "💡 **پیشنهاد:** برای اینکه نام تکراری نباشد، کلمات خاص یا اعداد به آخر آن اضافه کنید.\n"
+                "*(مثال: `my_stickers_99` یا `cool_pack_12`)*\n\n"
+                "لطفاً نام انگلیسی پک خود را ارسال کنید 👇"
+            )
+            await safe_edit_text(cb, guide_msg, reply_markup=back_to_menu_kb(is_admin))
 
     elif action == "quota":
         left = _quota_left(u, is_admin)

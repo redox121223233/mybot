@@ -26,10 +26,19 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 BOT_INSTANCE = None
 DISPATCHER_INSTANCE = None
 LOOP = None
+BOT_LOOP = None
 
-def get_bot_and_dispatcher():
+def get_bot_and_dispatcher(loop):
     """Lazy initialization of Bot and Dispatcher."""
-    global BOT_INSTANCE, DISPATCHER_INSTANCE
+    global BOT_INSTANCE, DISPATCHER_INSTANCE, BOT_LOOP
+    if BOT_INSTANCE is not None and BOT_LOOP is not loop:
+        logger.info("Event loop changed! Recreating Bot instance to match current loop.")
+        try:
+            loop.create_task(BOT_INSTANCE.session.close())
+        except Exception as e:
+            logger.warning(f"Failed to close old bot session: {e}")
+        BOT_INSTANCE = None
+
     if BOT_INSTANCE is None:
         from aiogram import Bot, Dispatcher
         from bot_core.config import BOT_TOKEN
@@ -43,11 +52,15 @@ def get_bot_and_dispatcher():
         BOT_INSTANCE = Bot(token=BOT_TOKEN)
         DISPATCHER_INSTANCE = Dispatcher()
         DISPATCHER_INSTANCE.include_router(router)
+        BOT_LOOP = loop
         logger.info("Bot and Dispatcher initialized successfully.")
     return BOT_INSTANCE, DISPATCHER_INSTANCE
 
 def get_loop():
     global LOOP
+    if LOOP is not None and LOOP.is_closed():
+        logger.info("Cached event loop was closed. Resetting LOOP to None.")
+        LOOP = None
     if LOOP is None:
         try:
             LOOP = asyncio.get_running_loop()
@@ -65,7 +78,7 @@ class handler(BaseHTTPRequestHandler):
 
         async def process_update():
             try:
-                bot, dp = get_bot_and_dispatcher()
+                bot, dp = get_bot_and_dispatcher(loop)
 
                 content_length = int(self.headers['Content-Length'])
                 body = self.rfile.read(content_length)
