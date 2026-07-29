@@ -116,9 +116,26 @@ class handler(BaseHTTPRequestHandler):
         loop = get_loop()
         ffmpeg_path = loop.run_until_complete(get_ffmpeg_path())
 
+        # Test bot initialization
+        bot_init_success = False
+        bot_init_error = None
+        try:
+            bot, dp = get_bot_and_dispatcher(loop)
+            bot_init_success = True
+        except Exception as e:
+            bot_init_error = str(e)
+
+        from bot_core.config import BOT_TOKEN
+        token_found = BOT_TOKEN is not None
+        token_length = len(BOT_TOKEN) if BOT_TOKEN else 0
+
         diag = {
             'status': 'ok',
-            'bot_initialized': BOT_INSTANCE is not None,
+            'bot_initialized_cache': BOT_INSTANCE is not None,
+            'bot_init_test_success': bot_init_success,
+            'bot_init_test_error': bot_init_error,
+            'token_configured': token_found,
+            'token_length_chars': token_length,
             'ffmpeg_path': ffmpeg_path,
             'ffmpeg_exists': os.path.exists(ffmpeg_path) if ffmpeg_path else False,
             'cwd': os.getcwd(),
