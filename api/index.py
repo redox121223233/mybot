@@ -129,6 +129,7 @@ class handler(BaseHTTPRequestHandler):
         from bot_core.config import BOT_TOKEN
         token_found = BOT_TOKEN is not None
         token_length = len(BOT_TOKEN) if BOT_TOKEN else 0
+        token_preview = f"{BOT_TOKEN[:10]}...{BOT_TOKEN[-10:]}" if BOT_TOKEN and len(BOT_TOKEN) > 20 else "not_configured"
 
         diag = {
             'status': 'ok',
@@ -137,6 +138,7 @@ class handler(BaseHTTPRequestHandler):
             'bot_init_test_error': bot_init_error,
             'token_configured': token_found,
             'token_length_chars': token_length,
+            'token_preview_safe': token_preview,
             'ffmpeg_path': ffmpeg_path,
             'ffmpeg_exists': os.path.exists(ffmpeg_path) if ffmpeg_path else False,
             'cwd': os.getcwd(),
