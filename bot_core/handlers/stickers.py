@@ -59,11 +59,16 @@ async def on_pack_actions(cb: CallbackQuery, bot: Bot):
         mode = parts[3]
         storage.update_session(uid, {"pack_wizard": {"step": "awaiting_name", "mode": mode, "type": pack_type}})
         rules_text = (
-            "نام پک را بنویس (مثال: my_stickers):\n\n"
-            "• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
-            "• باید با حرف شروع شود\n"
-            "• حداکثر ۵۰ کاراکتر\n\n"
-            "⚠️ دقت کنید که نام کوتاه پک (URL) قابل تغییر نیست."
+            "📦 **ساخت پک استیکر جدید**\n\n"
+            "لطفاً یک نام انگلیسی برای پک خود انتخاب و ارسال کنید.\n\n"
+            "⚠️ **قوانین مهم نام‌گذاری:**\n"
+            "• نام پک باید حتماً به **زبان انگلیسی** باشد.\n"
+            "• فقط از حروف کوچک انگلیسی (a-z)، اعداد (0-9) و زیرخط (_) استفاده کنید.\n"
+            "• نام پک باید با یک حرف انگلیسی شروع شود.\n"
+            "• نام انتخابی باید **کاملاً یکتا و جدید** باشد (قبلاً در تلگرام استفاده نشده باشد).\n\n"
+            "💡 **راهنما:** برای جلوگیری از خطا، می‌توانید از ترکیب‌های منحصر‌به‌فرد استفاده کنید.\n"
+            "*(مثال: `my_custom_stickers_55`)*\n\n"
+            "لطفاً نام انگلیسی پک خود را ارسال کنید 👇"
         )
         await safe_edit_text(cb, rules_text)
 
@@ -307,7 +312,15 @@ async def on_message(message: Message, bot: Bot):
     if s.get("pack_wizard", {}).get("step") == "awaiting_name" and message.text:
         pack_name = message.text.strip().lower()
         if any(word in pack_name for word in FORBIDDEN_WORDS) or not is_valid_pack_name(pack_name):
-            await message.answer("نام نامعتبر است. فقط حروف انگلیسی، عدد و زیرخط مجاز است."); return
+            await message.answer(
+                "❌ **نام وارد شده نامعتبر است!**\n\n"
+                "لطفاً قوانین زیر را رعایت کنید:\n"
+                "• فقط از حروف انگلیسی کوچک (a-z)، اعداد (0-9) و زیرخط (_) استفاده کنید.\n"
+                "• نام نباید با عدد یا زیرخط شروع شود.\n"
+                "• از حروف فارسی، بزرگ، یا فاصله (space) استفاده نکنید.\n\n"
+                "لطفاً یک نام صحیح انگلیسی ارسال کنید 👇"
+            )
+            return
 
         bot_info = await bot.get_me()
         short_name = f"{pack_name}_by_{bot_info.username}"
@@ -329,16 +342,36 @@ async def on_message(message: Message, bot: Bot):
                 await message.answer(f"پک «{pack_name}» ساخته شد! حالا نوع استیکر را انتخاب کنید:", reply_markup=ai_type_kb())
         except TelegramBadRequest as e:
             err_str = str(e).lower()
-            if "stickerset_invalid" in err_str or "name_occupied" in err_str or "peer_id_invalid" in err_str:
+            if "occupied" in err_str or "already used" in err_str or "invalid" in err_str or "stickerset_invalid" in err_str or "peer_id_invalid" in err_str or "accupied" in err_str:
                 await message.answer(
-                    "❌ این نام قبلاً توسط شخص دیگری انتخاب شده است.\n"
-                    "لطفاً یک نام انگلیسی دیگر انتخاب کنید.\n\n"
-                    "💡 راهنما: می‌توانید از ترکیب کلمات و اعداد استفاده کنید (مثلاً: my_pack_123)"
+                    "❌ **این نام قبلاً توسط شخص دیگری انتخاب شده است یا معتبر نیست!**\n\n"
+                    "لطفاً یک نام انگلیسی جدید و کاملاً متفاوت انتخاب و ارسال کنید.\n\n"
+                    "💡 **راهنمای انتخاب نام مناسب برای پک:**\n"
+                    "• نام باید حتماً به **زبان انگلیسی** باشد.\n"
+                    "• فقط از حروف کوچک انگلیسی (a-z)، اعداد (0-9) و زیرخط (_) استفاده کنید.\n"
+                    "• نام نباید با عدد یا زیرخط شروع شود.\n"
+                    "• برای اطمینان از تکراری نبودن، حتماً کلمات خاص یا اعداد تصادفی اضافه کنید.\n"
+                    "  *(مثال: `my_cool_stickers_987` یا `custom_pack_by_me`)*\n\n"
+                    "لطفاً نام انگلیسی جدید مورد نظرتان را ارسال کنید 👇"
                 )
             else:
                 await message.answer(f"خطا در ساخت پک: {e}")
         except Exception as e:
-            await message.answer(f"خطا در ساخت پک: {e}")
+            err_str = str(e).lower()
+            if "occupied" in err_str or "already used" in err_str or "invalid" in err_str or "stickerset_invalid" in err_str or "peer_id_invalid" in err_str or "accupied" in err_str:
+                await message.answer(
+                    "❌ **این نام قبلاً توسط شخص دیگری انتخاب شده است یا معتبر نیست!**\n\n"
+                    "لطفاً یک نام انگلیسی جدید و کاملاً متفاوت انتخاب و ارسال کنید.\n\n"
+                    "💡 **راهنمای انتخاب نام مناسب برای پک:**\n"
+                    "• نام باید حتماً به **زبان انگلیسی** باشد.\n"
+                    "• فقط از حروف کوچک انگلیسی (a-z)، اعداد (0-9) و زیرخط (_) استفاده کنید.\n"
+                    "• نام نباید با عدد یا زیرخط شروع شود.\n"
+                    "• برای اطمینان از تکراری نبودن، حتماً کلمات خاص یا اعداد تصادفی اضافه کنید.\n"
+                    "  *(مثال: `my_cool_stickers_987` یا `custom_pack_by_me`)*\n\n"
+                    "لطفاً نام انگلیسی جدید مورد نظرتان را ارسال کنید 👇"
+                )
+            else:
+                await message.answer(f"خطا در ساخت پک: {e}")
         return
 
     # Anti-spam

@@ -6,7 +6,7 @@ import os
 
 # --- Telegram Bot ---
 # This value MUST be set in the Vercel environment variables.
-BOT_TOKEN = os.getenv("BOT_TOKEN")
+BOT_TOKEN = os.getenv("BOT_TOKEN") or os.getenv("TELEGRAM_TOKEN")
 
 # This will be fetched automatically at runtime.
 BOT_USERNAME = ""

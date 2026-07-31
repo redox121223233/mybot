@@ -26,28 +26,73 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 BOT_INSTANCE = None
 DISPATCHER_INSTANCE = None
 LOOP = None
+BOT_LOOP = None
 
-def get_bot_and_dispatcher():
-    """Lazy initialization of Bot and Dispatcher."""
-    global BOT_INSTANCE, DISPATCHER_INSTANCE
-    if BOT_INSTANCE is None:
-        from aiogram import Bot, Dispatcher
-        from bot_core.config import BOT_TOKEN
+def get_dispatcher():
+    global DISPATCHER_INSTANCE
+    if DISPATCHER_INSTANCE is None:
+        from aiogram import Dispatcher
         from bot_core.handlers import router
+
+        logger.info("Initializing global Dispatcher...")
+        logger.info(f"DIAGNOSTIC: Main router sub-routers count: {len(router.sub_routers)}")
+        for idx, sr in enumerate(router.sub_routers):
+            logger.info(f"DIAGNOSTIC: Sub-router {idx} message handlers: {len(sr.message.handlers)}")
+
+        DISPATCHER_INSTANCE = Dispatcher()
+
+        # Diagnostic outer middleware
+        @DISPATCHER_INSTANCE.message.outer_middleware()
+        async def log_message_middleware(handler, event, data):
+            logger.info(f"DIAGNOSTIC: Middleware received message: {event.text if hasattr(event, 'text') else 'No Text'} from {event.from_user.id if hasattr(event, 'from_user') and event.from_user else 'No User'}")
+            try:
+                res = await handler(event, data)
+                logger.info(f"DIAGNOSTIC: Handler completed with result: {res}")
+                return res
+            except Exception as e:
+                logger.error(f"DIAGNOSTIC: Exception inside message propagation: {e}")
+                logger.error(traceback.format_exc())
+                raise
+
+        @DISPATCHER_INSTANCE.errors()
+        async def error_handler(event, data):
+            logger.error(f"DIAGNOSTIC: Global dispatcher error caught: {event.exception}")
+            logger.error(traceback.format_exc())
+
+        DISPATCHER_INSTANCE.include_router(router)
+        logger.info("Global Dispatcher initialized successfully.")
+    return DISPATCHER_INSTANCE
+
+def get_bot_and_dispatcher(loop):
+    """Lazy initialization of Bot and Dispatcher."""
+    global BOT_INSTANCE, BOT_LOOP
+    if BOT_INSTANCE is not None and BOT_LOOP is not loop:
+        logger.info("Event loop changed! Recreating Bot instance to match current loop.")
+        try:
+            loop.create_task(BOT_INSTANCE.session.close())
+        except Exception as e:
+            logger.warning(f"Failed to close old bot session: {e}")
+        BOT_INSTANCE = None
+
+    if BOT_INSTANCE is None:
+        from aiogram import Bot
+        from bot_core.config import BOT_TOKEN
 
         if not BOT_TOKEN:
             logger.error("BOT_TOKEN is not configured.")
             raise ValueError("BOT_TOKEN is not configured.")
 
-        logger.info("Initializing Bot and Dispatcher...")
+        logger.info("Initializing Bot...")
         BOT_INSTANCE = Bot(token=BOT_TOKEN)
-        DISPATCHER_INSTANCE = Dispatcher()
-        DISPATCHER_INSTANCE.include_router(router)
-        logger.info("Bot and Dispatcher initialized successfully.")
-    return BOT_INSTANCE, DISPATCHER_INSTANCE
+        BOT_LOOP = loop
+        logger.info("Bot initialized successfully.")
+    return BOT_INSTANCE, get_dispatcher()
 
 def get_loop():
     global LOOP
+    if LOOP is not None and LOOP.is_closed():
+        logger.info("Cached event loop was closed. Resetting LOOP to None.")
+        LOOP = None
     if LOOP is None:
         try:
             LOOP = asyncio.get_running_loop()
@@ -65,13 +110,15 @@ class handler(BaseHTTPRequestHandler):
 
         async def process_update():
             try:
-                bot, dp = get_bot_and_dispatcher()
+                bot, dp = get_bot_and_dispatcher(loop)
 
                 content_length = int(self.headers['Content-Length'])
                 body = self.rfile.read(content_length)
-                update_data = json.loads(body.decode('utf-8'))
+                body_decoded = body.decode('utf-8')
+                update_data = json.loads(body_decoded)
 
-                logger.info(f"Update received: {update_data.get('update_id')}")
+                safe_body = body_decoded.replace('{', '<').replace('}', '>')
+                logger.info(f"Update received: {update_data.get('update_id')} - Safe Data: {safe_body}")
 
                 from aiogram.types import Update
                 update = Update.model_validate(update_data, context={"bot": bot})
@@ -103,9 +150,28 @@ class handler(BaseHTTPRequestHandler):
         loop = get_loop()
         ffmpeg_path = loop.run_until_complete(get_ffmpeg_path())
 
+        # Test bot initialization
+        bot_init_success = False
+        bot_init_error = None
+        try:
+            bot, dp = get_bot_and_dispatcher(loop)
+            bot_init_success = True
+        except Exception as e:
+            bot_init_error = str(e)
+
+        from bot_core.config import BOT_TOKEN
+        token_found = BOT_TOKEN is not None
+        token_length = len(BOT_TOKEN) if BOT_TOKEN else 0
+        token_preview = f"{BOT_TOKEN[:10]}...{BOT_TOKEN[-10:]}" if BOT_TOKEN and len(BOT_TOKEN) > 20 else "not_configured"
+
         diag = {
             'status': 'ok',
-            'bot_initialized': BOT_INSTANCE is not None,
+            'bot_initialized_cache': BOT_INSTANCE is not None,
+            'bot_init_test_success': bot_init_success,
+            'bot_init_test_error': bot_init_error,
+            'token_configured': token_found,
+            'token_length_chars': token_length,
+            'token_preview_safe': token_preview,
             'ffmpeg_path': ffmpeg_path,
             'ffmpeg_exists': os.path.exists(ffmpeg_path) if ffmpeg_path else False,
             'cwd': os.getcwd(),
