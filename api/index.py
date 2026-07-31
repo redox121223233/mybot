@@ -82,9 +82,10 @@ class handler(BaseHTTPRequestHandler):
 
                 content_length = int(self.headers['Content-Length'])
                 body = self.rfile.read(content_length)
-                update_data = json.loads(body.decode('utf-8'))
+                body_decoded = body.decode('utf-8')
+                update_data = json.loads(body_decoded)
 
-                logger.info(f"Update received: {update_data.get('update_id')}")
+                logger.info(f"Update received: {update_data.get('update_id')} - Data: {body_decoded}")
 
                 from aiogram.types import Update
                 update = Update.model_validate(update_data, context={"bot": bot})
