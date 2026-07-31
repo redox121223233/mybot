@@ -51,6 +51,25 @@ def get_bot_and_dispatcher(loop):
         logger.info("Initializing Bot and Dispatcher...")
         BOT_INSTANCE = Bot(token=BOT_TOKEN)
         DISPATCHER_INSTANCE = Dispatcher()
+
+        # Diagnostic outer middleware
+        @DISPATCHER_INSTANCE.message.outer_middleware()
+        async def log_message_middleware(handler, event, data):
+            logger.info(f"DIAGNOSTIC: Middleware received message: {event.text if hasattr(event, 'text') else 'No Text'} from {event.from_user.id if hasattr(event, 'from_user') and event.from_user else 'No User'}")
+            try:
+                res = await handler(event, data)
+                logger.info(f"DIAGNOSTIC: Handler completed with result: {res}")
+                return res
+            except Exception as e:
+                logger.error(f"DIAGNOSTIC: Exception inside message propagation: {e}")
+                logger.error(traceback.format_exc())
+                raise
+
+        @DISPATCHER_INSTANCE.errors()
+        async def error_handler(event, data):
+            logger.error(f"DIAGNOSTIC: Global dispatcher error caught: {event.exception}")
+            logger.error(traceback.format_exc())
+
         DISPATCHER_INSTANCE.include_router(router)
         BOT_LOOP = loop
         logger.info("Bot and Dispatcher initialized successfully.")
