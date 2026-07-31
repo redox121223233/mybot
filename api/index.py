@@ -85,7 +85,7 @@ class handler(BaseHTTPRequestHandler):
                 body_decoded = body.decode('utf-8')
                 update_data = json.loads(body_decoded)
 
-                logger.info(f"Update received: {update_data.get('update_id')} - Data: {body_decoded}")
+                logger.info(f"Update received: {update_data.get('update_id')} - Raw Data: {repr(body_decoded)}")
 
                 from aiogram.types import Update
                 update = Update.model_validate(update_data, context={"bot": bot})
