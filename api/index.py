@@ -28,28 +28,17 @@ DISPATCHER_INSTANCE = None
 LOOP = None
 BOT_LOOP = None
 
-def get_bot_and_dispatcher(loop):
-    """Lazy initialization of Bot and Dispatcher."""
-    global BOT_INSTANCE, DISPATCHER_INSTANCE, BOT_LOOP
-    if BOT_INSTANCE is not None and BOT_LOOP is not loop:
-        logger.info("Event loop changed! Recreating Bot instance to match current loop.")
-        try:
-            loop.create_task(BOT_INSTANCE.session.close())
-        except Exception as e:
-            logger.warning(f"Failed to close old bot session: {e}")
-        BOT_INSTANCE = None
-
-    if BOT_INSTANCE is None:
-        from aiogram import Bot, Dispatcher
-        from bot_core.config import BOT_TOKEN
+def get_dispatcher():
+    global DISPATCHER_INSTANCE
+    if DISPATCHER_INSTANCE is None:
+        from aiogram import Dispatcher
         from bot_core.handlers import router
 
-        if not BOT_TOKEN:
-            logger.error("BOT_TOKEN is not configured.")
-            raise ValueError("BOT_TOKEN is not configured.")
+        logger.info("Initializing global Dispatcher...")
+        logger.info(f"DIAGNOSTIC: Main router sub-routers count: {len(router.sub_routers)}")
+        for idx, sr in enumerate(router.sub_routers):
+            logger.info(f"DIAGNOSTIC: Sub-router {idx} message handlers: {len(sr.message.handlers)}")
 
-        logger.info("Initializing Bot and Dispatcher...")
-        BOT_INSTANCE = Bot(token=BOT_TOKEN)
         DISPATCHER_INSTANCE = Dispatcher()
 
         # Diagnostic outer middleware
@@ -71,9 +60,33 @@ def get_bot_and_dispatcher(loop):
             logger.error(traceback.format_exc())
 
         DISPATCHER_INSTANCE.include_router(router)
+        logger.info("Global Dispatcher initialized successfully.")
+    return DISPATCHER_INSTANCE
+
+def get_bot_and_dispatcher(loop):
+    """Lazy initialization of Bot and Dispatcher."""
+    global BOT_INSTANCE, BOT_LOOP
+    if BOT_INSTANCE is not None and BOT_LOOP is not loop:
+        logger.info("Event loop changed! Recreating Bot instance to match current loop.")
+        try:
+            loop.create_task(BOT_INSTANCE.session.close())
+        except Exception as e:
+            logger.warning(f"Failed to close old bot session: {e}")
+        BOT_INSTANCE = None
+
+    if BOT_INSTANCE is None:
+        from aiogram import Bot
+        from bot_core.config import BOT_TOKEN
+
+        if not BOT_TOKEN:
+            logger.error("BOT_TOKEN is not configured.")
+            raise ValueError("BOT_TOKEN is not configured.")
+
+        logger.info("Initializing Bot...")
+        BOT_INSTANCE = Bot(token=BOT_TOKEN)
         BOT_LOOP = loop
-        logger.info("Bot and Dispatcher initialized successfully.")
-    return BOT_INSTANCE, DISPATCHER_INSTANCE
+        logger.info("Bot initialized successfully.")
+    return BOT_INSTANCE, get_dispatcher()
 
 def get_loop():
     global LOOP
