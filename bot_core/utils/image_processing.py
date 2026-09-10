@@ -4,6 +4,10 @@ from typing import Optional
 from PIL import Image, ImageDraw, ImageFont
 import arabic_reshaper
 from bidi.algorithm import get_display
+try:
+    from pilmoji import Pilmoji
+except ImportError:
+    Pilmoji = None
 
 FONT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "fonts")
 LOCAL_FONT_FILES = {
@@ -52,25 +56,47 @@ def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: st
     font_path = resolve_font_path(font_key, text)
     txt = _prepare_text(text)
 
+    def _get_text_size(p_img, p_txt, p_font):
+        if Pilmoji:
+            try:
+                with Pilmoji(p_img) as pilmoji:
+                    return pilmoji.getsize(p_txt, font=p_font)
+            except Exception:
+                pass
+        bbox = draw.textbbox((0, 0), p_txt, font=p_font)
+        return bbox[2] - bbox[0], bbox[3] - bbox[1]
+
     size = base_size
     while size > 12:
         try:
             font = ImageFont.truetype(font_path, size=size)
-            bbox = draw.textbbox((0,0), txt, font=font)
-            if (bbox[2]-bbox[0] <= box_w) and (bbox[3]-bbox[1] <= box_h):
+            tw, th = _get_text_size(img, txt, font)
+            if tw <= box_w and th <= box_h:
                 break
         except Exception:
             break
         size -= 1
 
     font = ImageFont.truetype(font_path, size=size)
-    bbox = draw.textbbox((0,0), txt, font=font)
-    text_width, text_height = bbox[2]-bbox[0], bbox[3]-bbox[1]
+    text_width, text_height = _get_text_size(img, txt, font)
 
     y = {"top": padding, "bottom": H - padding - text_height}.get(v_pos, (H - text_height) / 2)
-    x = {"left": padding, "right": W - padding - text_width}.get(h_pos, W / 2)
-    anchor = "mm" if h_pos == "center" else "lm"
-    draw.text((x, y), txt, font=font, fill=color, anchor=anchor, stroke_width=2, stroke_fill=(0,0,0,220))
+    x = {"left": padding, "right": W - padding - text_width}.get(h_pos, (W - text_width) / 2)
+
+    rendered = False
+    if Pilmoji:
+        try:
+            with Pilmoji(img) as pilmoji:
+                pilmoji.text((int(x), int(y)), txt, font=font, fill=color, stroke_width=2, stroke_fill=(0, 0, 0, 220))
+            rendered = True
+        except Exception as e:
+            print(f"Error rendering text with Pilmoji: {e}")
+
+    if not rendered:
+        anchor = "mm" if h_pos == "center" else "lm"
+        ax = x + text_width / 2 if h_pos == "center" else x
+        ay = y + text_height / 2 if h_pos == "center" else y
+        draw.text((ax, ay), txt, font=font, fill=color, anchor=anchor, stroke_width=2, stroke_fill=(0, 0, 0, 220))
 
     buf = BytesIO()
     if as_webp:
