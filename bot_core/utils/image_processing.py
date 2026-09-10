@@ -6,8 +6,10 @@ import arabic_reshaper
 from bidi.algorithm import get_display
 try:
     from pilmoji import Pilmoji
+    from pilmoji.source import AppleEmojiSource
 except ImportError:
     Pilmoji = None
+    AppleEmojiSource = None
 
 FONT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "fonts")
 LOCAL_FONT_FILES = {
@@ -59,7 +61,8 @@ def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: st
     def _get_text_size(p_img, p_txt, p_font):
         if Pilmoji:
             try:
-                with Pilmoji(p_img) as pilmoji:
+                kwargs = {"source": AppleEmojiSource} if AppleEmojiSource else {}
+                with Pilmoji(p_img, **kwargs) as pilmoji:
                     return pilmoji.getsize(p_txt, font=p_font)
             except Exception:
                 pass
@@ -86,7 +89,8 @@ def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: st
     rendered = False
     if Pilmoji:
         try:
-            with Pilmoji(img) as pilmoji:
+            kwargs = {"source": AppleEmojiSource} if AppleEmojiSource else {}
+            with Pilmoji(img, **kwargs) as pilmoji:
                 pilmoji.text((int(x), int(y)), txt, font=font, fill=color, stroke_width=2, stroke_fill=(0, 0, 0, 220))
             rendered = True
         except Exception as e:
