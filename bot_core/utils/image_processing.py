@@ -33,9 +33,36 @@ def resolve_font_path(font_key: Optional[str], text: str = "") -> str:
     is_persian = any('\u0600' <= char <= '\u06FF' for char in text)
     return _LOCAL_FONTS.get("Vazirmatn" if is_persian else "Roboto", next(iter(_LOCAL_FONTS.values()), ""))
 
+def ensure_emoji_presentation(text: str) -> str:
+    if not emoji:
+        return text
+    try:
+        emoji_list = emoji.emoji_list(text)
+        if not emoji_list:
+            return text
+
+        res = []
+        last_idx = 0
+        for e in emoji_list:
+            start, end = e['match_start'], e['match_end']
+            res.append(text[last_idx:start])
+            em_str = e['emoji']
+            if not em_str.endswith('\ufe0f') and not em_str.endswith('\ufe0e'):
+                with_vs = em_str + '\ufe0f'
+                if with_vs in emoji.EMOJI_DATA:
+                    em_str = with_vs
+            res.append(em_str)
+            last_idx = end
+        res.append(text[last_idx:])
+        return ''.join(res)
+    except Exception as err:
+        print(f"Error in ensure_emoji_presentation: {err}")
+        return text
+
 def _prepare_text(text: str) -> str:
     if emoji:
         try:
+            text = ensure_emoji_presentation(text)
             emoji_list = emoji.emoji_list(text)
             if emoji_list:
                 placeholders = {}
