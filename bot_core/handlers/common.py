@@ -3,7 +3,7 @@ from aiogram.types import Message, CallbackQuery
 from aiogram.filters import CommandStart
 from aiogram.exceptions import TelegramForbiddenError, TelegramBadRequest
 
-from ..config import ADMIN_ID, CHANNEL_USERNAME, SUPPORT_USERNAME, DAILY_LIMIT
+from ..config import ADMIN_ID, CHANNEL_USERNAME, REQUIRED_CHANNELS, SUPPORT_USERNAME, DAILY_LIMIT
 from ..services.storage import storage
 from ..utils.helpers import _quota_left, _fmt_eta, _seconds_to_reset
 from ..keyboards import main_menu_kb, back_to_menu_kb, pack_selection_kb
@@ -11,26 +11,37 @@ from ..keyboards import main_menu_kb, back_to_menu_kb, pack_selection_kb
 router = Router()
 
 async def check_channel_membership(bot: Bot, user_id: int) -> bool:
-    if not CHANNEL_USERNAME:
+    channels = REQUIRED_CHANNELS if REQUIRED_CHANNELS else ([CHANNEL_USERNAME] if CHANNEL_USERNAME else [])
+    if not channels:
         return True
-    try:
-        member = await bot.get_chat_member(chat_id=CHANNEL_USERNAME, user_id=user_id)
-        return member.status in ["member", "administrator", "creator"]
-    except Exception:
-        return False
+    for channel in channels:
+        try:
+            member = await bot.get_chat_member(chat_id=channel, user_id=user_id)
+            if member.status not in ["member", "administrator", "creator"]:
+                return False
+        except Exception:
+            return False
+    return True
 
 async def require_channel_membership(message: Message, bot: Bot) -> bool:
     if await check_channel_membership(bot, message.from_user.id):
         return True
 
+    channels = REQUIRED_CHANNELS if REQUIRED_CHANNELS else ([CHANNEL_USERNAME] if CHANNEL_USERNAME else [])
+
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     kb = InlineKeyboardBuilder()
-    kb.button(text="عضویت در کانال", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}")
+    for channel in channels:
+        clean_channel = channel.replace('@', '')
+        kb.button(text=f"عضویت در {channel}", url=f"https://t.me/{clean_channel}")
     kb.button(text="بررسی عضویت", callback_data="check_membership")
     kb.adjust(1)
 
+    channel_list_str = "\n".join([f"• {ch}" for ch in channels])
+    msg_text = f"برای استفاده از ربات، باید در کانال‌های زیر عضو شوید:\n{channel_list_str}"
+
     try:
-        await message.answer(f"برای استفاده از ربات، باید در کانال {CHANNEL_USERNAME} عضو شوید.", reply_markup=kb.as_markup())
+        await message.answer(msg_text, reply_markup=kb.as_markup())
     except TelegramForbiddenError:
         print(f"User {message.from_user.id} has blocked the bot.")
     return False
@@ -57,7 +68,7 @@ async def on_check_membership(cb: CallbackQuery, bot: Bot):
     if await check_channel_membership(bot, cb.from_user.id):
         await cb.message.answer("عضویت شما تایید شد! حالا می‌توانید از ربات استفاده کنید.", reply_markup=main_menu_kb(cb.from_user.id == ADMIN_ID))
     else:
-        await cb.answer("شما هنوز در کانال عضو نشده‌اید!", show_alert=True)
+        await cb.answer("شما هنوز در همه کانال‌ها عضو نشده‌اید!", show_alert=True)
     await cb.answer()
 
 @router.callback_query(F.data == "menu:home")
@@ -134,7 +145,7 @@ async def on_menu_selection(cb: CallbackQuery, bot: Bot):
 • نام پک باید فقط شامل حروف انگلیسی، عدد و خط تیره باشد
 • حداقل طول نام پک: ۳ کاراکتر
 • حداکثر طول نام پک: ۵۰ کاراکتر
-• برای استفاده از ربات، عضو کانال ما باشید
+• برای استفاده از ربات، عضو کانال‌های ما باشید
 
 ❓ *سوالات متداول:*
 Q: چطور استیکر موجود را ویرایش کنم؟
