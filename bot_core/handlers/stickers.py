@@ -53,10 +53,11 @@ async def on_pack_actions(cb: CallbackQuery, bot: Bot):
         mode = parts[2] if action == "new" and len(parts) > 2 else s.get("pack_wizard", {}).get("mode", "simple")
         storage.update_session(uid, {"pack_wizard": {"step": "awaiting_name", "mode": mode}})
         rules_text = (
-            "نام پک را بنویس (مثال: my_stickers):\n\n"
-            "• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
-            "• باید با حرف شروع شود\n"
-            "• حداکثر ۵۰ کاراکتر"
+            "✏️ **یک نام انگلیسی برای پک جدید خود بفرستید:**\n\n"
+            "💡 **نکات مهم برای جلوگیری از خطا:**\n"
+            "• فقط از حروف انگلیسی، اعداد و زیرخط (_) استفاده کنید (مثال: `my_stickers_2025`).\n"
+            "• برای جلوگیری از تکراری بودن نام در تلگرام، چند عدد به انتهای نام اضافه کنید.\n"
+            "• از فاصله، شکلک یا زبان فارسی استفاده نکنید."
         )
         await safe_edit_text(cb, rules_text)
     await cb.answer()
@@ -283,7 +284,14 @@ async def on_message(message: Message, bot: Bot):
         pack_name = message.text.strip().lower()
         from ..utils.helpers import is_valid_pack_name
         if any(word in pack_name for word in FORBIDDEN_WORDS) or not is_valid_pack_name(pack_name):
-            await message.answer("نام نامعتبر است."); return
+            await message.answer(
+                "❌ **نام نامعتبر است.**\n\n"
+                "💡 **راهنما:**\n"
+                "• فقط از حروف انگلیسی کوچک، اعداد و زیرخط (_) استفاده کنید.\n"
+                "• نام نباید شامل کلمات ممنوعه، شکلک یا فاصله باشد.\n"
+                "• لطفاً یک نام معتبر جدید بفرستید:"
+            )
+            return
 
         bot_info = await bot.get_me()
         short_name = f"{pack_name}_by_{bot_info.username}"
@@ -296,20 +304,27 @@ async def on_message(message: Message, bot: Bot):
             mode = s["pack_wizard"].get("mode", "simple")
             storage.update_session(uid, {"current_pack_short_name": short_name, "current_pack_title": pack_name, "pack_wizard": {}, "mode": mode})
             if mode == "simple":
-                await message.answer(f"پک ساخته شد! حالا متن استیکر را بفرستید.")
+                await message.answer(f"✅ پک «{pack_name}» با موفقیت ساخته شد!\nحالا متن استیکر را بفرستید.")
             else:
-                await message.answer(f"پک ساخته شد! حالا نوع استیکر را انتخاب کنید:", reply_markup=ai_type_kb())
+                await message.answer(f"✅ پک «{pack_name}» با موفقیت ساخته شد!\nحالا نوع استیکر را انتخاب کنید:", reply_markup=ai_type_kb())
         except Exception as e:
             err_msg = str(e).lower()
+            wizard_mode = s.get("pack_wizard", {}).get("mode", "simple")
+            storage.update_session(uid, {"pack_wizard": {"step": "awaiting_name", "mode": wizard_mode}})
+
             if "occupied" in err_msg or "already used" in err_msg or "invalid" in err_msg:
                 user_msg = (
-                    "❌ نام انتخاب شده قبلاً در تلگرام استفاده شده یا نامعتبر است.\n\n"
-                    "💡 **راه حل:**\n"
-                    "• یک نام جدید انگلیسی بفرستید (مثال: my_pack_2025).\n"
-                    "• نام باید فقط شامل حروف انگلیسی، اعداد و زیرخط (_) باشد."
+                    "❌ **خطا: این نام پک قبلاً در تلگرام استفاده شده است.**\n\n"
+                    "💡 **راه حل ساده:**\n"
+                    "• چند عدد یا حرف دیگر به انتهای نام اضافه کنید (مثال: `my_pack_2025` یا `my_pack_99`).\n\n"
+                    "✏️ **نام جدید را همین الان بفرستید:**"
                 )
             else:
-                user_msg = f"❌ خطا در ساخت پک استیکر: {e}\n\n💡 لطفا دوباره امتحان کنید یا از دکمه پشتیبانی استفاده کنید."
+                user_msg = (
+                    f"❌ **خطا در ساخت پک استیکر:**\n`{e}`\n\n"
+                    "💡 **راهنما:**\n"
+                    "• لطفاً یک نام انگلیسی جدید و متفاوت بفرستید:"
+                )
             await message.answer(user_msg, reply_markup=back_to_menu_kb(is_admin))
         return
 
