@@ -180,7 +180,14 @@ async def on_ai_actions(cb: CallbackQuery, bot: Bot):
                     await cb.message.answer_sticker(BufferedInputFile(webm_bytes, "s.webm"))
                     await cb.message.answer("از این استیکر راضی بودی؟", reply_markup=rate_kb())
                 else:
-                    await cb.message.answer("خطا در پردازش ویدیو. مطمئن شوید زمان آن کمتر از ۳ ثانیه است.", reply_markup=back_to_menu_kb(uid == ADMIN_ID))
+                    user_guide = (
+                        "❌ خطا در پردازش ویدیو/گیف.\n\n"
+                        "💡 **راهنمای رفع مشکل:**\n"
+                        "1. مدت زمان ویدیو یا گیف باید **کمتر از ۳ ثانیه** باشد.\n"
+                        "2. حجم فایل نباید خیلی زیاد باشد (ترجیحاً زیر ۱۰ مگابایت).\n"
+                        "3. فرمت فایل باید MP4 یا GIF یا WebM باشد."
+                    )
+                    await cb.message.answer(user_guide, reply_markup=back_to_menu_kb(uid == ADMIN_ID))
         else:
             img = render_image(ai_data["text"], ai_data["v_pos"], ai_data.get("h_pos", "center"), "Default", ai_data["color"], ai_data["size"],
                               bg_photo=ai_data.get("bg_photo_bytes"), as_webp=True)
@@ -238,7 +245,27 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
             await cb.message.answer(success_msg, reply_markup=back_to_menu_kb(uid == ADMIN_ID))
         except Exception as e:
             logger.error(f"Error adding sticker: {e}")
-            await cb.message.answer(f"خطا در افزودن به پک: {e}\n\nاگر این مشکل تکرار شد به پشتیبانی پیام بدید.", reply_markup=back_to_menu_kb(uid == ADMIN_ID))
+            err_msg = str(e).lower()
+            if "full" in err_msg or "stickerset_full" in err_msg:
+                user_guide = (
+                    "❌ ظرفیت این پک استیکر پر شده است (حداکثر استیکر مجاز در این پک پر شده).\n\n"
+                    "💡 **راه حل:**\n"
+                    "• از منوی اصلی گزینه «ساخت پک جدید» را بزنید و یک پک جدید ایجاد کنید."
+                )
+            elif "invalid" in err_msg or "peer" in err_msg or "occupied" in err_msg:
+                user_guide = (
+                    "❌ مشخصات پک استیکر نامعتبر است یا مشکلی در ارتباط با تلگرام وجود دارد.\n\n"
+                    "💡 **راه حل:**\n"
+                    "• لطفاً یک پک جدید از منوی اصلی بسازید و دوباره امتحان کنید."
+                )
+            else:
+                user_guide = (
+                    f"❌ خطا در افزودن استیکر به پک: {e}\n\n"
+                    "💡 **راهنما:**\n"
+                    "• مطمئن شوید در کانال‌های اجباری ربات عضو هستید.\n"
+                    "• در صورت ادامه مشکل، به پشتیبانی پیام بدهید."
+                )
+            await cb.message.answer(user_guide, reply_markup=back_to_menu_kb(uid == ADMIN_ID))
     elif action == "no":
         storage.update_session(uid, {"await_feedback": True})
         await safe_edit_text(cb, "چه چیزی رو دوست نداشتی؟")
@@ -273,7 +300,17 @@ async def on_message(message: Message, bot: Bot):
             else:
                 await message.answer(f"پک ساخته شد! حالا نوع استیکر را انتخاب کنید:", reply_markup=ai_type_kb())
         except Exception as e:
-            await message.answer(f"خطا در ساخت پک: {e}")
+            err_msg = str(e).lower()
+            if "occupied" in err_msg or "already used" in err_msg or "invalid" in err_msg:
+                user_msg = (
+                    "❌ نام انتخاب شده قبلاً در تلگرام استفاده شده یا نامعتبر است.\n\n"
+                    "💡 **راه حل:**\n"
+                    "• یک نام جدید انگلیسی بفرستید (مثال: my_pack_2025).\n"
+                    "• نام باید فقط شامل حروف انگلیسی، اعداد و زیرخط (_) باشد."
+                )
+            else:
+                user_msg = f"❌ خطا در ساخت پک استیکر: {e}\n\n💡 لطفا دوباره امتحان کنید یا از دکمه پشتیبانی استفاده کنید."
+            await message.answer(user_msg, reply_markup=back_to_menu_kb(is_admin))
         return
 
     # Anti-spam/Single-media enforcement
