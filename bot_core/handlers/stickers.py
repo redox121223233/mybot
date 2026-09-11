@@ -54,10 +54,11 @@ async def on_pack_actions(cb: CallbackQuery, bot: Bot):
         storage.update_session(uid, {"pack_wizard": {"step": "awaiting_name", "mode": mode}})
         rules_text = (
             "✏️ **یک نام انگلیسی برای پک جدید خود بفرستید:**\n\n"
-            "💡 **نکات مهم برای جلوگیری از خطا:**\n"
-            "• فقط از حروف انگلیسی، اعداد و زیرخط (_) استفاده کنید (مثال: `my_stickers_2025`).\n"
-            "• برای جلوگیری از تکراری بودن نام در تلگرام، چند عدد به انتهای نام اضافه کنید.\n"
-            "• از فاصله، شکلک یا زبان فارسی استفاده نکنید."
+            "⚠️ **توجه بسیار مهم:** به دلیل اینکه ربات از حافظه و دیتابیس موقت استفاده می‌کند، **حتماً پس از ساخت پک، لینک آن را در پیام‌های ذخیره‌شده (Saved Messages) تلگرام خود ذخیره کنید** تا همیشه به آن دسترسی داشته باشید.\n\n"
+            "💡 **نکات جلوگیری از خطای تکراری بودن نام (`sticker set name is already occupied`):**\n"
+            "• نام انتخابی نباید قبلاً توسط شخص دیگری در تلگرام ثبت شده باشد.\n"
+            "• حتماً چند عدد اتفاقی به انتهای نام اضافه کنید (مثال: `my_stickers_8492`).\n"
+            "• فقط استفاده از حروف انگلیسی کوچک، اعداد و زیرخط (_) مجاز است (بدون فاصله یا زبان فارسی)."
         )
         await safe_edit_text(cb, rules_text)
     await cb.answer()
@@ -235,12 +236,14 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
             storage.reset_session(uid)
             storage.update_session(uid, {"current_pack_short_name": pack_name, "current_pack_title": pack_title, "mode": mode})
 
+            pack_link = f"https://t.me/addstickers/{pack_name}"
             success_msg = (
-                f"✅ استیکر با موفقیت به پک «{pack_title}» اضافه شد!\n"
-                f"https://t.me/addstickers/{pack_name}\n\n"
-                "ℹ️ **نکته مهم:** ممکن است چند دقیقه طول بکشد تا تلگرام کش خود را بروزرسانی کند و استیکر جدید در لیست شما ظاهر شود.\n"
-                "اگر استیکر را نمی‌بینید، یکبار پک را حذف و مجدداً از لینک بالا اضافه کنید.\n\n"
-                f"🆘 اگر مشکلی داشتید به پشتیبانی پیام بدید: {SUPPORT_USERNAME}\n\n"
+                f"✅ **استیکر با موفقیت به پک «{pack_title}» اضافه شد!**\n\n"
+                f"🔗 **لینک اختصاصی پک شما:**\n{pack_link}\n\n"
+                "⚠️ **توجه بسیار مهم (حتماً ذخیره کنید):**\n"
+                "به دلیل دیتابیس موقت ربات، **حتماً لینک بالا را در پیام‌های ذخیره‌شده (Saved Messages) تلگرام خود ذخیره کنید**.\n\n"
+                "ℹ️ **نکته:** اگر استیکر جدید بلافاصله در تلگرام ظاهر نشد، چند دقیقه صبر کنید یا یکبار پک را Remove و از لینک بالا دوباره Add کنید.\n\n"
+                f"🆘 پشتیبانی: {SUPPORT_USERNAME}\n\n"
                 "برای استیکر بعدی، متن یا فایل جدید بفرستید."
             )
             await cb.message.answer(success_msg, reply_markup=back_to_menu_kb(uid == ADMIN_ID))
@@ -303,10 +306,17 @@ async def on_message(message: Message, bot: Bot):
             storage.add_user_pack(uid, pack_name, short_name)
             mode = s["pack_wizard"].get("mode", "simple")
             storage.update_session(uid, {"current_pack_short_name": short_name, "current_pack_title": pack_name, "pack_wizard": {}, "mode": mode})
+            pack_link = f"https://t.me/addstickers/{short_name}"
+            created_msg = (
+                f"✅ **پک «{pack_name}» با موفقیت ساخته شد!**\n\n"
+                f"🔗 **لینک اختصاصی پک شما:**\n{pack_link}\n\n"
+                "⚠️ **یادآوری بسیار مهم:**\n"
+                "چون دیتابیس ربات موقت است، **حتماً همین الان لینک پک بالا را کپی و در Saved Messages ذخیره کنید** تا بعداً بتوانید استیکرهای جدید به آن اضافه کنید.\n\n"
+            )
             if mode == "simple":
-                await message.answer(f"✅ پک «{pack_name}» با موفقیت ساخته شد!\nحالا متن استیکر را بفرستید.")
+                await message.answer(created_msg + "حالا متن استیکر خود را بفرستید.")
             else:
-                await message.answer(f"✅ پک «{pack_name}» با موفقیت ساخته شد!\nحالا نوع استیکر را انتخاب کنید:", reply_markup=ai_type_kb())
+                await message.answer(created_msg + "حالا نوع استیکر را انتخاب کنید:", reply_markup=ai_type_kb())
         except Exception as e:
             err_msg = str(e).lower()
             wizard_mode = s.get("pack_wizard", {}).get("mode", "simple")
