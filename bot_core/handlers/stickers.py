@@ -53,10 +53,12 @@ async def on_pack_actions(cb: CallbackQuery, bot: Bot):
         mode = parts[2] if action == "new" and len(parts) > 2 else s.get("pack_wizard", {}).get("mode", "simple")
         storage.update_session(uid, {"pack_wizard": {"step": "awaiting_name", "mode": mode}})
         rules_text = (
-            "نام پک را بنویس (مثال: my_stickers):\n\n"
-            "• فقط حروف انگلیسی کوچک، عدد و زیرخط\n"
-            "• باید با حرف شروع شود\n"
-            "• حداکثر ۵۰ کاراکتر"
+            "✏️ **یک نام انگلیسی برای پک جدید خود بفرستید:**\n\n"
+            "⚠️ **توجه بسیار مهم:** به دلیل اینکه ربات از حافظه و دیتابیس موقت استفاده می‌کند، **حتماً پس از ساخت پک، لینک آن را در پیام‌های ذخیره‌شده (Saved Messages) تلگرام خود ذخیره کنید** تا همیشه به آن دسترسی داشته باشید.\n\n"
+            "💡 **نکات جلوگیری از خطای تکراری بودن نام (`sticker set name is already occupied`):**\n"
+            "• نام انتخابی نباید قبلاً توسط شخص دیگری در تلگرام ثبت شده باشد.\n"
+            "• حتماً چند عدد اتفاقی به انتهای نام اضافه کنید (مثال: `my_stickers_8492`).\n"
+            "• فقط استفاده از حروف انگلیسی کوچک، اعداد و زیرخط (_) مجاز است (بدون فاصله یا زبان فارسی)."
         )
         await safe_edit_text(cb, rules_text)
     await cb.answer()
@@ -180,7 +182,14 @@ async def on_ai_actions(cb: CallbackQuery, bot: Bot):
                     await cb.message.answer_sticker(BufferedInputFile(webm_bytes, "s.webm"))
                     await cb.message.answer("از این استیکر راضی بودی؟", reply_markup=rate_kb())
                 else:
-                    await cb.message.answer("خطا در پردازش ویدیو. مطمئن شوید زمان آن کمتر از ۳ ثانیه است.", reply_markup=back_to_menu_kb(uid == ADMIN_ID))
+                    user_guide = (
+                        "❌ خطا در پردازش ویدیو/گیف.\n\n"
+                        "💡 **راهنمای رفع مشکل:**\n"
+                        "1. مدت زمان ویدیو یا گیف باید **کمتر از ۳ ثانیه** باشد.\n"
+                        "2. حجم فایل نباید خیلی زیاد باشد (ترجیحاً زیر ۱۰ مگابایت).\n"
+                        "3. فرمت فایل باید MP4 یا GIF یا WebM باشد."
+                    )
+                    await cb.message.answer(user_guide, reply_markup=back_to_menu_kb(uid == ADMIN_ID))
         else:
             img = render_image(ai_data["text"], ai_data["v_pos"], ai_data.get("h_pos", "center"), "Default", ai_data["color"], ai_data["size"],
                               bg_photo=ai_data.get("bg_photo_bytes"), as_webp=True)
@@ -227,18 +236,40 @@ async def on_rate_actions(cb: CallbackQuery, bot: Bot):
             storage.reset_session(uid)
             storage.update_session(uid, {"current_pack_short_name": pack_name, "current_pack_title": pack_title, "mode": mode})
 
+            pack_link = f"https://t.me/addstickers/{pack_name}"
             success_msg = (
-                f"✅ استیکر با موفقیت به پک «{pack_title}» اضافه شد!\n"
-                f"https://t.me/addstickers/{pack_name}\n\n"
-                "ℹ️ **نکته مهم:** ممکن است چند دقیقه طول بکشد تا تلگرام کش خود را بروزرسانی کند و استیکر جدید در لیست شما ظاهر شود.\n"
-                "اگر استیکر را نمی‌بینید، یکبار پک را حذف و مجدداً از لینک بالا اضافه کنید.\n\n"
-                f"🆘 اگر مشکلی داشتید به پشتیبانی پیام بدید: {SUPPORT_USERNAME}\n\n"
+                f"✅ **استیکر با موفقیت به پک «{pack_title}» اضافه شد!**\n\n"
+                f"🔗 **لینک اختصاصی پک شما:**\n{pack_link}\n\n"
+                "📌 **توجه بسیار مهم (حتماً ذخیره کنید):**\n"
+                "به دلیل اینکه ربات **دیتابیس موقت** دارد، **حتماً لینک بالا را کپی کرده و در Saved Messages (پیام‌های ذخیره‌شده) تلگرام خود ذخیره کنید** تا در آینده به پک خود دسترسی داشته باشید.\n\n"
+                "ℹ️ **نکته:** اگر استیکر جدید بلافاصله در لیست شما ظاهر نشد، چند دقیقه صبر کنید یا یکبار پک را Remove و دوباره Add کنید.\n\n"
+                f"🆘 پشتیبانی: {SUPPORT_USERNAME}\n\n"
                 "برای استیکر بعدی، متن یا فایل جدید بفرستید."
             )
             await cb.message.answer(success_msg, reply_markup=back_to_menu_kb(uid == ADMIN_ID))
         except Exception as e:
             logger.error(f"Error adding sticker: {e}")
-            await cb.message.answer(f"خطا در افزودن به پک: {e}\n\nاگر این مشکل تکرار شد به پشتیبانی پیام بدید.", reply_markup=back_to_menu_kb(uid == ADMIN_ID))
+            err_msg = str(e).lower()
+            if "full" in err_msg or "stickerset_full" in err_msg:
+                user_guide = (
+                    "❌ ظرفیت این پک استیکر پر شده است (حداکثر استیکر مجاز در این پک پر شده).\n\n"
+                    "💡 **راه حل:**\n"
+                    "• از منوی اصلی گزینه «ساخت پک جدید» را بزنید و یک پک جدید ایجاد کنید."
+                )
+            elif "invalid" in err_msg or "peer" in err_msg or "occupied" in err_msg:
+                user_guide = (
+                    "❌ مشخصات پک استیکر نامعتبر است یا مشکلی در ارتباط با تلگرام وجود دارد.\n\n"
+                    "💡 **راه حل:**\n"
+                    "• لطفاً یک پک جدید از منوی اصلی بسازید و دوباره امتحان کنید."
+                )
+            else:
+                user_guide = (
+                    f"❌ خطا در افزودن استیکر به پک: {e}\n\n"
+                    "💡 **راهنما:**\n"
+                    "• مطمئن شوید در کانال‌های اجباری ربات عضو هستید.\n"
+                    "• در صورت ادامه مشکل، به پشتیبانی پیام بدهید."
+                )
+            await cb.message.answer(user_guide, reply_markup=back_to_menu_kb(uid == ADMIN_ID))
     elif action == "no":
         storage.update_session(uid, {"await_feedback": True})
         await safe_edit_text(cb, "چه چیزی رو دوست نداشتی؟")
@@ -256,7 +287,14 @@ async def on_message(message: Message, bot: Bot):
         pack_name = message.text.strip().lower()
         from ..utils.helpers import is_valid_pack_name
         if any(word in pack_name for word in FORBIDDEN_WORDS) or not is_valid_pack_name(pack_name):
-            await message.answer("نام نامعتبر است."); return
+            await message.answer(
+                "❌ **نام نامعتبر است.**\n\n"
+                "💡 **راهنما:**\n"
+                "• فقط از حروف انگلیسی کوچک، اعداد و زیرخط (_) استفاده کنید.\n"
+                "• نام نباید شامل کلمات ممنوعه، شکلک یا فاصله باشد.\n"
+                "• لطفاً یک نام معتبر جدید بفرستید:"
+            )
+            return
 
         bot_info = await bot.get_me()
         short_name = f"{pack_name}_by_{bot_info.username}"
@@ -268,12 +306,40 @@ async def on_message(message: Message, bot: Bot):
             storage.add_user_pack(uid, pack_name, short_name)
             mode = s["pack_wizard"].get("mode", "simple")
             storage.update_session(uid, {"current_pack_short_name": short_name, "current_pack_title": pack_name, "pack_wizard": {}, "mode": mode})
+            pack_link = f"https://t.me/addstickers/{short_name}"
+            created_msg = (
+                f"🎉 **پک «{pack_name}» با موفقیت ساخته شد!**\n\n"
+                f"🔗 **لینک اختصاصی پک شما:**\n{pack_link}\n\n"
+                "📌 **هشدار بسیار مهم (حتماً ذخیره کنید):**\n"
+                "ربات از **دیتابیس موقت** استفاده می‌کند. برای اینکه در آینده لینک پک خود را گم نکنید و بتوانید استیکرهای جدید به آن اضافه کنید، **حتماً لینک بالا را کپی کنید و در Saved Messages (پیام‌های ذخیره‌شده) تلگرام خود ذخیره نمایید!**\n\n"
+            )
             if mode == "simple":
-                await message.answer(f"پک ساخته شد! حالا متن استیکر را بفرستید.")
+                await message.answer(created_msg + "حالا متن استیکر خود را بفرستید.")
             else:
-                await message.answer(f"پک ساخته شد! حالا نوع استیکر را انتخاب کنید:", reply_markup=ai_type_kb())
+                await message.answer(created_msg + "حالا نوع استیکر را انتخاب کنید:", reply_markup=ai_type_kb())
         except Exception as e:
-            await message.answer(f"خطا در ساخت پک: {e}")
+            err_msg = str(e).lower()
+            wizard_mode = s.get("pack_wizard", {}).get("mode", "simple")
+            storage.update_session(uid, {"pack_wizard": {"step": "awaiting_name", "mode": wizard_mode}})
+
+            if "occupied" in err_msg or "already used" in err_msg or "invalid" in err_msg:
+                user_msg = (
+                    f"⚠️ **خطا در ساخت پک استیکر:**\n\n"
+                    f"❓ **دلیل بروز خطا:**\n"
+                    f"نامی که انتخاب کردید (`{pack_name}`) قبلاً توسط شخص دیگری در تلگرام ثبت شده است. تلگرام اجازه نمی‌دهد دو پک استیکر نام یکسان داشته باشند.\n\n"
+                    f"💡 **چگونه دوباره این خطا را دریافت نکنیم؟**\n"
+                    f"1️⃣ از اسامی عمومی مانند `test` ، `pack` یا `stickers` استفاده نکنید.\n"
+                    f"2️⃣ حتماً چند عدد اتفاقی به انتهای نام اضافه کنید (مثلاً به جای `my_pack` بنویسید `my_pack_8492` یا `my_pack_2025`).\n"
+                    f"3️⃣ از ترکیب حروف انگلیسی و عدد استفاده کنید (مثال: `john_stickers_2025`).\n\n"
+                    f"✏️ **لطفاً همین الان یک نام جدید همراه با عدد بفرستید:**"
+                )
+            else:
+                user_msg = (
+                    f"❌ **خطا در ساخت پک استیکر:**\n`{e}`\n\n"
+                    "💡 **راهنما:**\n"
+                    "• لطفاً یک نام انگلیسی جدید و متفاوت بفرستید:"
+                )
+            await message.answer(user_msg, reply_markup=back_to_menu_kb(is_admin))
         return
 
     # Anti-spam/Single-media enforcement

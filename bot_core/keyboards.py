@@ -3,13 +3,14 @@ from .config import DEFAULT_PALETTE
 
 def main_menu_kb(is_admin: bool = False):
     kb = InlineKeyboardBuilder()
-    kb.button(text="استیکر ساده", callback_data="menu:simple")
-    kb.button(text="استیکر ساز پیشرفته", callback_data="menu:ai")
-    kb.button(text="سهمیه امروز", callback_data="menu:quota")
-    kb.button(text="راهنما", callback_data="menu:help")
-    kb.button(text="پشتیبانی", callback_data="menu:support")
+    kb.button(text="🎨 استیکر ساده", callback_data="menu:simple")
+    kb.button(text="🧠 استیکر ساز پیشرفته", callback_data="menu:ai")
+    kb.button(text="📊 سهمیه امروز", callback_data="menu:quota")
+    kb.button(text="❓ راهنمای رفع خطاها", callback_data="menu:troubleshoot")
+    kb.button(text="📖 راهنما", callback_data="menu:help")
+    kb.button(text="🆘 پشتیبانی", callback_data="menu:support")
     if is_admin:
-        kb.button(text="پنل ادمین", callback_data="menu:admin")
+        kb.button(text="⚙️ پنل ادمین", callback_data="menu:admin")
     kb.adjust(2, 2, 2, 1)
     return kb.as_markup()
 

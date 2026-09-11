@@ -4,6 +4,17 @@ from typing import Optional
 from PIL import Image, ImageDraw, ImageFont
 import arabic_reshaper
 from bidi.algorithm import get_display
+try:
+    import emoji
+except ImportError:
+    emoji = None
+
+try:
+    from pilmoji import Pilmoji
+    from pilmoji.source import AppleEmojiSource
+except ImportError:
+    Pilmoji = None
+    AppleEmojiSource = None
 
 FONT_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "fonts")
 LOCAL_FONT_FILES = {
@@ -22,7 +33,57 @@ def resolve_font_path(font_key: Optional[str], text: str = "") -> str:
     is_persian = any('\u0600' <= char <= '\u06FF' for char in text)
     return _LOCAL_FONTS.get("Vazirmatn" if is_persian else "Roboto", next(iter(_LOCAL_FONTS.values()), ""))
 
+def ensure_emoji_presentation(text: str) -> str:
+    if not emoji:
+        return text
+    try:
+        emoji_list = emoji.emoji_list(text)
+        if not emoji_list:
+            return text
+
+        res = []
+        last_idx = 0
+        for e in emoji_list:
+            start, end = e['match_start'], e['match_end']
+            res.append(text[last_idx:start])
+            em_str = e['emoji']
+            if not em_str.endswith('\ufe0f') and not em_str.endswith('\ufe0e'):
+                with_vs = em_str + '\ufe0f'
+                if with_vs in emoji.EMOJI_DATA:
+                    em_str = with_vs
+            res.append(em_str)
+            last_idx = end
+        res.append(text[last_idx:])
+        return ''.join(res)
+    except Exception as err:
+        print(f"Error in ensure_emoji_presentation: {err}")
+        return text
+
 def _prepare_text(text: str) -> str:
+    if emoji:
+        try:
+            text = ensure_emoji_presentation(text)
+            emoji_list = emoji.emoji_list(text)
+            if emoji_list:
+                placeholders = {}
+                modified_text = text
+                for i, e in enumerate(reversed(emoji_list)):
+                    match_str = e['emoji']
+                    ph = f'\uFFFC{i}\uFFFC'
+                    placeholders[ph] = match_str
+                    start, end = e['match_start'], e['match_end']
+                    modified_text = modified_text[:start] + ph + modified_text[end:]
+
+                reshaped = arabic_reshaper.reshape(modified_text)
+                bidi_text = get_display(reshaped)
+
+                for ph, orig_emoji in placeholders.items():
+                    bidi_text = bidi_text.replace(ph, orig_emoji)
+                    bidi_text = bidi_text.replace(ph[::-1], orig_emoji)
+                return bidi_text
+        except Exception as err:
+            print(f"Error preserving emojis in _prepare_text: {err}")
+
     return get_display(arabic_reshaper.reshape(text))
 
 def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: str, size_key: str, bg_mode: str = "transparent", bg_photo: Optional[bytes] = None, as_webp: bool = False) -> bytes:
@@ -52,25 +113,49 @@ def render_image(text: str, v_pos: str, h_pos: str, font_key: str, color_hex: st
     font_path = resolve_font_path(font_key, text)
     txt = _prepare_text(text)
 
+    def _get_text_size(p_img, p_txt, p_font):
+        if Pilmoji:
+            try:
+                kwargs = {"source": AppleEmojiSource} if AppleEmojiSource else {}
+                with Pilmoji(p_img, **kwargs) as pilmoji:
+                    return pilmoji.getsize(p_txt, font=p_font)
+            except Exception:
+                pass
+        bbox = draw.textbbox((0, 0), p_txt, font=p_font)
+        return bbox[2] - bbox[0], bbox[3] - bbox[1]
+
     size = base_size
     while size > 12:
         try:
             font = ImageFont.truetype(font_path, size=size)
-            bbox = draw.textbbox((0,0), txt, font=font)
-            if (bbox[2]-bbox[0] <= box_w) and (bbox[3]-bbox[1] <= box_h):
+            tw, th = _get_text_size(img, txt, font)
+            if tw <= box_w and th <= box_h:
                 break
         except Exception:
             break
         size -= 1
 
     font = ImageFont.truetype(font_path, size=size)
-    bbox = draw.textbbox((0,0), txt, font=font)
-    text_width, text_height = bbox[2]-bbox[0], bbox[3]-bbox[1]
+    text_width, text_height = _get_text_size(img, txt, font)
 
     y = {"top": padding, "bottom": H - padding - text_height}.get(v_pos, (H - text_height) / 2)
-    x = {"left": padding, "right": W - padding - text_width}.get(h_pos, W / 2)
-    anchor = "mm" if h_pos == "center" else "lm"
-    draw.text((x, y), txt, font=font, fill=color, anchor=anchor, stroke_width=2, stroke_fill=(0,0,0,220))
+    x = {"left": padding, "right": W - padding - text_width}.get(h_pos, (W - text_width) / 2)
+
+    rendered = False
+    if Pilmoji:
+        try:
+            kwargs = {"source": AppleEmojiSource} if AppleEmojiSource else {}
+            with Pilmoji(img, **kwargs) as pilmoji:
+                pilmoji.text((int(x), int(y)), txt, font=font, fill=color, stroke_width=2, stroke_fill=(0, 0, 0, 220))
+            rendered = True
+        except Exception as e:
+            print(f"Error rendering text with Pilmoji: {e}")
+
+    if not rendered:
+        anchor = "mm" if h_pos == "center" else "lm"
+        ax = x + text_width / 2 if h_pos == "center" else x
+        ay = y + text_height / 2 if h_pos == "center" else y
+        draw.text((ax, ay), txt, font=font, fill=color, anchor=anchor, stroke_width=2, stroke_fill=(0, 0, 0, 220))
 
     buf = BytesIO()
     if as_webp:
