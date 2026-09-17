@@ -12,7 +12,7 @@ BOT_TOKEN = os.getenv("BOT_TOKEN")
 BOT_USERNAME = ""
 
 # --- Channel, Support & Admin ---
-REQUIRED_CHANNELS_STR = os.getenv("REQUIRED_CHANNELS", "@redoxbot_sticker,@ZeroConfigReviews")
+REQUIRED_CHANNELS_STR = os.getenv("REQUIRED_CHANNELS", "@redoxbot_sticker")
 REQUIRED_CHANNELS = [ch.strip() for ch in REQUIRED_CHANNELS_STR.replace(' ', ',').split(',') if ch.strip()]
 CHANNEL_USERNAME = REQUIRED_CHANNELS[0] if REQUIRED_CHANNELS else os.getenv("CHANNEL_USERNAME", "@redoxbot_sticker")
 SUPPORT_USERNAME = os.getenv("SUPPORT_USERNAME", "@onedaytoalive")
