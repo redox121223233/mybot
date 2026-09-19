@@ -3,13 +3,14 @@ from .config import DEFAULT_PALETTE
 
 def main_menu_kb(is_admin: bool = False):
     kb = InlineKeyboardBuilder()
-    kb.button(text="استیکر ساده", callback_data="menu:simple")
-    kb.button(text="استیکر ساز پیشرفته", callback_data="menu:ai")
-    kb.button(text="سهمیه امروز", callback_data="menu:quota")
-    kb.button(text="راهنما", callback_data="menu:help")
-    kb.button(text="پشتیبانی", callback_data="menu:support")
+    kb.button(text="🎨 استیکر ساده", callback_data="menu:simple")
+    kb.button(text="🧠 استیکر ساز پیشرفته", callback_data="menu:ai")
+    kb.button(text="📊 سهمیه امروز", callback_data="menu:quota")
+    kb.button(text="❓ راهنمای رفع خطاها", callback_data="menu:troubleshoot")
+    kb.button(text="📖 راهنما", callback_data="menu:help")
+    kb.button(text="🆘 پشتیبانی", callback_data="menu:support")
     if is_admin:
-        kb.button(text="پنل ادمین", callback_data="menu:admin")
+        kb.button(text="⚙️ پنل ادمین", callback_data="menu:admin")
     kb.adjust(2, 2, 2, 1)
     return kb.as_markup()
 
@@ -102,8 +103,10 @@ def ai_size_kb():
 
 def admin_panel_kb():
     kb = InlineKeyboardBuilder()
-    kb.button(text="ارسال پیام همگانی", callback_data="admin:broadcast")
-    kb.button(text="ارسال به کاربر خاص", callback_data="admin:dm_prompt")
-    kb.button(text="تغییر سهمیه کاربر", callback_data="admin:quota_prompt")
+    kb.button(text="📊 آمار و اطلاعات کاربران", callback_data="admin:stats")
+    kb.button(text="📢 ارسال پیام همگانی", callback_data="admin:broadcast_prompt")
+    kb.button(text="✉️ ارسال پیام به کاربر خاص", callback_data="admin:dm_prompt")
+    kb.button(text="⚙️ تغییر سهمیه کاربر", callback_data="admin:quota_prompt")
+    kb.button(text="🔙 بازگشت به منوی اصلی", callback_data="menu:home")
     kb.adjust(1)
     return kb.as_markup()

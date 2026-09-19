@@ -42,7 +42,7 @@ class Storage:
         except Exception as e:
             print(f"Error saving storage: {e}")
 
-    def get_user(self, uid: int) -> Dict[str, Any]:
+    def get_user(self, uid: int, first_name: str = "", username: str = "") -> Dict[str, Any]:
         uid_str = str(uid)
         if uid_str not in self.USERS:
             self.USERS[uid_str] = {
@@ -51,9 +51,22 @@ class Storage:
                 "day_start": _today_start_ts(),
                 "packs": [],
                 "current_pack": None,
-                "daily_limit": None
+                "daily_limit": None,
+                "first_name": first_name,
+                "username": username
             }
             self.save()
+        else:
+            u = self.USERS[uid_str]
+            updated = False
+            if first_name and u.get("first_name") != first_name:
+                u["first_name"] = first_name
+                updated = True
+            if username and u.get("username") != username:
+                u["username"] = username
+                updated = True
+            if updated:
+                self.save()
         return self.USERS[uid_str]
 
     def get_session(self, uid: int) -> Dict[str, Any]:

@@ -20,7 +20,15 @@ async def check_channel_membership(bot: Bot, user_id: int) -> bool:
         return False
 
 async def require_channel_membership(message: Message, bot: Bot) -> bool:
-    if await check_channel_membership(bot, message.from_user.id):
+    user = message.from_user
+    if user:
+        storage.get_user(
+            user.id,
+            first_name=user.first_name or "",
+            username=user.username or ""
+        )
+
+    if await check_channel_membership(bot, user.id if user else 0):
         return True
 
     from aiogram.utils.keyboard import InlineKeyboardBuilder
@@ -32,7 +40,7 @@ async def require_channel_membership(message: Message, bot: Bot) -> bool:
     try:
         await message.answer(f"برای استفاده از ربات، باید در کانال {CHANNEL_USERNAME} عضو شوید.", reply_markup=kb.as_markup())
     except TelegramForbiddenError:
-        print(f"User {message.from_user.id} has blocked the bot.")
+        print(f"User {user.id if user else 0} has blocked the bot.")
     return False
 
 async def safe_edit_text(cb: CallbackQuery, text: str, reply_markup=None, delete_if_no_text: bool = True):
@@ -47,6 +55,12 @@ async def safe_edit_text(cb: CallbackQuery, text: str, reply_markup=None, delete
 
 @router.message(CommandStart())
 async def on_start(message: Message, bot: Bot):
+    if message.from_user:
+        storage.get_user(
+            message.from_user.id,
+            first_name=message.from_user.first_name or "",
+            username=message.from_user.username or ""
+        )
     if not await require_channel_membership(message, bot):
         return
     storage.reset_session(message.from_user.id)
