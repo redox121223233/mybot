@@ -103,8 +103,10 @@ def ai_size_kb():
 
 def admin_panel_kb():
     kb = InlineKeyboardBuilder()
-    kb.button(text="ارسال پیام همگانی", callback_data="admin:broadcast")
-    kb.button(text="ارسال به کاربر خاص", callback_data="admin:dm_prompt")
-    kb.button(text="تغییر سهمیه کاربر", callback_data="admin:quota_prompt")
+    kb.button(text="📊 آمار و اطلاعات کاربران", callback_data="admin:stats")
+    kb.button(text="📢 ارسال پیام همگانی", callback_data="admin:broadcast_prompt")
+    kb.button(text="✉️ ارسال پیام به کاربر خاص", callback_data="admin:dm_prompt")
+    kb.button(text="⚙️ تغییر سهمیه کاربر", callback_data="admin:quota_prompt")
+    kb.button(text="🔙 بازگشت به منوی اصلی", callback_data="menu:home")
     kb.adjust(1)
     return kb.as_markup()

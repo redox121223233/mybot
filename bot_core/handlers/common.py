@@ -20,20 +20,27 @@ async def check_channel_membership(bot: Bot, user_id: int) -> bool:
         return False
 
 async def require_channel_membership(message: Message, bot: Bot) -> bool:
-    if await check_channel_membership(bot, message.from_user.id):
+    user = message.from_user
+    if user:
+        storage.get_user(
+            user.id,
+            first_name=user.first_name or "",
+            username=user.username or ""
+        )
+
+    if await check_channel_membership(bot, user.id if user else 0):
         return True
 
     from aiogram.utils.keyboard import InlineKeyboardBuilder
     kb = InlineKeyboardBuilder()
-    clean_channel = CHANNEL_USERNAME.replace('@', '')
-    kb.button(text="عضویت در کانال", url=f"https://t.me/{clean_channel}")
+    kb.button(text="عضویت در کانال", url=f"https://t.me/{CHANNEL_USERNAME.replace('@', '')}")
     kb.button(text="بررسی عضویت", callback_data="check_membership")
     kb.adjust(1)
 
     try:
         await message.answer(f"برای استفاده از ربات، باید در کانال {CHANNEL_USERNAME} عضو شوید.", reply_markup=kb.as_markup())
     except TelegramForbiddenError:
-        print(f"User {message.from_user.id} has blocked the bot.")
+        print(f"User {user.id if user else 0} has blocked the bot.")
     return False
 
 async def safe_edit_text(cb: CallbackQuery, text: str, reply_markup=None, delete_if_no_text: bool = True):
@@ -48,6 +55,12 @@ async def safe_edit_text(cb: CallbackQuery, text: str, reply_markup=None, delete
 
 @router.message(CommandStart())
 async def on_start(message: Message, bot: Bot):
+    if message.from_user:
+        storage.get_user(
+            message.from_user.id,
+            first_name=message.from_user.first_name or "",
+            username=message.from_user.username or ""
+        )
     if not await require_channel_membership(message, bot):
         return
     storage.reset_session(message.from_user.id)
@@ -149,37 +162,6 @@ A: تعداد پک‌ها محدودیت خاصی ندارد
 
 🆘 *برای دریافت پشتیبانی:* گزینه پشتیبانی را انتخاب کنید"""
         await safe_edit_text(cb, help_text, reply_markup=back_to_menu_kb(is_admin))
-
-    elif action == "troubleshoot":
-        troubleshoot_text = f"""❓ *راهنمای جامع و کامل رفع تمام خطاهای ربات*
-
-اگر هنگام استفاده از ربات با خطایی مواجه شدید، نکات زیر را مطالعه کنید:
-
-🚨 *خطای «Bad Request: sticker set name is already occupied»:*
-• **علت:** نام انگلیسی که برای ساخت پک بفرستید قبلاً توسط شخص دیگری در تلگرام ثبت شده و اشغال است.
-• **راه حل:** حتماً چند عدد اتفاقی به انتهای نام اضافه کنید (مثلاً به جای `my_pack` بنویسید `my_pack_8492` یا `my_pack_2025`).
-
-⚠️ *ذخیره کردن لینک پک‌ها (بسیار مهم):*
-• دیتابیس ربات به صورت موقت ذخیره می‌شود؛ **حتماً لینک تمام پک‌های ساخته‌شده (`https://t.me/addstickers/...`) را در Saved Messages (پیام‌های ذخیره‌شده) تلگرام خود کپی و ذخیره کنید** تا بعداً استیکرهای خود را گم نکنید.
-
-❌ *خطای پر شدن ظرفیت پک استیکر (Sticker set is full):*
-• هر پک استیکر تلگرام حداکثر ظرفیت مشخصی دارد (۱۲۰۰ استیکر عکس یا ۵۰ استیکر ویدیو/گیف).
-• **راه حل:** از منوی اصلی گزینه «ساخت پک جدید» را بزنید و استیکرهای بعدی را به پک جدید اضافه کنید.
-
-❌ *خطای پردازش ویدیو یا گیف:*
-• مدت زمان ویدیو یا گیف **حتماً باید کمتر از ۳ ثانیه** باشد.
-• حجم فایل نباید خیلی بالا باشد (ترجیحاً زیر ۱۰ مگابایت).
-• فایل‌های خیلی طولانی یا با فرمت نامعتبر پردازش نمی‌شوند.
-
-❌ *عدم مشاهده استیکر جدید در تلگرام:*
-• تلگرام برای نمایش استیکرهای جدید چند دقیقه زمان کش (Cache) نیاز دارد.
-• اگر استیکر جدید را نمی‌بینید، یکبار لینک پک را باز کرده، گزینه **Remove** و دوباره **Add Stickers** را بزنید.
-
-❌ *خطای عدم عضویت در کانال:*
-• حتماً باید در کانال اجباری ربات عضو شوید و سپس دکمه **«بررسی عضویت»** را بزنید.
-
-🆘 *ارتباط با پشتیبانی:* {SUPPORT_USERNAME}"""
-        await safe_edit_text(cb, troubleshoot_text, reply_markup=back_to_menu_kb(is_admin))
 
     elif action == "support":
         await safe_edit_text(cb, f"پشتیبانی: {SUPPORT_USERNAME}", reply_markup=back_to_menu_kb(is_admin))
